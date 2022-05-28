@@ -386,9 +386,9 @@ class CPU6502:
         self.pc += 1
     
         self.setFlag(self.FLAGS.I, 1)
-        self.write(0x0100 + self.stkp, (pc >> 8) & 0x00FF)
+        self.write(0x0100 + self.stkp, (self.pc >> 8) & 0x00FF)
         self.stkp -= 1
-        self.write(0x0100 + self.stkp, pc & 0x00FF)
+        self.write(0x0100 + self.stkp, self.pc & 0x00FF)
         self.stkp -= 1
 
         self.setFlag(self.FLAGS.B, 1)
@@ -396,7 +396,7 @@ class CPU6502:
         self.stkp -= 1
         self.setFlag(self.FLAGS.B, 0)
 
-        pc = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
+        self.pc = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
         return 0
 
     def BVC(self) -> uint8:
