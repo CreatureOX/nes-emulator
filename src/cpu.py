@@ -2,7 +2,7 @@ from collections import namedtuple
 from enum import IntEnum
 from numpy import uint16, uint32, uint8, void
 
-from .bus import Bus
+from .bus import Bus, CPUBus
 
 
 class CPU6502:
@@ -32,9 +32,9 @@ class CPU6502:
         else:
             self.status &= ~int(f.value)
 
-    bus: Bus
+    bus: CPUBus
 
-    def connectBus(self, bus: Bus) -> void:
+    def connectBus(self, bus: CPUBus) -> void:
         self.bus = bus
                 
     def read(self, addr: uint16) -> uint8:
@@ -395,7 +395,7 @@ class CPU6502:
         self.write(0x0100 + self.stkp, self.status)
         self.stkp -= 1
         self.setFlag(self.FLAGS.B, 0)
-
+        
         self.pc = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
         return 0
 
@@ -957,12 +957,12 @@ class CPU6502:
             "JSR": getattr(self, "JSR"), "LDA": getattr(self, "LDA"), "LDX": getattr(self, "LDX"), "LDY": getattr(self, "LDY"),
             "LSR": getattr(self, "LSR"), "NOP": getattr(self, "NOP"), "ORA": getattr(self, "ORA"), "PHA": getattr(self, "PHA"),
             "PHP": getattr(self, "PHP"), "PLA": getattr(self, "PLA"), "PLP": getattr(self, "PLP"), "ROL": getattr(self, "ROL"),
-            "ROR": getattr(self, "ROR"), "RTI": getattr(self, "RTI"), "SEI": getattr(self, "SEI"), "SBC": getattr(self, "SBC"),
+            "ROR": getattr(self, "ROR"), "RTI": getattr(self, "RTI"), "RTS": getattr(self, "RTS"), "SBC": getattr(self, "SBC"),
             "SEC": getattr(self, "SEC"), "SED": getattr(self, "SED"), "SEI": getattr(self, "SEI"), "STA": getattr(self, "STA"),
             "STX": getattr(self, "STX"), "STY": getattr(self, "STY"), "TAX": getattr(self, "TAX"), "TAY": getattr(self, "TAY"),
             "TSX": getattr(self, "TSX"), "TXA": getattr(self, "TXA"), "TXS": getattr(self, "TXS"), "TYA": getattr(self, "TYA"),
 
-            "XXX": self.XXX()
+            "XXX": getattr(self, "XXX"),
         }
         
         Op = namedtuple('Op', ['name', 'operate', 'addrmode', 'cycles'])
@@ -1054,7 +1054,7 @@ class CPU6502:
 
     clock_count: uint32 = 0
 
-    def clock(self) -> void:
+    def clock(self, debug: bool = False) -> void:
         '''
         Perform one clock cycle
         '''
@@ -1068,7 +1068,9 @@ class CPU6502:
             additional_cycle2: uint8 = self.operates[op.operate]()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.setFlag(self.FLAGS.U, True)
-        
+            if debug:
+                print(op)
+
         self.clock_count += 1
         self.remaining_cycles -= 1
     
