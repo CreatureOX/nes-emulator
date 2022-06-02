@@ -1,55 +1,211 @@
 from typing import List
 from matplotlib import pyplot as plt
-from numpy import array, uint16, uint8, void
+from numpy import uint16, uint8, void, zeros
 
+from src.cartridge import Cartridge
+from src.graph import Pixel, Sprite
 
-class Tile:
-    bytes: bytes
-    matrix: List[List[uint8]]
-
-    def __init__(self, bytes: bytes) -> None:
-        self.bytes = bytes[:8]
-        self.matrix = []
-        for byte in bytes:
-            str = bin(byte).replace("b","").zfill(8)
-            self.matrix.append([int(chr) for chr in str])
-
-    def __str__(self):
-        strs = ["".join([str(i) for i in row]) for row in self.matrix]
-        return "\n".join([str for str in strs])
-
-    @classmethod
-    def combine(cls, msbTile, lsbTile) -> List[List[uint8]]:
-        result = []
-        for i in range(8):
-            msbStr, lsbStr = bin(msbTile.bytes[i]).replace("b","").zfill(8), bin(lsbTile.bytes[i]).replace("b","").zfill(8)
-            msbList, lsbList = [int(i) for i in msbStr], [int(i) for i in lsbStr]
-            list = [msbList[i]<<1 | lsbList[i] for i in range(8)]
-            result.append(list)
-        return result
 
 class PPU2C02:
-    patternTables: List[List[bytes]]
-    nameTable: List[bytes]
-    paletteTable: List[bytes]
+    class Status:
+        reg: bytes
+
+        unused: uint8
+        sprite_overflow: uint8
+        sprite_zero_hit: uint8
+        vertical_blank: uint8
+
+        def __init__(self, bytes: bytes) -> None:
+            self.reg = bytes
+
+            self.unused = bytes[0:5]
+            self.sprite_overflow = bytes[5]
+            self.sprite_zero_hit = bytes[6]
+            self.vertical_blank = bytes[7]
+
+    class Mask:
+        reg: bytes
+
+        grayscale: uint8
+        render_background_left: uint8
+        render_sprites_left: uint8
+        render_background: uint8
+        render_sprites: uint8
+        enhance_red: uint8
+        enhance_green: uint8
+        enhance_blue: uint8
+
+        def __init__(self, bytes: bytes) -> None:
+            self.reg = bytes
+
+            self.grayscale = bytes[0]
+            self.render_background_left = bytes[1]
+            self.render_sprites_left = bytes[2]
+            self.render_background = bytes[3]
+            self.render_sprites = bytes[4]
+            self.enhance_red = bytes[5]
+            self.enhance_green = bytes[6]
+            self.enhance_blue = bytes[7]
+
+    class PPUCTRL:
+        reg: bytes
+
+        nametable_x: uint8
+        nametable_y: uint8
+        increment_mode: uint8
+        pattern_sprite: uint8
+        pattern_background: uint8
+        sprite_size: uint8
+        slave_mode: uint8
+        enable_nmi: uint8
+
+        def __init__(self, bytes: bytes) -> None:
+            self.reg = bytes
+
+            self.nametable_x = bytes[0]
+            self.nametable_y = bytes[1]
+            self.increment_mode = bytes[2]
+            self.pattern_sprite = bytes[3] 
+            self.pattern_background = bytes[4]
+            self.sprite_size = bytes[5]
+            self.slave_mode = bytes[6]
+            self.enable_nmi = bytes[7]
+
+    class LoopRegister:
+        reg: bytes = 0x0000
+
+        coarse_x: uint16
+        coarse_y: uint16
+        nametable_x: uint16
+        nametable_y: uint16
+        fine_y: uint16
+        unused: uint16
+
+        def __init__(self, bytes: bytes) -> None:
+            self.reg = bytes
+
+            self.coarse_x = bytes[0:5]
+            self.coarse_y = bytes[5:10]
+            self.nametable_x = bytes[10]
+            self.nametable_y = bytes[11]
+            self.fine_y = bytes[12:15]
+            self.unused = bytes[15]
     
-    cycle: uint16
+    patternTable: List[List[bytes]]
+    nameTable: List[List[bytes]]
+    paletteTable: List[bytes]
+
+    palettePanel: List[Pixel]
+    spriteScreen: Sprite = Sprite(256,240)
+    spriteNameTable: List[Sprite] = [Sprite(256,240),Sprite(256,240)]
+    spritePatternTable: List[Sprite] = [Sprite(128,128),Sprite(128,128)]
+
+    status: Status
+    mask: Mask
+    control: PPUCTRL
+    vram_addr: LoopRegister
+    tram_addr: LoopRegister
+
+    fine_x: uint8 = 0x00
+
+    address_latch: uint8 = 0x00
+    ppu_data_buffer: uint8 = 0x00
+
     scanline: uint16
+    cycle: uint16
+
+    background_next_tile_id: uint8 = 0x00
+    background_next_tile_attribute: uint8 = 0x00
+    background_next_tile_lsb: uint8 = 0x00
+    background_next_tile_msb: uint8 = 0x00
+    background_shifter_pattern_lo: uint16 = 0x0000
+    background_shifter_pattern_hi: uint16 = 0x0000
+    background_shifter_attribute_lo: uint16 = 0x0000
+    background_shifter_attribute_hi: uint16 = 0x0000
+
+    cartridge: Cartridge
+
+    nmi: bool = False
+
+    frame_complete: bool = False 
 
     def __init__(self) -> None:
-        self.nameTable = [None] * 2
-        self.paletteTable = [None] * 4 * 16
-        self.patternTables = [[None] * 64 * 64] * 2
+        self.patternTable = [[None] * 64 * 64] * 2
+        self.nameTable = [[None] * 32 * 32] * 2
+        self.palettePanel = [None] * 4 * 16
+        self.setPalettePanel()
 
     def readByCPU(self, addr: uint16, readonly: bool = False) -> uint8:
         data: uint8 = 0x00
 
+        if readonly:
+            if addr == 0x0000:
+                # Control
+                data = self.control.reg
+            elif addr == 0x0001:
+                # Mask
+                data = self.mask.reg
+            elif addr == 0x0002:
+                # Status
+                data = self.status.reg
+            elif addr == 0x0003:
+                # OAM Address
+                pass
+            elif addr == 0x0004:
+                # OAM Data
+                pass
+            elif addr == 0x0005:
+                # Scroll
+                pass
+            elif addr == 0x0006:
+                # PPU Address
+                pass
+            elif addr == 0x0007:
+                # PPU Data
+                pass
+        else:
+            if addr == 0x0000:
+                # Control
+                pass
+            elif addr == 0x0001:
+                # Mask
+                pass
+            elif addr == 0x0002:
+                # Status
+                data = (self.status.reg & 0xE0) | (self.ppu_data_buffer & 0x1F)
+                self.status.vertical_blank = 0
+                self.address_latch = 0
+            elif addr == 0x0003:
+                # OAM Address
+                pass
+            elif addr == 0x0004:
+                # OAM Data
+                pass
+            elif addr == 0x0005:
+                # Scroll
+                pass
+            elif addr == 0x0006:
+                # PPU Address
+                pass
+            elif addr == 0x0007:
+                # PPU Data
+                data = self.ppu_data_buffer
+                self.ppu_data_buffer = self.readByPPU(self.vram_addr.reg)
+                if self.vram_addr.reg >= 0x3F00:
+                    data = self.ppu_data_buffer
+                self.vram_addr.reg += 32 if self.control.increment_mode else 1            
+
+        return data
+
+    def writeByCPU(self, addr: uint16, data: uint8) -> void:
         if addr == 0x0000:
             # Control
-            pass
+            self.control.reg = data
+            self.tram_addr.nametable_x = self.control.nametable_x
+            self.tram_addr.nametable_y = self.control.nametable_y
         elif addr == 0x0001:
             # Mask
-            pass
+            self.mask.reg = data
         elif addr == 0x0002:
             # Status
             pass
@@ -61,55 +217,282 @@ class PPU2C02:
             pass
         elif addr == 0x0005:
             # Scroll
-            pass
+            if self.address_latch == 0:
+                self.fine_x = data & 0x07
+                self.tram_addr.coarse_x = data >> 3
+                self.address_latch = 1
+            else:
+                self.tram_addr.fine_y = data & 0x07
+                self.tram_addr.coarse_y = data >> 3
+                self.address_latch = 0
         elif addr == 0x0006:
             # PPU Address
-            pass
+            if self.address_latch == 0:
+                self.tram_addr.reg = uint16((data & 0x3F) << 8) | (self.tram_addr.reg & 0x00FF)
+                self.address_latch = 1
+            else:
+                self.tram_addr.reg = (self.tram_addr.reg & 0xFF00) | data
+                self.vram_addr = self.tram_addr
+                self.address_latch = 0
         elif addr == 0x0007:
             # PPU Data
-            pass
-
-        return data
-
-    def writeByCPU(self, addr: uint16, data: uint8) -> void:
-        pass
+            self.writeByPPU(self.vram_addr.reg, data)
+            self.vram_addr.reg += 32 if self.control.increment_mode else 1
 
     def readByPPU(self, addr: uint16, readonly: bool = False) -> uint8:
         data: uint8 = 0x00
         addr &= 0x3FFF
+
+        success, _ = self.cartridge.readByPPU(addr)
+        if success:
+            pass
+        elif 0x0000 <= addr <= 0x1FFF:
+            data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
+        elif 0x2000 <= addr <= 0x3EFF:
+            addr &= 0x0FFF
+            if self.cartridge.mirror == Cartridge.MIRROR.VERTICAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    data = self.nameTable[0][addr & 0x03FF]
+                elif 0x0400 <= addr <= 0x07FF:
+                    data = self.nameTable[1][addr & 0x03FF]
+                elif 0x0800 <= addr <= 0x0BFF:
+                    data = self.nameTable[0][addr & 0x03FF]
+                elif 0x0C00 <= addr <= 0x0FFF:
+                    data = self.nameTable[1][addr & 0x03FF]                                 
+            elif self.cartridge.mirror == Cartridge.MIRROR.HORIZONTAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    data = self.nameTable[0][addr & 0x03FF]
+                elif 0x0400 <= addr <= 0x07FF:
+                    data = self.nameTable[0][addr & 0x03FF]
+                elif 0x0800 <= addr <= 0x0BFF:
+                    data = self.nameTable[1][addr & 0x03FF]
+                elif 0x0C00 <= addr <= 0x0FFF:
+                    data = self.nameTable[1][addr & 0x03FF]
+        elif 0x3F00 <= addr <= 0x3FFF:
+            addr &= 0x001F
+            if addr == 0x0010:
+                addr = 0x0000
+            if addr == 0x0014:
+                addr = 0x0004
+            if addr == 0x0018:
+                addr = 0x0008
+            if addr == 0x001C:
+                addr = 0x000C
+            data = self.paletteTable[addr] & (0x30 if self.mask.grayscale == 1 else 0x3F)
 
         return data
 
     def writeByPPU(self, addr: uint16, data: uint8) -> void:
         addr &= 0x3FFF     
 
+        success = self.cartridge.writeByPPU(addr)
+        if success:
+            pass
+        elif 0x0000 <= addr <= 0x1FFF:
+            self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
+        elif 0x2000 <= addr <= 0x3EFF:
+            addr &= 0x0FFF
+            if self.cartridge.mirror == Cartridge.MIRROR.VERTICAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    self.nameTable[0][addr & 0x03FF] = data
+                if 0x0400 <= addr <= 0x07FF:
+                    self.nameTable[1][addr & 0x03FF] = data
+                if 0x0800 <= addr <= 0x0BFF:
+                    self.nameTable[0][addr & 0x03FF] = data
+                if 0x0C00 <= addr <= 0x0FFF:
+                    self.nameTable[1][addr & 0x03FF] = data
+            elif self.cartridge.mirror == Cartridge.MIRROR.HORIZONTAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    self.nameTable[0][addr & 0x03FF] = data
+                if 0x0400 <= addr <= 0x07FF:
+                    self.nameTable[0][addr & 0x03FF] = data
+                if 0x0800 <= addr <= 0x0BFF:
+                    self.nameTable[1][addr & 0x03FF] = data
+                if 0x0C00 <= addr <= 0x0FFF:
+                    self.nameTable[1][addr & 0x03FF] = data
+        elif 0x3F00 <= addr <= 0x3FFF:
+            addr &= 0x001F
+            if addr == 0x0010:
+                addr = 0x0000
+            if addr == 0x0014:
+                addr = 0x0004
+            if addr == 0x0018:
+                addr = 0x0008
+            if addr == 0x001C:
+                addr = 0x000C
+            self.paletteTable[addr] = data            
+
+    def setPalettePanel(self) -> void:    
+        self.palettePanel[0x00],self.palettePanel[0x01],self.palettePanel[0x02],self.palettePanel[0x03],self.palettePanel[0x04],self.palettePanel[0x05],self.palettePanel[0x06],self.palettePanel[0x07],self.palettePanel[0x08],self.palettePanel[0x09],self.palettePanel[0x0a],self.palettePanel[0x0b],self.palettePanel[0x0c],self.palettePanel[0x0d],self.palettePanel[0x0e],self.palettePanel[0x0f] = Pixel( 84,  84,  84), Pixel(  0,  30, 116), Pixel(  8,  16, 144), Pixel( 48,   0, 136), Pixel( 68,   0, 100), Pixel( 92,   0,  48), Pixel( 84,   4,   0), Pixel( 60,  24,   0), Pixel( 32,  42,   0), Pixel(  8,  58,   0), Pixel(  0,  64,   0), Pixel(  0,  60,   0), Pixel(  0,  50,  60), Pixel(  0,   0,   0), Pixel(  0,   0,   0), Pixel(  0,   0,   0)
+        self.palettePanel[0x10],self.palettePanel[0x11],self.palettePanel[0x12],self.palettePanel[0x13],self.palettePanel[0x14],self.palettePanel[0x15],self.palettePanel[0x16],self.palettePanel[0x17],self.palettePanel[0x18],self.palettePanel[0x19],self.palettePanel[0x1a],self.palettePanel[0x1b],self.palettePanel[0x1c],self.palettePanel[0x1d],self.palettePanel[0x1e],self.palettePanel[0x1f] = Pixel(152, 150, 152), Pixel(  8,  76, 196), Pixel( 48,  50, 236), Pixel( 92,  30, 228), Pixel(136,  20, 176), Pixel(160,  20, 100), Pixel(152,  34,  32), Pixel(120,  60,   0), Pixel( 84,  90,   0), Pixel( 40, 114,   0), Pixel(  8, 124,   0), Pixel(  0, 118,  40), Pixel(  0, 102, 120), Pixel(  0,   0,   0), Pixel(  0,   0,   0), Pixel(  0,   0,   0)
+        self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = Pixel(236, 238, 236), Pixel( 76, 154, 236), Pixel(120, 124, 236), Pixel(176,  98, 236), Pixel(228,  84, 236), Pixel(236,  88, 180), Pixel(236, 106, 100), Pixel(212, 136,  32), Pixel(160, 170,   0), Pixel(116, 196,   0), Pixel( 76, 208,  32), Pixel( 56, 204, 108), Pixel( 56, 180, 204), Pixel( 60,  60,  60), Pixel(  0,   0,   0), Pixel(  0,   0,   0)
+        self.palettePanel[0x30],self.palettePanel[0x31],self.palettePanel[0x32],self.palettePanel[0x33],self.palettePanel[0x34],self.palettePanel[0x35],self.palettePanel[0x36],self.palettePanel[0x37],self.palettePanel[0x38],self.palettePanel[0x39],self.palettePanel[0x3a],self.palettePanel[0x3b],self.palettePanel[0x3c],self.palettePanel[0x3d],self.palettePanel[0x3e],self.palettePanel[0x3f] = Pixel(236, 238, 236), Pixel(168, 204, 236), Pixel(188, 188, 236), Pixel(212, 178, 236), Pixel(236, 174, 236), Pixel(236, 174, 212), Pixel(236, 180, 176), Pixel(228, 196, 144), Pixel(204, 210, 120), Pixel(180, 222, 120), Pixel(168, 226, 144), Pixel(152, 226, 180), Pixel(160, 214, 228), Pixel(160, 162, 160), Pixel(  0,   0,   0), Pixel(  0,   0,   0)
+
+    def showPalettePanel(self) -> void:
+        rgb = zeros((4, 16, 3)).astype(uint8)
+        for row in range(4):
+            for col in range(16):
+                pixel = self.palettePanel[row * 16 + col]
+                rgb[row][col][0], rgb[row][col][1], rgb[row][col][2] = pixel.r, pixel.g, pixel.b
+        plt.imshow(rgb)
+        plt.axis('off')
+        plt.show()
+
+    def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> Pixel:
+        return self.palettePanel[self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F]
+
+    def getPatternTable(self, i: uint8, palette: uint8) -> Sprite:
+        for tileY in range(0,16):
+            for tileX in range(0,16):
+                offset: uint16 = tileY * 256 + tileX * 16
+                for row in range(0,8):
+                    tile_lsb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
+                    tile_msb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
+                    for col in range(0,8):
+                        pixel: uint8 = (tile_lsb & 0x01) + (tile_msb & 0x01)
+                        tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
+                        self.spritePatternTable[i].setPixel(
+                            tileX * 8 + (7 - col),
+                            tileY * 8 + row,
+                            self.getColorFromPaletteTable(palette, pixel)
+                        )
+        
+        return self.spritePatternTable[i]
+
+    def reset(self) -> void:
+        self.fine_x = 0x00
+        self.address_latch = 0x00
+        self.ppu_data_buffer = 0x00
+        self.scanline, self.cycle  = 0, 0
+        self.background_next_tile_id = 0x00
+        self.background_next_tile_attribute = 0x00
+        self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
+        self.background_shifter_pattern_lo, self.background_shifter_pattern_hi = 0x0000, 0x0000
+        self.background_shifter_attribute_lo, self.background_shifter_attribute_hi = 0x0000, 0x0000
+        self.status = PPU2C02.Status(bytes=0x00)
+        self.mask = PPU2C02.Mask(bytes=0x00)
+        self.control = PPU2C02.PPUCTRL(bytes=0x00)
+        self.vram_addr = PPU2C02.LoopRegister(bytes=0x00)
+        self.tram_addr = PPU2C02.LoopRegister(bytes=0x00)
+
     def clock(self) -> void:
+        def incrementScrollX() -> None:
+            if self.mask.render_background == 1 or self.mask.render_sprites == 1:
+                if self.vram_addr.coarse_x == 31:
+                    self.vram_addr.coarse_x = 0
+                    self.vram_addr.nametable_x = ~self.vram_addr.nametable_x
+                else:
+                    self.vram_addr.coarse_x += 1
+
+        def incrementScrollY() -> None:
+            if self.mask.render_background == 1 or self.mask.render_sprites == 1:
+                if self.vram_addr.fine_y < 7:
+                    self.vram_addr.fine_y += 1
+                else:
+                    self.vram_addr.fine_y = 0
+                    if self.vram_addr.coarse_y == 29:
+                        self.vram_addr.coarse_y = 0
+                        self.vram_addr.nametable_y = ~self.vram_addr.nametable_y
+                    elif self.vram_addr.coarse_y == 31:
+                        self.vram_addr.coarse_y = 0
+                    else:
+                        self.vram_addr.coarse_y += 1
+
+        def transferAddressX() -> None:
+            if self.mask.render_background == 1 or self.mask.render_sprites == 1:
+                self.vram_addr.nametable_x = self.tram_addr.nametable_x
+                self.vram_addr.coarse_x = self.tram_addr.coarse_x
+
+        def transferAddressY() -> None:
+            if self.mask.render_background == 1 or self.mask.render_sprites == 1:
+                self.vram_addr.fine_y = self.tram_addr.fine_y
+                self.vram_addr.nametable_y = self.tram_addr.nametable_y
+                self.vram_addr.coarse_y = self.tram_addr.coarse_y
+
+        def loadBackgroundShifters() -> None:
+            self.background_shifter_pattern_lo = (self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb
+            self.background_shifter_pattern_hi = (self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb 
+            self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if self.background_next_tile_attribute & 0b01 > 0 else 0x00)
+            self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if self.background_next_tile_attribute & 0b10 > 0 else 0x00)
+
+        def updateShifters() -> None:
+            if self.mask.render_background == 1:
+                self.background_shifter_pattern_lo <<= 1
+                self.background_shifter_pattern_hi <<= 1
+                self.background_shifter_attribute_lo <<= 1
+                self.background_shifter_attribute_hi <<= 1
+
+        if -1 <= self.scanline < 240:
+            if self.scanline == 0 and self.cycle == 0:
+                self.cycle = 1
+            if self.scanline == -1 and self.cycle == 1:
+                self.status.vertical_blank = 0
+            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338):
+                updateShifters()
+                v: uint16 = (self.cycle - 1) % 8
+                if v == 0:
+                    loadBackgroundShifters()
+                    self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.reg & 0x0FFF))
+                elif v == 2:
+                    self.background_next_tile_attribute = self.readByPPU(0x23C0 \
+                        | (self.vram_addr.nametable_y << 11) \
+                        | (self.vram_addr.nametable_x << 10) \
+                        | ((self.vram_addr.coarse_y >> 2) << 3) \
+                        | (self.vram_addr.coarse_x >> 2)    
+                    )
+                    if self.vram_addr.coarse_y & 0x02 > 0:
+                        self.background_next_tile_attribute >>= 4
+                    if self.vram_addr.coarse_x & 0x02 > 0:
+                        self.background_next_tile_attribute >>= 2
+                    self.background_next_tile_attribute &= 0x03
+                elif v == 4:
+                    self.background_next_tile_lsb = self.readByPPU((self.control.pattern_background << 12) \
+                        + uint16(self.background_next_tile_id << 4) \
+                        + (self.vram_addr.fine_y) + 0
+                    )
+                elif v == 6:
+                    self.background_next_tile_msb = self.readByPPU((self.control.pattern_background << 12) \
+                        + uint16(self.background_next_tile_id << 4) \
+                        + (self.vram_addr.fine_y) + 8
+                    )
+                elif v == 7:
+                    incrementScrollX()
+            if self.cycle == 256:
+                incrementScrollY()
+            if self.cycle == 257:
+                loadBackgroundShifters()
+                transferAddressX()
+            if self.cycle == 338 or self.cycle == 340:
+                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.reg & 0x0FFF))
+            if self.scanline == -1 and self.cycle >= 280 and self.cycle < 305:
+                transferAddressY()
+        if self.scanline == 240:
+            pass
+        if 241 <= self.scanline < 261:
+            if self.scanline == 241 and self.cycle == 1:
+                self.status.vertical_blank = 1
+                if self.control.enable_nmi:
+                    self.nmi = True
+
+        background_pixel: uint8 = 0x00
+        background_palette: uint8 = 0x00
+        if self.mask.render_background == 1:
+            bit_mux: uint16 = 0x8000 >> self.fine_x
+
+            background_pixel_0: uint8 = (self.background_shifter_pattern_lo & bit_mux) > 0
+            background_pixel_1: uint8 = (self.background_shifter_pattern_hi & bit_mux) > 0
+            background_pixel = (background_pixel_0 << 1) | background_pixel_1
+
+            background_palette_0: uint8 = (self.background_shifter_attribute_lo & bit_mux) > 0
+            background_palette_1: uint8 = (self.background_shifter_attribute_hi & bit_mux) > 0
+            background_palette = (background_palette_1 << 1) | background_palette_0
+        
+        self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.getColorFromPaletteTable(background_palette, background_pixel))
+        
         self.cycle += 1
         if self.cycle >= 341:
             self.cycle = 0
-
-    def drawPattern(self, index: int, scale: int = 1) -> void:
-        plt.figure(figsize=(scale,scale))
-
-        patternTable = self.patternTables[index]
-        for i in range(0, len(patternTable), 16):
-            plt.subplot(16,16,i//16+1)
-            msb, lsb = Tile(patternTable[i:i+8]), Tile(patternTable[i+8:i+16])
-            combined = Tile.combine(msb, lsb)
-            plt.imshow(combined)
-            plt.axis('off')
-        plt.show()        
-
-    def setPalette(self) -> void:    
-        self.paletteTable[0x00],self.paletteTable[0x01],self.paletteTable[0x02],self.paletteTable[0x03],self.paletteTable[0x04],self.paletteTable[0x05],self.paletteTable[0x06],self.paletteTable[0x07],self.paletteTable[0x08],self.paletteTable[0x09],self.paletteTable[0x0a],self.paletteTable[0x0b],self.paletteTable[0x0c],self.paletteTable[0x0d],self.paletteTable[0x0e],self.paletteTable[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.paletteTable[0x10],self.paletteTable[0x11],self.paletteTable[0x12],self.paletteTable[0x13],self.paletteTable[0x14],self.paletteTable[0x15],self.paletteTable[0x16],self.paletteTable[0x17],self.paletteTable[0x18],self.paletteTable[0x19],self.paletteTable[0x1a],self.paletteTable[0x1b],self.paletteTable[0x1c],self.paletteTable[0x1d],self.paletteTable[0x1e],self.paletteTable[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.paletteTable[0x20],self.paletteTable[0x21],self.paletteTable[0x22],self.paletteTable[0x23],self.paletteTable[0x24],self.paletteTable[0x25],self.paletteTable[0x26],self.paletteTable[0x27],self.paletteTable[0x28],self.paletteTable[0x29],self.paletteTable[0x2a],self.paletteTable[0x2b],self.paletteTable[0x2c],self.paletteTable[0x2d],self.paletteTable[0x2e],self.paletteTable[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
-        self.paletteTable[0x30],self.paletteTable[0x31],self.paletteTable[0x32],self.paletteTable[0x33],self.paletteTable[0x34],self.paletteTable[0x35],self.paletteTable[0x36],self.paletteTable[0x37],self.paletteTable[0x38],self.paletteTable[0x39],self.paletteTable[0x3a],self.paletteTable[0x3b],self.paletteTable[0x3c],self.paletteTable[0x3d],self.paletteTable[0x3e],self.paletteTable[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
-
-    def drawPalette(self, scale: int = 1) -> void:
-        plt.figure(figsize=(scale,scale))
-
-        matrix = array(self.paletteTable).reshape((4,16,3))
-        plt.imshow(matrix)
-        plt.axis('off')
-        plt.show()
+            self.scanline += 1
+            if self.scanline >= 261:
+                self.scanline = -1
+                self.frame_complete = True
