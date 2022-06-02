@@ -52,6 +52,7 @@ class Cartridge:
     playChoicePMemory: bytes
 
     mapper: Mapper
+    mirror: MIRROR.HORIZONTAL
 
     def __init__(self, filename: str) -> None:
         with open(filename, 'rb') as nes:
@@ -73,6 +74,7 @@ class Cartridge:
             mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             if mapperNo == 000:
                 self.mapper = Mapper000(PRGBanks, CHRBanks)
+            self.mirror = Cartridge.MIRROR.VERTICAL if self.header.mapper1 & 0x01 else Cartridge.MIRROR.HORIZONTAL
             
     def readByCPU(self, addr: uint16) -> Tuple[bool, uint8]:
         success, mapped_addr = self.mapper.mapReadByCPU(addr)
