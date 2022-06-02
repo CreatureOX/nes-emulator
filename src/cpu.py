@@ -1078,65 +1078,65 @@ class CPU6502:
         for addr in range(start, end, 16):
             print("${addr:#04X}: {codes}".format(\
                 addr=addr,\
-                codes=" ".join(["{hex:02X}".format(hex=code) for code in self.bus.ram[addr:addr+16 if addr+16<=end else end]]))\
-            )
+                codes=" ".join(["{hex:02X}".format(hex=self.read(addr)) for addr in range(addr, min(addr+16, end))])\
+            ))
         print()
         addr = start
         while addr < end:
-            opcode = self.bus.ram[addr]
+            opcode = self.read(addr)
             opaddr = addr
             addr += 1
             op = self.lookup[opcode]
             if op.addrmode == "IMP":
                 value = "    "
             if op.addrmode == "IMM":
-                value = "#${value:02X}".format(value=self.bus.ram[addr])
+                value = "#${value:02X}".format(value=self.read(addr))
                 addr += 1
             elif op.addrmode == "ZP0":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
                 value = "${value:02X}".format(value=lo) 
             elif op.addrmode == "ZPX":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
                 value = "${value:02X},X".format(value=lo) 
             elif op.addrmode == "ZPY":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
                 value = "${value:02X},Y".format(value=lo)
             elif op.addrmode == "IZX":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
                 value = "(${value:02X},X)".format(value=lo)
             elif op.addrmode == "IZY":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1  
                 value = "(${value:02X},Y)".format(value=lo)  
             elif op.addrmode == "ABS":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
-                hi = self.bus.ram[addr]
+                hi = self.read(addr)
                 addr += 1
                 value = "${value:02X}".format(value=hi<<8|lo)
             elif op.addrmode == "ABX":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
-                hi = self.bus.ram[addr]
+                hi = self.read(addr)
                 addr += 1
                 value = "${value:02X},X".format(value=hi<<8|lo)
             elif op.addrmode == "ABY":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
-                hi = self.bus.ram[addr]
+                hi = self.read(addr)
                 addr += 1
                 value = "${value:02X},Y".format(value=hi<<8|lo)
             elif op.addrmode == "IND":
-                lo = self.bus.ram[addr]
+                lo = self.read(addr)
                 addr += 1
-                hi = self.bus.ram[addr]
+                hi = self.read(addr)
                 addr += 1
                 value = "(${value:02X})".format(value=hi<<8|lo)
             elif op.addrmode == "REL":
-                value = "${value:02X} [${offset:04X}]".format(value=self.bus.ram[addr],offset=addr+1+self.bus.ram[addr])
+                value = "${value:02X} [${offset:04X}]".format(value=self.read(addr),offset=addr+1+self.read(addr))
                 addr += 1
             print("${addr:04X}: {name} {value:11s} ({addrmode})".format(addr=opaddr,name=op.name,value=value,addrmode=op.addrmode))
