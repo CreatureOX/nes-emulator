@@ -30,11 +30,13 @@ class Sprite:
     def __init__(self, width: uint8, height: uint8) -> None:
         self.width, self.height = width, height
         self.matrix = [[None] * width] * height
-        self.rgb = zeros((width, height, 3)).astype(uint8)
+        self.rgb = zeros((height, width, 3)).astype(uint8)
 
     def setPixel(self, x: uint8, y: uint8, pixel: Pixel) -> None:
-        self.matrix[x][y] = pixel
-        self.rgb[x][y][0], self.rgb[x][y][1], self.rgb[x][y][2] = pixel.r, pixel.g, pixel.b
+        if (x < 0 or x >= self.width) or (y < 0 or y >= self.height):
+            return
+        self.matrix[y][x] = pixel
+        self.rgb[y][x][0], self.rgb[y][x][1], self.rgb[y][x][2] = pixel.r, pixel.g, pixel.b
 
     def show(self) -> None:
         plt.imshow(self.rgb)
