@@ -1,8 +1,9 @@
 from collections import namedtuple
 from enum import IntEnum
+from typing import List
 from numpy import uint16, uint32, uint8, void
 
-from .bus import Bus, CPUBus
+from bus import CPUBus
 
 
 class CPU6502:
@@ -32,11 +33,9 @@ class CPU6502:
         else:
             self.status &= ~int(f.value)
 
+    ram: List[uint8] = [0x00] * 2 * 1024
     bus: CPUBus
-
-    def connectBus(self, bus: CPUBus) -> void:
-        self.bus = bus
-                
+     
     def read(self, addr: uint16) -> uint8:
         return self.bus.read(addr, False)
 
@@ -936,7 +935,8 @@ class CPU6502:
         '''
         return 0
 
-    def __init__(self) -> None:
+    def __init__(self, bus: CPUBus) -> None:
+        self.bus = bus
         self.address_modes = {
             "IMP": getattr(self, "IMP"), "IMM": getattr(self, "IMM"),
             "ZP0": getattr(self, "ZP0"), "ZPX": getattr(self, "ZPX"),

@@ -4,10 +4,11 @@ from turtle import width
 from typing import List
 from matplotlib import pyplot as plt
 from numpy import uint16, uint8, void, zeros
+from bus import CPUBus
 
-from src.cartridge import Cartridge
-from src.graph import Pixel, Sprite
-from src.utils import get_bit, set_bit
+from cartridge import Cartridge
+from graph import Pixel, Sprite
+from utils import get_bit, set_bit
 
 
 class PPU2C02:
@@ -368,8 +369,14 @@ class PPU2C02:
 
     frame_complete: bool = False 
 
-    def __init__(self) -> None:
+    bus: CPUBus
+
+    def __init__(self, bus: CPUBus) -> None:
+        self.bus = bus
         self.setPalettePanel()
+
+    def connectCartridge(self, cartridge: Cartridge):
+        self.cartridge = cartridge
 
     def readByCPU(self, addr: uint16, readonly: bool = False) -> uint8:
         data: uint8 = 0x00

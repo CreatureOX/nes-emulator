@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Tuple
 from numpy import uint16, uint8
 
-from src.mapper import Mapper, Mapper000
+from mapper import Mapper, Mapper000
 
 
 class Cartridge:
@@ -95,3 +95,6 @@ class Cartridge:
         if success:
             self.CHRMemory[mapped_addr] = data
         return success
+
+    def connectBus(self, bus):
+        self.bus = bus
