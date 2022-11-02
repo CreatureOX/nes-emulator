@@ -46,8 +46,8 @@ class Cartridge:
 
     header: Header
     trainer: bytes
-    PRGMemory: bytes
-    CHRMemory: bytes
+    PRGMemory: bytearray
+    CHRMemory: bytearray
     playChoiceINSTMemory: bytes
     playChoicePMemory: bytes
 
@@ -61,11 +61,11 @@ class Cartridge:
             if self.header.mapper1 & 0b100 != 0:
                 self.trainer = nes.read(512)
             
-            PRGBanks = 16384 * self.header.prg_rom_chunks
-            self.PRGMemory = nes.read(PRGBanks)
+            PRGBanks = self.header.prg_rom_chunks
+            self.PRGMemory = bytearray(nes.read(16384 * PRGBanks))
 
-            CHRBanks = 8192 * self.header.chr_rom_chunks
-            self.CHRMemory = nes.read(CHRBanks)
+            CHRBanks = self.header.chr_rom_chunks
+            self.CHRMemory = bytearray(nes.read(8192 * CHRBanks)) if CHRBanks > 0 else bytearray(nes.read(8192))
 
             if self.header.mapper2 & 0b10 != 0:
                 self.playChoiceINSTMemory = nes.read(8192)

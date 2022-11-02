@@ -324,7 +324,7 @@ class CPU6502:
 
         self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x00)
         self.setFlag(self.FLAGS.N, self.fetched & (1 << 7))
-        self.setFlag(self.V, self.fetched & (1 << 6))
+        self.setFlag(self.FLAGS.V, self.fetched & (1 << 6))
 
         return 0
 
@@ -463,7 +463,7 @@ class CPU6502:
         Function:    V = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.V, False)
+        self.setFlag(self.FLAGS.V, False)
         return 0
 
     def CMP(self) -> uint8:
@@ -790,7 +790,7 @@ class CPU6502:
         self.stkp += 1
         self.pc = self.read(0x0100 + self.stkp)
         self.stkp += 1
-        pc |= self.read(0x0100 + self.stkp) << 8
+        self.pc |= self.read(0x0100 + self.stkp) << 8
         return 0
 
     def RTS(self) -> uint8:
@@ -1073,6 +1073,9 @@ class CPU6502:
 
         self.clock_count += 1
         self.remaining_cycles -= 1
+
+    def complete(self) -> bool:
+        return self.remaining_cycles == 0
     
     def disassemble(self, start: uint16, end: uint16) -> void:
         for addr in range(start, end, 16):
