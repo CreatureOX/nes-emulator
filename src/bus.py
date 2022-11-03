@@ -1,5 +1,5 @@
 from typing import List
-from numpy import uint16, uint8, void
+from numpy import uint16, uint8, uint32, void
 from cartridge import Cartridge
 
 class Bus:
@@ -17,6 +17,7 @@ class Bus:
 
 class CPUBus:
     ram: List[uint8] = [0x00] * 2 * 1024
+    nSystemClockCounter: uint32 = 0
 
     def __init__(self, cartridge: Cartridge) -> None:
         from cpu import CPU6502
@@ -47,9 +48,40 @@ class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
 
+    def reset(self) -> None:
+        self.cpu.reset()
+        self.nSystemClockCounter = 0
+
+    def clock(self) -> None:
+        self.ppu.clock()
+        if self.nSystemClockCounter % 3 == 0:
+            self.cpu.clock()
+        self.nSystemClockCounter += 1
+
 if __name__ == '__main__':
     cart = Cartridge("./Super Mario Bros (E).nes")
     bus = CPUBus(cart)
-    bus.cpu.disassemble(start=0x8000, end=0x800F)
-    bus.ppu.clock(debug=True)
+    #bus.cpu.disassemble(start=0x8000, end=0x800F)
+    bus.reset()
+    while True:
+        bus.clock()
+        if bus.ppu.frame_complete:
+            break
+    while True:
+        bus.clock()
+        if bus.cpu.complete():
+            break
+        bus.ppu.frame_complete = False
+    bus.ppu.getScreen().save("1.png")
+    print()
+    while True:
+        bus.clock()
+        if bus.ppu.frame_complete:
+            break
+    while True:
+        bus.clock()
+        if bus.cpu.complete():
+            break
+        bus.ppu.frame_complete = False
+    bus.ppu.getScreen().save("2.png")
 

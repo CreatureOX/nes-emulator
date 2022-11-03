@@ -377,6 +377,9 @@ class PPU2C02:
 
     def connectCartridge(self, cartridge: Cartridge):
         self.cartridge = cartridge
+    
+    def getScreen(self) -> Sprite:
+        return self.spriteScreen
 
     def readByCPU(self, addr: uint16, readonly: bool = False) -> uint8:
         data: uint8 = 0x00
@@ -522,7 +525,6 @@ class PPU2C02:
             if addr == 0x001C:
                 addr = 0x000C
             data = self.paletteTable[addr] & (0x30 if self.mask.get_grayscale() == 1 else 0x3F)
-
         return data
 
     def writeByPPU(self, addr: uint16, data: uint8) -> void:
@@ -744,7 +746,7 @@ class PPU2C02:
             background_palette_1: uint8 = (self.background_shifter_attribute_hi & bit_mux) > 0
             background_palette = (background_palette_1 << 1) | background_palette_0
         
-        self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.getColorFromPaletteTable(background_palette, background_pixel))
+        self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.palettePanel[0x3F if randint(0,1) == 1 else 0x30])
         
         if debug:
             print(" -> ".join(log))
@@ -756,3 +758,4 @@ class PPU2C02:
             if self.scanline >= 261:
                 self.scanline = -1
                 self.frame_complete = True
+                

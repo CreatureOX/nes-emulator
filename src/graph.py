@@ -42,4 +42,16 @@ class Sprite:
         plt.imshow(self.rgb)
         plt.axis('off')
         plt.show()
+
+    def save(self, name: str) -> None:
+        plt.imsave(name, self.rgb)
+
+    def toString(self) -> str:
+        string = ""
+        for i in range(self.height):
+            for j in range(self.width):
+                string += "{r} {g} {b}".format(r=self.rgb[i][j][0], g=self.rgb[i][j][1], b=self.rgb[i][j][2])
+                string += ","
+            string += "\n"
+        return string
   
