@@ -382,7 +382,7 @@ class PPU2C02:
         return self.spriteScreen
 
     def readByCPU(self, addr: uint16, readonly: bool = False) -> uint8:
-        data: uint8 = 0x00
+        addr, data = uint16(addr), uint8(0x00)
 
         if readonly:
             if addr == 0x0000:
@@ -444,6 +444,7 @@ class PPU2C02:
         return data
 
     def writeByCPU(self, addr: uint16, data: uint8) -> void:
+        addr, data = uint16(addr), uint8(data)
         if addr == 0x0000:
             # Control
             self.control.set_reg(data)
@@ -486,7 +487,7 @@ class PPU2C02:
             self.vram_addr.set_reg(self.vram_addr.get_reg() + (32 if self.control.get_increment_mode() else 1))
 
     def readByPPU(self, addr: uint16, readonly: bool = False) -> uint8:
-        data: uint8 = 0x00
+        addr, data = uint16(addr), uint8(0x00)
         addr &= 0x3FFF
 
         success, data = self.cartridge.readByPPU(addr)
@@ -525,12 +526,13 @@ class PPU2C02:
             if addr == 0x001C:
                 addr = 0x000C
             data = self.paletteTable[addr] & (0x30 if self.mask.get_grayscale() == 1 else 0x3F)
-        return data
+        return uint8(data)
 
     def writeByPPU(self, addr: uint16, data: uint8) -> void:
+        addr, data = uint16(addr), uint8(data)
         addr &= 0x3FFF     
 
-        success = self.cartridge.writeByPPU(addr)
+        success = self.cartridge.writeByPPU(addr, data)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:

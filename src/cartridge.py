@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import Tuple
-from numpy import uint16, uint8
+from typing import Tuple, List
+from numpy import uint16, uint8, frombuffer
 
 from mapper import Mapper, Mapper000
 
@@ -46,8 +46,8 @@ class Cartridge:
 
     header: Header
     trainer: bytes
-    PRGMemory: bytearray
-    CHRMemory: bytearray
+    PRGMemory: List[uint8]
+    CHRMemory: List[uint8]
     playChoiceINSTMemory: bytes
     playChoicePMemory: bytes
 
@@ -62,10 +62,10 @@ class Cartridge:
                 self.trainer = nes.read(512)
             
             PRGBanks = self.header.prg_rom_chunks
-            self.PRGMemory = bytearray(nes.read(16384 * PRGBanks))
+            self.PRGMemory = frombuffer(nes.read(16384 * PRGBanks), dtype=uint8)
 
             CHRBanks = self.header.chr_rom_chunks
-            self.CHRMemory = bytearray(nes.read(8192 * CHRBanks)) if CHRBanks > 0 else bytearray(nes.read(8192))
+            self.CHRMemory = frombuffer(nes.read(8192 * CHRBanks), dtype=uint8) if CHRBanks > 0 else frombuffer(nes.read(8192), dtype=uint8)
 
             if self.header.mapper2 & 0b10 != 0:
                 self.playChoiceINSTMemory = nes.read(8192)
@@ -77,20 +77,24 @@ class Cartridge:
             self.mirror = Cartridge.MIRROR.VERTICAL if self.header.mapper1 & 0x01 else Cartridge.MIRROR.HORIZONTAL
             
     def readByCPU(self, addr: uint16) -> Tuple[bool, uint8]:
+        addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByCPU(addr)
         return (success, self.PRGMemory[mapped_addr] if success else 0x00)
 
     def writeByCPU(self, addr: uint16, data: uint8) -> bool:
+        addr, data = uint16(addr), uint8(data)
         success, mapped_addr = self.mapper.mapWriteByCPU(addr)
         if success:
             self.PRGMemory[mapped_addr] = data
         return success
 
     def readByPPU(self, addr: uint16) -> Tuple[bool, uint8]:
+        addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByPPU(addr)
         return (success, self.CHRMemory[mapped_addr] if success else 0x00)
 
     def writeByPPU(self, addr: uint16, data: uint8) -> bool:
+        addr, data = uint16(addr), uint8(data)
         success, mapped_addr = self.mapper.mapWriteByPPU(addr)
         if success:
             self.CHRMemory[mapped_addr] = data

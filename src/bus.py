@@ -30,23 +30,25 @@ class CPUBus:
         self.ppu.connectCartridge(self.cartridge)
 
     def read(self, addr: uint16, readOnly: bool) -> uint8:
+        addr = uint16(addr)
         success, data = self.cartridge.readByCPU(addr)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
-            data = self.ppu.readByCPU(addr & 0x0007, readOnly)
-        return data
+            data = self.ppu.readByCPU(addr & uint16(0x0007), readOnly)
+        return uint8(data)
 
     def write(self, addr: uint16, data: uint8) -> void:
+        addr, data = uint16(addr), uint8(data)
         success = self.cartridge.writeByCPU(addr, data)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
-            self.ppu.writeByCPU(addr & 0x0007, data)
+            self.ppu.writeByCPU(addr & uint16(0x0007), data)
 
     def reset(self) -> None:
         self.cpu.reset()
@@ -59,29 +61,22 @@ class CPUBus:
         self.nSystemClockCounter += 1
 
 if __name__ == '__main__':
-    cart = Cartridge("./Super Mario Bros (E).nes")
+    cart = Cartridge("./nestest.nes")
     bus = CPUBus(cart)
-    #bus.cpu.disassemble(start=0x8000, end=0x800F)
     bus.reset()
-    while True:
-        bus.clock()
-        if bus.ppu.frame_complete:
-            break
-    while True:
-        bus.clock()
-        if bus.cpu.complete():
-            break
+
+    def test():
+        while True:
+            bus.clock()
+            if bus.ppu.frame_complete:
+                break
+        while True:
+            bus.clock()
+            if bus.cpu.complete():
+                break
         bus.ppu.frame_complete = False
-    bus.ppu.getScreen().save("1.png")
-    print()
-    while True:
-        bus.clock()
-        if bus.ppu.frame_complete:
-            break
-    while True:
-        bus.clock()
-        if bus.cpu.complete():
-            break
-        bus.ppu.frame_complete = False
-    bus.ppu.getScreen().save("2.png")
+
+    for _ in range(6):
+        test()
+    #bus.cpu.disassemble(start=0xC000, end=0xC020)
 
