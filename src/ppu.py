@@ -27,37 +27,36 @@ class PPU2C02:
             reg = uint8(reg)
             self.reg = reg
             
-            self.sprite_overflow = get_bit(reg, 5)
-            self.sprite_zero_hit = get_bit(reg, 6)
-            self.vertical_blank = get_bit(reg, 7)
+            self.sprite_overflow = uint8(get_bit(reg, 5))
+            self.sprite_zero_hit = uint8(get_bit(reg, 6))
+            self.vertical_blank = uint8(get_bit(reg, 7))
 
         def set_sprite_overflow(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 5, value)
+            self.reg = uint8(set_bit(self.reg, 5, value))
             self.sprite_overflow = value
 
         def set_sprite_zero_hit(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 6, value)
+            self.reg = uint8(set_bit(self.reg, 6, value))
             self.sprite_zero_hit = value
 
         def set_vertical_blank(self, value: uint8) -> None:
             value = uint8(value)
-            reg = self.reg
-            self.reg = set_bit(self.reg, 7, value)
+            self.reg = uint8(set_bit(self.reg, 7, value))
             self.vertical_blank = value
 
         def get_reg(self) -> uint8:
-            return self.reg
+            return uint8(self.reg)
 
         def get_sprite_overflow(self) -> uint8:
-            return self.sprite_overflow
+            return uint8(self.sprite_overflow)
 
         def get_sprite_zero_hit(self) -> uint8:
-            return self.sprite_zero_hit
+            return uint8(self.sprite_zero_hit)
 
         def get_vertical_blank(self) -> uint8:
-            return self.vertical_blank
+            return uint8(self.vertical_blank)
 
     class Mask:
         reg: uint8
@@ -78,81 +77,81 @@ class PPU2C02:
             reg = uint8(reg)
             self.reg = reg
 
-            self.grayscale = get_bit(reg, 0)
-            self.render_background_left = get_bit(reg, 1)
-            self.render_sprites_left = get_bit(reg, 2)
-            self.render_background = get_bit(reg, 3)
-            self.render_sprites = get_bit(reg, 4)
-            self.enhance_red = get_bit(reg, 5)
-            self.enhance_green = get_bit(reg, 6)
-            self.enhance_blue = get_bit(reg, 7)
+            self.grayscale = uint8(get_bit(reg, 0))
+            self.render_background_left = uint8(get_bit(reg, 1))
+            self.render_sprites_left = uint8(get_bit(reg, 2))
+            self.render_background = uint8(get_bit(reg, 3))
+            self.render_sprites = uint8(get_bit(reg, 4))
+            self.enhance_red = uint8(get_bit(reg, 5))
+            self.enhance_green = uint8(get_bit(reg, 6))
+            self.enhance_blue = uint8(get_bit(reg, 7))
 
         def set_grayscale(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 0, value)
+            self.reg = uint8(set_bit(self.reg, 0, value))
             self.grayscale = value
 
         def set_render_background_left(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 1, value)
+            self.reg = uint8(set_bit(self.reg, 1, value))
             self.render_background_left = value
 
         def set_render_sprites_left(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 2, value)
+            self.reg = uint8(set_bit(self.reg, 2, value))
             self.render_sprites_left = value
 
         def set_render_background(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 3, value)
+            self.reg = uint8(set_bit(self.reg, 3, value))
             self.render_background = value
 
         def set_render_sprites(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 4, value)
+            self.reg = uint8(set_bit(self.reg, 4, value))
             self.render_sprites = value
 
         def set_enhance_red(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 5, value)
+            self.reg = uint8(set_bit(self.reg, 5, value))
             self.enhance_red = value
 
         def set_enhance_green(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 6, value)
+            self.reg = uint8(set_bit(self.reg, 6, value))
             self.enhance_green = value
 
         def set_enhance_blue(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 7, value)
+            self.reg = uint8(set_bit(self.reg, 7, value))
             self.enhance_blue = value
 
         def get_reg(self) -> uint8:
-            return self.reg
+            return uint8(self.reg)
 
         def get_grayscale(self) -> uint8:
-            return self.grayscale
+            return uint8(self.grayscale)
 
         def get_render_background_left(self) -> uint8:
-            return self.render_background_left
+            return uint8(self.render_background_left)
 
         def get_render_sprites_left(self) -> uint8:
-            return self.render_sprites_left
+            return uint8(self.render_sprites_left)
 
         def get_render_background(self) -> uint8:
-            return self.render_background
+            return uint8(self.render_background)
 
         def get_render_sprites(self) -> uint8:
-            return self.render_sprites
+            return uint8(self.render_sprites)
 
         def get_enhance_red(self) -> uint8:
-            return self.enhance_red
+            return uint8(self.enhance_red)
 
         def get_enhance_green(self) -> uint8:
-            return self.enhance_green
+            return uint8(self.enhance_green)
 
         def get_enhance_blue(self) -> uint8:
-            return self.enhance_blue
+            return uint8(self.enhance_blue)
 
     class PPUCTRL:
         reg: uint8
@@ -173,81 +172,81 @@ class PPU2C02:
             reg = uint8(reg)
             self.reg = reg
 
-            self.nametable_x = get_bit(reg, 0)
-            self.nametable_y = get_bit(reg, 1)
-            self.increment_mode = get_bit(reg, 2)
-            self.pattern_sprite = get_bit(reg, 3)
-            self.pattern_background = get_bit(reg, 4)
-            self.sprite_size = get_bit(reg, 5)
-            self.slave_mode = get_bit(reg, 6)
-            self.enable_nmi = get_bit(reg, 7)
+            self.nametable_x = uint8(get_bit(reg, 0))
+            self.nametable_y = uint8(get_bit(reg, 1))
+            self.increment_mode = uint8(get_bit(reg, 2))
+            self.pattern_sprite = uint8(get_bit(reg, 3))
+            self.pattern_background = uint8(get_bit(reg, 4))
+            self.sprite_size = uint8(get_bit(reg, 5))
+            self.slave_mode = uint8(get_bit(reg, 6))
+            self.enable_nmi = uint8(get_bit(reg, 7))
 
         def set_nametable_x(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 0, value)
+            self.reg = uint8(set_bit(self.reg, 0, value))
             self.nametable_x = value
 
         def set_nametable_y(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 1, value)
+            self.reg = uint8(set_bit(self.reg, 1, value))
             self.nametable_y = value
 
         def set_increment_mode(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 2, value)
+            self.reg = uint8(set_bit(self.reg, 2, value))
             self.increment_mode = value
 
         def set_pattern_sprite(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 3, value)
+            self.reg = uint8(set_bit(self.reg, 3, value))
             self.pattern_sprite = value          
 
         def set_pattern_background(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 4, value)
+            self.reg = uint8(set_bit(self.reg, 4, value))
             self.pattern_background = self.reg[4] = value
 
         def set_sprite_size(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 5, value)
+            self.reg = uint8(set_bit(self.reg, 5, value))
             self.sprite_size = value
         
         def set_slave_mode(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 6, value)
+            self.reg = uint8(set_bit(self.reg, 6, value))
             self.slave_mode = value
 
         def set_enable_nmi(self, value: uint8) -> None:
             value = uint8(value)
-            self.reg = set_bit(self.reg, 7, value)
+            self.reg = uint8(set_bit(self.reg, 7, value))
             self.enable_nmi = value
 
         def get_reg(self) -> uint8:
-            return self.reg
+            return uint8(self.reg)
 
         def get_nametable_x(self) -> uint8:
-            return self.nametable_x
+            return uint8(self.nametable_x)
 
         def get_nametable_y(self) -> uint8:
-            return self.nametable_y
+            return uint8(self.nametable_y)
 
         def get_increment_mode(self) -> uint8:
-            return self.increment_mode
+            return uint8(self.increment_mode)
 
         def get_pattern_sprite(self) -> uint8:
-            return self.pattern_sprite
+            return uint8(self.pattern_sprite)
 
         def get_pattern_background(self) -> uint8:
-            return self.pattern_background
+            return uint8(self.pattern_background)
 
         def get_sprite_size(self) -> uint8:
-            return self.sprite_size
+            return uint8(self.sprite_size)
         
         def get_slave_mode(self) -> uint8:
-            return self.slave_mode
+            return uint8(self.slave_mode)
 
         def get_enable_nmi(self) -> uint8:
-            return self.enable_nmi
+            return uint8(self.enable_nmi)
 
     class LoopRegister:
         reg: uint16 = 0x0000
@@ -266,16 +265,16 @@ class PPU2C02:
             reg = uint16(reg)
             self.reg = reg
             
-            self.coarse_x = get_bit(reg, 0) \
+            self.coarse_x = uint16(get_bit(reg, 0) \
                 | get_bit(reg, 1) << 1 \
                 | get_bit(reg, 2) << 2 \
                 | get_bit(reg, 3) << 3 \
-                | get_bit(reg, 4) << 4 
-            self.coarse_y = get_bit(reg, 5) \
+                | get_bit(reg, 4) << 4) 
+            self.coarse_y = uint16(get_bit(reg, 5) \
                 | get_bit(reg, 6) << 1 \
                 | get_bit(reg, 7) << 2 \
                 | get_bit(reg, 8) << 3 \
-                | get_bit(reg, 9) << 4 
+                | get_bit(reg, 9) << 4) 
             self.nametable_x = get_bit(reg, 10)
             self.nametable_y = get_bit(reg, 11)
             self.fine_y = get_bit(reg, 12) \
