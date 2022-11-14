@@ -61,6 +61,9 @@ class Cartridge:
             if self.header.mapper1 & 0b100 != 0:
                 self.trainer = nes.read(512)
             
+            mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
+            self.mirror = Cartridge.MIRROR.VERTICAL if self.header.mapper1 & 0x01 else Cartridge.MIRROR.HORIZONTAL
+            
             PRGBanks = self.header.prg_rom_chunks
             self.PRGMemory = frombuffer(nes.read(16384 * PRGBanks), dtype=uint8)
 
@@ -71,15 +74,13 @@ class Cartridge:
                 self.playChoiceINSTMemory = nes.read(8192)
                 self.playChoicePMemory = nes.read(16)
 
-            mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             if mapperNo == 000:
                 self.mapper = Mapper000(PRGBanks, CHRBanks)
-            self.mirror = Cartridge.MIRROR.VERTICAL if self.header.mapper1 & 0x01 else Cartridge.MIRROR.HORIZONTAL
             
     def readByCPU(self, addr: uint16) -> Tuple[bool, uint8]:
         addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByCPU(addr)
-        return (success, self.PRGMemory[mapped_addr] if success else 0x00)
+        return (success, uint8(self.PRGMemory[mapped_addr] if success else 0x00))
 
     def writeByCPU(self, addr: uint16, data: uint8) -> bool:
         addr, data = uint16(addr), uint8(data)
@@ -91,7 +92,7 @@ class Cartridge:
     def readByPPU(self, addr: uint16) -> Tuple[bool, uint8]:
         addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByPPU(addr)
-        return (success, self.CHRMemory[mapped_addr] if success else 0x00)
+        return (success, uint8(self.CHRMemory[mapped_addr] if success else 0x00))
 
     def writeByPPU(self, addr: uint16, data: uint8) -> bool:
         addr, data = uint16(addr), uint8(data)
@@ -102,3 +103,7 @@ class Cartridge:
 
     def connectBus(self, bus):
         self.bus = bus
+
+    def reset(self):
+        if self.mapper is not None:
+            self.mapper.reset()

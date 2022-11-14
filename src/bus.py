@@ -17,6 +17,8 @@ class Bus:
 
 class CPUBus:
     ram: List[uint8] = [0x00] * 2 * 1024
+    controller: List[uint8] = [0x00] * 2
+    controller_state: List[uint8] = [0x00] * 2
     nSystemClockCounter: uint32 = 0
 
     def __init__(self, cartridge: Cartridge) -> None:
@@ -38,6 +40,9 @@ class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & uint16(0x0007), readOnly)
+        elif 0x4016 <= addr <= 0x4017:
+            data = (self.controller_state[addr & 0x0001] & 0x80) > 0
+            self.controller_state[addr & 0x0001] <<= 1
         return uint8(data)
 
     def write(self, addr: uint16, data: uint8) -> void:
@@ -49,15 +54,22 @@ class CPUBus:
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & uint16(0x0007), data)
+        elif 0x4016 <= addr <= 0x4017:
+            self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
 
     def reset(self) -> None:
+        self.cartridge.reset()
         self.cpu.reset()
+        self.ppu.reset()
         self.nSystemClockCounter = 0
 
     def clock(self) -> None:
         self.ppu.clock()
         if self.nSystemClockCounter % 3 == 0:
             self.cpu.clock()
+        if self.ppu.nmi:
+            self.ppu.nmi = False
+            self.cpu.nmi()
         self.nSystemClockCounter += 1
 
 if __name__ == '__main__':

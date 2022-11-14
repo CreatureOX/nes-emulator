@@ -418,7 +418,7 @@ class PPU2C02:
                 pass
             elif addr == 0x0002:
                 # Status
-                data = (self.status.get_reg() & 0xE0) | (self.ppu_data_buffer & 0x1F)
+                data = uint8((self.status.get_reg() & 0xE0) | (self.ppu_data_buffer & 0x1F))
                 self.status.set_vertical_blank(0)
                 self.address_latch = 0
             elif addr == 0x0003:
@@ -439,7 +439,7 @@ class PPU2C02:
                 self.ppu_data_buffer = self.readByPPU(self.vram_addr.get_reg())
                 if self.vram_addr.get_reg() >= 0x3F00:
                     data = self.ppu_data_buffer
-                self.vram_addr.set_reg(self.vram_addr.get_reg() + 32 if self.control.get_increment_mode() == 1 else 1)      
+                self.vram_addr.set_reg(uint16(self.vram_addr.get_reg() + 32 if self.control.get_increment_mode() == 1 else 1))      
         return uint8(data)
 
     def writeByCPU(self, addr: uint16, data: uint8) -> void:
@@ -474,7 +474,7 @@ class PPU2C02:
         elif addr == 0x0006:
             # PPU Address
             if self.address_latch == 0:
-                self.tram_addr.set_reg((data & 0x3F) << 8 | (self.tram_addr.get_reg() & 0x00FF))
+                self.tram_addr.set_reg(uint16((data & 0x3F) << 8) | (self.tram_addr.get_reg() & 0x00FF))
                 self.address_latch = 1
             else:
                 self.tram_addr.set_reg((self.tram_addr.get_reg() & 0xFF00) | data)
@@ -524,7 +524,7 @@ class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            data = self.paletteTable[addr] & (0x30 if self.mask.get_grayscale() == 1 else 0x3F)
+            data = self.paletteTable[addr] & uint8(0x30 if self.mask.get_grayscale() == 1 else 0x3F)
         return uint8(data)
 
     def writeByPPU(self, addr: uint16, data: uint8) -> void:
@@ -586,8 +586,8 @@ class PPU2C02:
 
     def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> Pixel:
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
-        if color > 0:
-            print("color: {color}".format(color=color))
+        # if color > 0:
+        #     print("color: {color}".format(color=color))
         return self.palettePanel[self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F]
 
     def getPatternTable(self, i: uint8, palette: uint8) -> Sprite:
@@ -625,129 +625,129 @@ class PPU2C02:
         self.tram_addr.set_reg(0x0000)
 
     def clock(self, debug: bool = False) -> void:
-        # def incrementScrollX() -> None:
-        #     if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-        #         if self.vram_addr.get_coarse_x() == 31:
-        #             self.vram_addr.set_coarse_x(0)
-        #             self.vram_addr.set_nametable_x(~self.vram_addr.get_nametable_x())
-        #         else:
-        #             self.vram_addr.set_coarse_x(self.vram_addr.get_coarse_x() + 1)
+        def incrementScrollX() -> None:
+            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+                if self.vram_addr.get_coarse_x() == 31:
+                    self.vram_addr.set_coarse_x(0)
+                    self.vram_addr.set_nametable_x(~self.vram_addr.get_nametable_x())
+                else:
+                    self.vram_addr.set_coarse_x(self.vram_addr.get_coarse_x() + 1)
 
-        # def incrementScrollY() -> None:
-        #     if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-        #         if self.vram_addr.get_fine_y() < 7:
-        #             self.vram_addr.set_fine_y(self.vram_addr.get_fine_y() + 1)
-        #         else:
-        #             self.vram_addr.set_fine_y(0)
-        #             if self.vram_addr.get_coarse_y() == 29:
-        #                 self.vram_addr.set_coarse_y(0)
-        #                 self.vram_addr.set_nametable_y(~self.vram_addr.get_nametable_y())
-        #             elif self.vram_addr.get_coarse_y() == 31:
-        #                 self.vram_addr.set_coarse_y(0)
-        #             else:
-        #                 self.vram_addr.set_coarse_y(self.vram_addr.get_coarse_y() + 1)
+        def incrementScrollY() -> None:
+            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+                if self.vram_addr.get_fine_y() < 7:
+                    self.vram_addr.set_fine_y(self.vram_addr.get_fine_y() + 1)
+                else:
+                    self.vram_addr.set_fine_y(0)
+                    if self.vram_addr.get_coarse_y() == 29:
+                        self.vram_addr.set_coarse_y(0)
+                        self.vram_addr.set_nametable_y(~self.vram_addr.get_nametable_y())
+                    elif self.vram_addr.get_coarse_y() == 31:
+                        self.vram_addr.set_coarse_y(0)
+                    else:
+                        self.vram_addr.set_coarse_y(self.vram_addr.get_coarse_y() + 1)
 
-        # def transferAddressX() -> None:
-        #     if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-        #         self.vram_addr.set_nametable_x(self.tram_addr.get_nametable_x())
-        #         self.vram_addr.set_coarse_x(self.tram_addr.get_coarse_x())
+        def transferAddressX() -> None:
+            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+                self.vram_addr.set_nametable_x(self.tram_addr.get_nametable_x())
+                self.vram_addr.set_coarse_x(self.tram_addr.get_coarse_x())
 
-        # def transferAddressY() -> None:
-        #     if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-        #         self.vram_addr.set_fine_y(self.tram_addr.get_fine_y())
-        #         self.vram_addr.set_nametable_y(self.tram_addr.get_nametable_y())
-        #         self.vram_addr.set_coarse_y(self.tram_addr.get_coarse_y())
+        def transferAddressY() -> None:
+            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+                self.vram_addr.set_fine_y(self.tram_addr.get_fine_y())
+                self.vram_addr.set_nametable_y(self.tram_addr.get_nametable_y())
+                self.vram_addr.set_coarse_y(self.tram_addr.get_coarse_y())
 
-        # def loadBackgroundShifters() -> None:
-        #     self.background_shifter_pattern_lo = (self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb
-        #     self.background_shifter_pattern_hi = (self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb 
-        #     self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if self.background_next_tile_attribute & 0b01 > 0 else 0x00)
-        #     self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if self.background_next_tile_attribute & 0b10 > 0 else 0x00)
+        def loadBackgroundShifters() -> None:
+            self.background_shifter_pattern_lo = uint16((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
+            self.background_shifter_pattern_hi = uint16((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
+            self.background_shifter_attribute_lo = uint16(0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) else 0x00)
+            self.background_shifter_attribute_hi = uint16(0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) else 0x00)
 
-        # def updateShifters() -> None:
-        #     if self.mask.get_render_background() == 1:
-        #         self.background_shifter_pattern_lo <<= 1
-        #         self.background_shifter_pattern_hi <<= 1
-        #         self.background_shifter_attribute_lo <<= 1
-        #         self.background_shifter_attribute_hi <<= 1
+        def updateShifters() -> None:
+            if self.mask.get_render_background() == 1:
+                self.background_shifter_pattern_lo <<= 1
+                self.background_shifter_pattern_hi <<= 1
+                self.background_shifter_attribute_lo <<= 1
+                self.background_shifter_attribute_hi <<= 1
 
-        # log = []
-        # if -1 <= self.scanline < 240:
-        #     log.append("|-1 <= self.scanline < 240|")
-        #     if self.scanline == 0 and self.cycle == 0:
-        #         log.append("|self.scanline == 0 and self.cycle == 0|")
-        #         self.cycle = 1
-        #     if self.scanline == -1 and self.cycle == 1:
-        #         log.append("|self.scanline == -1 and self.cycle == 1|")
-        #         self.status.set_vertical_blank(uint8(0))
-        #     if (2 <= self.cycle < 258) or (321 <= self.cycle < 338):
-        #         log.append("|(2 <= self.cycle < 258) or (321 <= self.cycle < 338)|")
-        #         updateShifters()
-        #         v: uint16 = (self.cycle - 1) % 8
-        #         if v == 0:
-        #             loadBackgroundShifters()
-        #             self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
-        #         elif v == 2:
-        #             self.background_next_tile_attribute = self.readByPPU(0x23C0 \
-        #                 | (self.vram_addr.get_nametable_y() << 11) \
-        #                 | (self.vram_addr.get_nametable_x() << 10) \
-        #                 | ((self.vram_addr.get_coarse_y() >> 2) << 3) \
-        #                 | (self.vram_addr.get_coarse_x() >> 2)    
-        #             )
-        #             if self.vram_addr.get_coarse_y() & 0x02 > 0:
-        #                 self.background_next_tile_attribute >>= 4
-        #             if self.vram_addr.get_coarse_x() & 0x02 > 0:
-        #                 self.background_next_tile_attribute >>= 2
-        #             self.background_next_tile_attribute &= 0x03
-        #         elif v == 4:
-        #             self.background_next_tile_lsb = self.readByPPU((self.control.get_pattern_background() << 12) \
-        #                 + uint16(self.background_next_tile_id << 4) \
-        #                 + (self.vram_addr.get_fine_y()) + 0
-        #             )
-        #         elif v == 6:
-        #             self.background_next_tile_msb = self.readByPPU((self.control.get_pattern_background() << 12) \
-        #                 + uint16(self.background_next_tile_id << 4) \
-        #                 + (self.vram_addr.get_fine_y()) + 8
-        #             )
-        #         elif v == 7:
-        #             incrementScrollX()
-        #     if self.cycle == 256:
-        #         log.append("|self.cycle == 256|")
-        #         incrementScrollY()
-        #     if self.cycle == 257:
-        #         log.append("|self.cycle == 257|")
-        #         loadBackgroundShifters()
-        #         transferAddressX()
-        #     if self.cycle == 338 or self.cycle == 340:
-        #         log.append("|self.cycle == 338 or self.cycle == 340|")
-        #         self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
-        #     if self.scanline == -1 and 280 <= self.cycle < 305:
-        #         log.append("|self.scanline == -1 and 280 <= self.cycle < 305|")
-        #         transferAddressY()
-        # if self.scanline == 240:
-        #     pass
-        # if 241 <= self.scanline < 261:
-        #     log.append("|241 <= self.scanline < 261|")
-        #     if self.scanline == 241 and self.cycle == 1:
-        #         log.append("|self.scanline == 241 and self.cycle == 1|")
-        #         self.status.set_vertical_blank(uint8(1))
-        #         if self.control.get_enable_nmi():
-        #             self.nmi = True
+        log = []
+        if -1 <= self.scanline < 240:
+            log.append("|-1 <= self.scanline < 240|")
+            if self.scanline == 0 and self.cycle == 0:
+                log.append("|self.scanline == 0 and self.cycle == 0|")
+                self.cycle = 1
+            if self.scanline == -1 and self.cycle == 1:
+                log.append("|self.scanline == -1 and self.cycle == 1|")
+                self.status.set_vertical_blank(uint8(0))
+            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338):
+                log.append("|(2 <= self.cycle < 258) or (321 <= self.cycle < 338)|")
+                updateShifters()
+                v: uint16 = (self.cycle - 1) % 8
+                if v == 0:
+                    loadBackgroundShifters()
+                    self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
+                elif v == 2:
+                    self.background_next_tile_attribute = self.readByPPU(0x23C0 \
+                        | (self.vram_addr.get_nametable_y() << 11) \
+                        | (self.vram_addr.get_nametable_x() << 10) \
+                        | ((self.vram_addr.get_coarse_y() >> 2) << 3) \
+                        | (self.vram_addr.get_coarse_x() >> 2)    
+                    )
+                    if self.vram_addr.get_coarse_y() & 0x02 > 0:
+                        self.background_next_tile_attribute >>= uint8(4)
+                    if self.vram_addr.get_coarse_x() & 0x02 > 0:
+                        self.background_next_tile_attribute >>= uint8(2)
+                    self.background_next_tile_attribute &= uint8(0x03)
+                elif v == 4:
+                    self.background_next_tile_lsb = self.readByPPU((self.control.get_pattern_background() << 12) \
+                        + uint16(self.background_next_tile_id << 4) \
+                        + (self.vram_addr.get_fine_y()) + 0
+                    )
+                elif v == 6:
+                    self.background_next_tile_msb = self.readByPPU((self.control.get_pattern_background() << 12) \
+                        + uint16(self.background_next_tile_id << 4) \
+                        + (self.vram_addr.get_fine_y()) + 8
+                    )
+                elif v == 7:
+                    incrementScrollX()
+            if self.cycle == 256:
+                log.append("|self.cycle == 256|")
+                incrementScrollY()
+            if self.cycle == 257:
+                log.append("|self.cycle == 257|")
+                loadBackgroundShifters()
+                transferAddressX()
+            if self.cycle == 338 or self.cycle == 340:
+                log.append("|self.cycle == 338 or self.cycle == 340|")
+                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
+            if self.scanline == -1 and 280 <= self.cycle < 305:
+                log.append("|self.scanline == -1 and 280 <= self.cycle < 305|")
+                transferAddressY()
+        if self.scanline == 240:
+            pass
+        if 241 <= self.scanline < 261:
+            log.append("|241 <= self.scanline < 261|")
+            if self.scanline == 241 and self.cycle == 1:
+                log.append("|self.scanline == 241 and self.cycle == 1|")
+                self.status.set_vertical_blank(uint8(1))
+                if self.control.get_enable_nmi():
+                    self.nmi = True
 
-        # background_pixel: uint8 = 0x00
-        # background_palette: uint8 = 0x00
-        # if self.mask.get_render_background() == 1:
-        #     bit_mux: uint16 = 0x8000 >> self.fine_x
+        background_pixel: uint8 = 0x00
+        background_palette: uint8 = 0x00
+        if self.mask.get_render_background() == 1:
+            bit_mux: uint16 = 0x8000 >> self.fine_x
 
-        #     background_pixel_0: uint8 = (self.background_shifter_pattern_lo & bit_mux) > 0
-        #     background_pixel_1: uint8 = (self.background_shifter_pattern_hi & bit_mux) > 0
-        #     background_pixel = (background_pixel_0 << 1) | background_pixel_1
+            background_pixel_0: uint8 = (self.background_shifter_pattern_lo & bit_mux) > 0
+            background_pixel_1: uint8 = (self.background_shifter_pattern_hi & bit_mux) > 0
+            background_pixel = (background_pixel_0 << 1) | background_pixel_1
 
-        #     background_palette_0: uint8 = (self.background_shifter_attribute_lo & bit_mux) > 0
-        #     background_palette_1: uint8 = (self.background_shifter_attribute_hi & bit_mux) > 0
-        #     background_palette = (background_palette_1 << 1) | background_palette_0
+            background_palette_0: uint8 = (self.background_shifter_attribute_lo & bit_mux) > 0
+            background_palette_1: uint8 = (self.background_shifter_attribute_hi & bit_mux) > 0
+            background_palette = (background_palette_1 << 1) | background_palette_0
         
-        self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.palettePanel[0x3F if randint(0,1) == 1 else 0x30])
+        self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.getColorFromPaletteTable(background_palette, background_pixel))
         
         # if debug:
         #     print(" -> ".join(log))

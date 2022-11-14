@@ -77,9 +77,9 @@ class CPU6502:
 
     def setFlag(self, f: FLAGS, v: bool) -> void: 
         if v:
-            self.status |= int(f.value)
+            self.status |= uint8(f.value)
         else:
-            self.status &= ~int(f.value)
+            self.status &= ~uint8(f.value)
 
     ram: List[uint8] = [0x00] * 2 * 1024
     bus: CPUBus

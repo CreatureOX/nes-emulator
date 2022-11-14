@@ -22,6 +22,9 @@ class Mapper:
     def mapWriteByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         pass
 
+    def reset(self):
+        pass
+
 class Mapper000(Mapper):
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32]:
         addr = uint16(addr)
