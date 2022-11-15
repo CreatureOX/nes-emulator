@@ -289,7 +289,7 @@ class CPU6502:
 
         self.setFlag(self.FLAGS.C, self.temp > 255)
         self.setFlag(self.FLAGS.Z, (self.temp & uint16(0x00FF)) == 0)
-        self.setFlag(self.FLAGS.V, ~(uint16(self.a) ^ uint16(self.fetched)) & (uint16(self.a) ^ uint16(self.temp)) & uint16(0x0080))
+        self.setFlag(self.FLAGS.V, (~(uint16(self.a) ^ uint16(self.fetched)) & (uint16(self.a) ^ uint16(self.temp))) & uint16(0x0080))
         self.setFlag(self.FLAGS.N, self.temp & uint16(0x80))
         
         self.a = uint8(self.temp & uint16(0x00FF))
@@ -404,7 +404,7 @@ class CPU6502:
         self.fetch()
         self.temp = uint16(self.a & self.fetched)
 
-        self.setFlag(self.FLAGS.Z, (self.temp & uint16(0x00FF)) == 0x00)
+        self.setFlag(self.FLAGS.Z, uint8(self.temp & uint16(0x00FF)) == 0x00)
         self.setFlag(self.FLAGS.N, self.fetched & uint8(1 << 7))
         self.setFlag(self.FLAGS.V, self.fetched & uint8(1 << 6))
 

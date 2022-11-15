@@ -282,6 +282,7 @@ class PPU2C02:
                 | get_bit(reg, 14)
 
         def set_coarse_x(self, value: uint16) -> None:
+            value = uint16(value)
             self.reg = set_bit(self.reg, 0, get_bit(value, 0))
             self.reg = set_bit(self.reg, 1, get_bit(value, 1))
             self.reg = set_bit(self.reg, 2, get_bit(value, 2))
@@ -290,6 +291,7 @@ class PPU2C02:
             self.coarse_x = value
 
         def set_coarse_y(self, value: uint16) -> None:
+            value = uint16(value)
             self.reg = set_bit(self.reg, 5, get_bit(value, 0))
             self.reg = set_bit(self.reg, 6, get_bit(value, 1))
             self.reg = set_bit(self.reg, 7, get_bit(value, 2))
@@ -308,28 +310,29 @@ class PPU2C02:
             self.nametable_y = value
 
         def set_fine_y(self, value: uint16) -> None:
+            value = uint16(value)
             self.reg = set_bit(self.reg, 12, get_bit(value, 0))
             self.reg = set_bit(self.reg, 13, get_bit(value, 1))
             self.reg = set_bit(self.reg, 14, get_bit(value, 2))
             self.fine_y = value
 
         def get_reg(self) -> uint16:
-            return self.reg
+            return uint16(self.reg)
 
         def get_coarse_x(self) -> uint16:
-            return self.coarse_x
+            return uint16(self.coarse_x)
 
         def get_coarse_y(self) -> uint16:
-            return self.coarse_y
+            return uint16(self.coarse_y)
 
         def get_nametable_x(self) -> uint16:
-            return self.nametable_x
+            return uint16(self.nametable_x)
 
         def get_nametable_y(self) -> uint16:
-            return self.nametable_y
+            return uint16(self.nametable_y)
 
         def get_fine_y(self) -> uint16:
-            return self.fine_y
+            return uint16(self.fine_y)
 
     patternTable: List[List[uint8]] = [[0x00] * 64 * 64] * 2
     nameTable: List[List[uint8]] = [[0x00] * 32 * 32] * 2
