@@ -196,7 +196,7 @@ class CPU6502:
         self.addr_abs = uint16(uint16(hi << uint16(8)) | lo)
         self.addr_abs += uint16(self.x)
         
-        return 1 if (self.addr_abs & uint16(0xFF00)) != (hi << uint16(8)) else 0
+        return 1 if (self.addr_abs & uint16(0xFF00)) != uint16(hi << uint16(8)) else 0
 
     def ABY(self) -> uint8:
         '''
@@ -210,7 +210,7 @@ class CPU6502:
         self.addr_abs = (uint16(hi << uint16(8)) | lo)
         self.addr_abs += uint16(self.y)
 
-        return 1 if (self.addr_abs & uint16(0xFF00)) != (hi << uint16(8)) else 0
+        return 1 if (self.addr_abs & uint16(0xFF00)) != uint16(hi << uint16(8)) else 0
 
     def IND(self) -> uint8:
         '''
@@ -255,7 +255,7 @@ class CPU6502:
         self.addr_abs = uint16(uint16(hi << uint16(8)) | lo)
         self.addr_abs += uint16(self.y)
 
-        return 1 if (self.addr_abs & uint16(0xFF00)) != (hi << uint16(8)) else 0
+        return 1 if (self.addr_abs & uint16(0xFF00)) != uint16(hi << uint16(8)) else 0
 
     opcode: uint8 = 0x00
     _temp: uint16 = 0x0000
@@ -1152,6 +1152,9 @@ class CPU6502:
             self.setFlag(self.FLAGS.U, True)
             if debug:
                 print(op)
+                print("A: {A} X:{X} Y:{Y} STKP:{STKP} PC: {PC} STATUS:{STATUS}".format(A=hex(self.a), X=hex(self.x), Y=hex(self.y), STKP=hex(self.stkp), PC=hex(self.pc), STATUS=hex(self.status)))
+                print("fetched: {fetched} addr_rel: {addr_rel} addr_abs: {addr_abs}".format(fetched=hex(self.fetched), addr_rel=hex(self.addr_rel), addr_abs=hex(self.addr_abs)))
+                print("temp: {temp}\n".format(temp=hex(self.temp)))
 
         self.clock_count += 1
         self.remaining_cycles -= 1
