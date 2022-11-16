@@ -366,6 +366,30 @@ class PPU2C02:
     background_shifter_attribute_lo: uint16 = 0x0000
     background_shifter_attribute_hi: uint16 = 0x0000
 
+    class sObjectAttributeEntry:
+        y: uint8
+        id: uint8
+        attribute: uint8
+        x: uint8
+
+        def __init__(self) -> None:
+            self.y = uint8(0)
+            self.id = uint8(0)
+            self.attribute = uint8(0)
+            self.x = uint8(0)
+
+    OAM: List[sObjectAttributeEntry] = [sObjectAttributeEntry()] * 64
+
+    oam_addr: uint8 = 0x00
+
+    spriteScanline: List[sObjectAttributeEntry] = [sObjectAttributeEntry()] * 8
+    sprite_count: uint8
+    sprite_shifter_pattern_lo: List[uint8] = [0x00] * 8
+    sprite_shifter_pattern_hi: List[uint8] = [0x00] * 8
+
+    bSpriteZeroHitPossible: bool = False
+    bSpriteZeroBeingPossible: bool = False
+
     cartridge: Cartridge
 
     nmi: bool = False

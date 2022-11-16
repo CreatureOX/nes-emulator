@@ -21,6 +21,13 @@ class CPUBus:
     controller_state: List[uint8] = [0x00] * 2
     nSystemClockCounter: uint32 = 0
 
+    dma_page: uint8 = 0x00
+    dma_addr: uint8 = 0x00
+    dma_data: uint8 = 0x00
+
+    dma_dummy: bool = False
+    dma_transfer: bool = False
+
     def __init__(self, cartridge: Cartridge) -> None:
         from cpu import CPU6502
         from ppu import PPU2C02
@@ -40,6 +47,10 @@ class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & uint16(0x0007), readOnly)
+        elif addr == 0x4014:
+            self.dma_page = data
+            self.dma_addr = 0x00
+            self.dma_transfer = True
         elif 0x4016 <= addr <= 0x4017:
             data = (self.controller_state[addr & 0x0001] & 0x80) > 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -62,11 +73,30 @@ class CPUBus:
         self.cpu.reset()
         self.ppu.reset()
         self.nSystemClockCounter = 0
+        self.dma_page = 0x00
+        self.dma_addr = 0x00
+        self.dma_data = 0x00
+        self.dma_dummy = True
+        self.dma_transfer = False
 
     def clock(self) -> None:
         self.ppu.clock()
         if self.nSystemClockCounter % 3 == 0:
-            self.cpu.clock()
+            if self.dma_transfer:
+                if self.dma_dummy:
+                    if self.nSystemClockCounter % 2 == 1:
+                        self.dma_dummy = False
+                else:
+                    if self.nSystemClockCounter % 2 == 0:
+                        self.dma_data = self.read(uint16(self.dma_page << 8) | self.dma_addr)
+                    else:
+                        self.ppu.pOAM[self.dma_addr] = self.dma_data
+                        self.dma_addr += uint8(1)
+                        if self.dma_addr == 0x00:
+                            self.dma_transfer = False
+                            self.dma_dummy = True
+            else:
+                self.cpu.clock()
         if self.ppu.nmi:
             self.ppu.nmi = False
             self.cpu.nmi()
