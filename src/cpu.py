@@ -1020,31 +1020,31 @@ class CPU6502:
     def __init__(self, bus: CPUBus) -> None:
         self.bus = bus
         self.address_modes = {
-            "IMP": getattr(self, "IMP"), "IMM": getattr(self, "IMM"),
-            "ZP0": getattr(self, "ZP0"), "ZPX": getattr(self, "ZPX"),
-            "ZPY": getattr(self, "ZPY"), "REL": getattr(self, "REL"),
-            "ABS": getattr(self, "ABS"), "ABX": getattr(self, "ABX"),
-            "ABY": getattr(self, "ABY"), "IND": getattr(self, "IND"),
-            "IZX": getattr(self, "IZX"), "IZY": getattr(self, "IZY"),
+            "IMP": self.IMP, "IMM": self.IMM,
+            "ZP0": self.ZP0, "ZPX": self.ZPX,
+            "ZPY": self.ZPY, "REL": self.REL,
+            "ABS": self.ABS, "ABX": self.ABX,
+            "ABY": self.ABY, "IND": self.IND,
+            "IZX": self.IZX, "IZY": self.IZY,
         }
 
         self.operates = {
-            "ADC": getattr(self, "ADC"), "AND": getattr(self, "AND"), "ASL": getattr(self, "ASL"), "BCC": getattr(self, "BCC"),
-            "BCS": getattr(self, "BCS"), "BEQ": getattr(self, "BEQ"), "BIT": getattr(self, "BIT"), "BMI": getattr(self, "BMI"),
-            "BNE": getattr(self, "BNE"), "BPL": getattr(self, "BPL"), "BRK": getattr(self, "BRK"), "BVC": getattr(self, "BVC"),
-            "BVS": getattr(self, "BVS"), "CLC": getattr(self, "CLC"), "CLD": getattr(self, "CLD"), "CLI": getattr(self, "CLI"),
-            "CLV": getattr(self, "CLV"), "CMP": getattr(self, "CMP"), "CPX": getattr(self, "CPX"), "CPY": getattr(self, "CPY"),
-            "DEC": getattr(self, "DEC"), "DEX": getattr(self, "DEX"), "DEY": getattr(self, "DEY"), "EOR": getattr(self, "EOR"),
-            "INC": getattr(self, "INC"), "INX": getattr(self, "INX"), "INY": getattr(self, "INY"), "JMP": getattr(self, "JMP"),
-            "JSR": getattr(self, "JSR"), "LDA": getattr(self, "LDA"), "LDX": getattr(self, "LDX"), "LDY": getattr(self, "LDY"),
-            "LSR": getattr(self, "LSR"), "NOP": getattr(self, "NOP"), "ORA": getattr(self, "ORA"), "PHA": getattr(self, "PHA"),
-            "PHP": getattr(self, "PHP"), "PLA": getattr(self, "PLA"), "PLP": getattr(self, "PLP"), "ROL": getattr(self, "ROL"),
-            "ROR": getattr(self, "ROR"), "RTI": getattr(self, "RTI"), "RTS": getattr(self, "RTS"), "SBC": getattr(self, "SBC"),
-            "SEC": getattr(self, "SEC"), "SED": getattr(self, "SED"), "SEI": getattr(self, "SEI"), "STA": getattr(self, "STA"),
-            "STX": getattr(self, "STX"), "STY": getattr(self, "STY"), "TAX": getattr(self, "TAX"), "TAY": getattr(self, "TAY"),
-            "TSX": getattr(self, "TSX"), "TXA": getattr(self, "TXA"), "TXS": getattr(self, "TXS"), "TYA": getattr(self, "TYA"),
+            "ADC": self.ADC, "AND": self.AND, "ASL": self.ASL, "BCC": self.BCC,
+            "BCS": self.BCS, "BEQ": self.BEQ, "BIT": self.BIT, "BMI": self.BMI,
+            "BNE": self.BNE, "BPL": self.BPL, "BRK": self.BRK, "BVC": self.BVC,
+            "BVS": self.BVS, "CLC": self.CLC, "CLD": self.CLD, "CLI": self.CLI,
+            "CLV": self.CLV, "CMP": self.CMP, "CPX": self.CPX, "CPY": self.CPY,
+            "DEC": self.DEC, "DEX": self.DEX, "DEY": self.DEY, "EOR": self.EOR,
+            "INC": self.INC, "INX": self.INX, "INY": self.INY, "JMP": self.JMP,
+            "JSR": self.JSR, "LDA": self.LDA, "LDX": self.LDX, "LDY": self.LDY,
+            "LSR": self.LSR, "NOP": self.NOP, "ORA": self.ORA, "PHA": self.PHA,
+            "PHP": self.PHP, "PLA": self.PLA, "PLP": self.PLP, "ROL": self.ROL,
+            "ROR": self.ROR, "RTI": self.RTI, "RTS": self.RTS, "SBC": self.SBC,
+            "SEC": self.SEC, "SED": self.SED, "SEI": self.SEI, "STA": self.STA,
+            "STX": self.STX, "STY": self.STY, "TAX": self.TAX, "TAY": self.TAY,
+            "TSX": self.TSX, "TXA": self.TXA, "TXS": self.TXS, "TYA": self.TYA,
 
-            "XXX": getattr(self, "XXX"),
+            "XXX": self.XXX,
         }
         
         Op = namedtuple('Op', ['name', 'operate', 'addrmode', 'cycles'])
