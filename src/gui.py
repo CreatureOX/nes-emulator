@@ -1,7 +1,6 @@
 import PySimpleGUI as gui
 import pygame
 import os
-from PIL import Image, ImageTk
 from numpy import uint16, void, swapaxes
 from cartridge import Cartridge
 from bus import CPUBus
@@ -129,8 +128,9 @@ class Emulator:
                 break
         self.drawCPU()
         self.drawCode()    
-        image = ImageTk.PhotoImage(image=Image.fromarray(self.bus.ppu.getScreen().rgb))
-        self.window['SCREEN'].update(data=image)
+        surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+        self.gameScreen.blit(surf, (0,0))
+        pygame.display.flip()
         return True
 
     cache = None
@@ -159,6 +159,7 @@ class Emulator:
     def run(self) -> bool:
         gameLoop = True
         while gameLoop:
+            pygame.event.pump()
             self.gameClock.tick(self.fps)
             while True:
                 self.bus.clock()
