@@ -1,6 +1,8 @@
 import PySimpleGUI as gui
+import pygame
+import os
 from PIL import Image, ImageTk
-from numpy import uint16, void
+from numpy import uint16, void, swapaxes
 from cartridge import Cartridge
 from bus import CPUBus
 
@@ -11,9 +13,9 @@ class Emulator:
         ['Help', ['About',]],
     ]
     
-    screen_layout = [[gui.Image(key="SCREEN", size=(500,500), background_color='BLACK')]]
+    screen_layout = [[gui.Graph(key="SCREEN", canvas_size=(240,256), graph_bottom_left=(0,0), graph_top_right=(500,500), background_color='BLACK')]]
     utils_layout = [
-        [gui.Button('Clock'),gui.Button('Frame'),gui.Button('Reset'),],
+        [gui.Button('Clock'),gui.Button('Frame'),gui.Button('Reset'),gui.Button('Run'),],
         [
             gui.Text("STATUS: ",size=(8,1),text_color='WHITE'),
             gui.Text("N",key="N",size=(1,1),text_color='WHITE'),
@@ -46,8 +48,14 @@ class Emulator:
     bus: CPUBus
 
     def __init__(self) -> None:
-        self.window = gui.Window('NES Emulator', self.layout, size=(1024, 500), resizable=True)
-        
+        self.window = gui.Window('NES Emulator', self.layout, size = (1024, 500), resizable = True).Finalize()
+        os.environ['SDL_WINDOWID'] = str(self.window['SCREEN'].TKCanvas.winfo_id())
+        os.environ['SDL_VIDEODRIVER'] = 'windib'
+        self.gameScreen = pygame.display.set_mode((240, 256))
+        self.gameClock = pygame.time.Clock()
+        self.fps = 30
+        pygame.display.init()
+
     def drawRAM(self, start_addr: uint16, end_addr: uint16) -> void:
         self.window['HEX'].Update(self.bus.cpu.toHex(start=start_addr, end=end_addr))
         
@@ -125,10 +133,13 @@ class Emulator:
         self.window['SCREEN'].update(data=image)
         return True
 
+    cache = None
+
     def frame(self) -> bool:
         if self.cart is None:
             gui.popup("Please load nes file!")
             return False
+            
         while True:
             self.bus.clock()
             if self.bus.ppu.frame_complete:
@@ -140,8 +151,23 @@ class Emulator:
         self.bus.ppu.frame_complete = False
         self.drawCPU()
         self.drawCode()    
-        image = ImageTk.PhotoImage(image=Image.fromarray(self.bus.ppu.getScreen().rgb))
-        self.window['SCREEN'].update(data=image)
+        surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+        self.gameScreen.blit(surf, (0,0))
+        pygame.display.flip()
+        return True
+
+    def run(self) -> bool:
+        gameLoop = True
+        while gameLoop:
+            self.gameClock.tick(self.fps)
+            while True:
+                self.bus.clock()
+                if self.bus.ppu.frame_complete:
+                    break
+            self.bus.ppu.frame_complete = False
+            surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+            self.gameScreen.blit(surf, (0,0))
+            pygame.display.flip()
         return True
 
     def reset(self) -> bool:
@@ -167,6 +193,8 @@ class Emulator:
                 success = self.clock()
             elif event == 'Frame':
                 success = self.frame()
+            elif event == 'Run':
+                success = self.run()
             elif event == 'Reset':
                 success = self.reset()
             elif event == 'About':
