@@ -113,7 +113,7 @@ class Emulator:
                 window["HEX"].Update(hexcode)
         window.close()
         return True
-
+        
     def clock(self) -> bool:
         if self.cart is None:
             gui.popup("Please load nes file!")
@@ -132,8 +132,6 @@ class Emulator:
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
         return True
-
-    cache = None
 
     def frame(self) -> bool:
         if self.cart is None:

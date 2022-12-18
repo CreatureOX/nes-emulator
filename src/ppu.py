@@ -683,59 +683,60 @@ class PPU2C02:
         self.vram_addr.set_reg(0x0000)
         self.tram_addr.set_reg(0x0000)
 
+    def incrementScrollX(self) -> None:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+            if self.vram_addr.get_coarse_x() == 31:
+                self.vram_addr.set_coarse_x(0)
+                self.vram_addr.set_nametable_x(~self.vram_addr.get_nametable_x())
+            else:
+                self.vram_addr.set_coarse_x(self.vram_addr.get_coarse_x() + 1)
+
+    def incrementScrollY(self) -> None:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+            if self.vram_addr.get_fine_y() < 7:
+                self.vram_addr.set_fine_y(self.vram_addr.get_fine_y() + 1)
+            else:
+                self.vram_addr.set_fine_y(0)
+                if self.vram_addr.get_coarse_y() == 29:
+                    self.vram_addr.set_coarse_y(0)
+                    self.vram_addr.set_nametable_y(~self.vram_addr.get_nametable_y())
+                elif self.vram_addr.get_coarse_y() == 31:
+                    self.vram_addr.set_coarse_y(0)
+                else:
+                    self.vram_addr.set_coarse_y(self.vram_addr.get_coarse_y() + 1)
+
+    def transferAddressX(self) -> None:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+            self.vram_addr.set_nametable_x(self.tram_addr.get_nametable_x())
+            self.vram_addr.set_coarse_x(self.tram_addr.get_coarse_x())
+
+    def transferAddressY(self) -> None:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+            self.vram_addr.set_fine_y(self.tram_addr.get_fine_y())
+            self.vram_addr.set_nametable_y(self.tram_addr.get_nametable_y())
+            self.vram_addr.set_coarse_y(self.tram_addr.get_coarse_y())
+
+    def loadBackgroundShifters(self) -> None:
+        self.background_shifter_pattern_lo = uint16((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
+        self.background_shifter_pattern_hi = uint16((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
+        self.background_shifter_attribute_lo = uint16(0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) else 0x00)
+        self.background_shifter_attribute_hi = uint16(0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) else 0x00)
+
+    def updateShifters(self) -> None:
+        if self.mask.get_render_background() == 1:
+            self.background_shifter_pattern_lo <<= 1
+            self.background_shifter_pattern_hi <<= 1
+            self.background_shifter_attribute_lo <<= 1
+            self.background_shifter_attribute_hi <<= 1
+        if self.mask.render_sprites and self.cycle >= 1 and self.cycle < 258:
+            for i in range(0,self.sprite_count):
+                if self.spriteScanline[i].x > 0:
+                    self.spriteScanline[i].x -= 1
+                else:
+                    self.sprite_shifter_pattern_lo[i] <<= 1
+                    self.sprite_shifter_pattern_hi[i] <<= 1
+
     def clock(self, debug: bool = False) -> void:
-        def incrementScrollX() -> None:
-            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-                if self.vram_addr.get_coarse_x() == 31:
-                    self.vram_addr.set_coarse_x(0)
-                    self.vram_addr.set_nametable_x(~self.vram_addr.get_nametable_x())
-                else:
-                    self.vram_addr.set_coarse_x(self.vram_addr.get_coarse_x() + 1)
-
-        def incrementScrollY() -> None:
-            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-                if self.vram_addr.get_fine_y() < 7:
-                    self.vram_addr.set_fine_y(self.vram_addr.get_fine_y() + 1)
-                else:
-                    self.vram_addr.set_fine_y(0)
-                    if self.vram_addr.get_coarse_y() == 29:
-                        self.vram_addr.set_coarse_y(0)
-                        self.vram_addr.set_nametable_y(~self.vram_addr.get_nametable_y())
-                    elif self.vram_addr.get_coarse_y() == 31:
-                        self.vram_addr.set_coarse_y(0)
-                    else:
-                        self.vram_addr.set_coarse_y(self.vram_addr.get_coarse_y() + 1)
-
-        def transferAddressX() -> None:
-            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-                self.vram_addr.set_nametable_x(self.tram_addr.get_nametable_x())
-                self.vram_addr.set_coarse_x(self.tram_addr.get_coarse_x())
-
-        def transferAddressY() -> None:
-            if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
-                self.vram_addr.set_fine_y(self.tram_addr.get_fine_y())
-                self.vram_addr.set_nametable_y(self.tram_addr.get_nametable_y())
-                self.vram_addr.set_coarse_y(self.tram_addr.get_coarse_y())
-
-        def loadBackgroundShifters() -> None:
-            self.background_shifter_pattern_lo = uint16((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
-            self.background_shifter_pattern_hi = uint16((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-            self.background_shifter_attribute_lo = uint16(0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) else 0x00)
-            self.background_shifter_attribute_hi = uint16(0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) else 0x00)
-
-        def updateShifters() -> None:
-            if self.mask.get_render_background() == 1:
-                self.background_shifter_pattern_lo <<= 1
-                self.background_shifter_pattern_hi <<= 1
-                self.background_shifter_attribute_lo <<= 1
-                self.background_shifter_attribute_hi <<= 1
-            if self.mask.render_sprites and self.cycle >= 1 and self.cycle < 258:
-                for i in range(0,self.sprite_count):
-                    if self.spriteScanline[i].x > 0:
-                        self.spriteScanline[i].x -= 1
-                    else:
-                        self.sprite_shifter_pattern_lo[i] <<= 1
-                        self.sprite_shifter_pattern_hi[i] <<= 1
 
         log = []
         if -1 <= self.scanline < 240:
@@ -753,10 +754,10 @@ class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] = 0
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338):
                 log.append("|(2 <= self.cycle < 258) or (321 <= self.cycle < 338)|")
-                updateShifters()
+                self.updateShifters()
                 v: uint16 = (self.cycle - 1) % 8
                 if v == 0:
-                    loadBackgroundShifters()
+                    self.loadBackgroundShifters()
                     self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
                 elif v == 2:
                     self.background_next_tile_attribute = self.readByPPU(0x23C0 \
@@ -781,20 +782,20 @@ class PPU2C02:
                         + (self.vram_addr.get_fine_y()) + 8
                     )
                 elif v == 7:
-                    incrementScrollX()
+                    self.incrementScrollX()
             if self.cycle == 256:
                 log.append("|self.cycle == 256|")
-                incrementScrollY()
+                self.incrementScrollY()
             if self.cycle == 257:
                 log.append("|self.cycle == 257|")
-                loadBackgroundShifters()
-                transferAddressX()
+                self.loadBackgroundShifters()
+                self.transferAddressX()
             if self.cycle == 338 or self.cycle == 340:
                 log.append("|self.cycle == 338 or self.cycle == 340|")
                 self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
             if self.scanline == -1 and 280 <= self.cycle < 305:
                 log.append("|self.scanline == -1 and 280 <= self.cycle < 305|")
-                transferAddressY()
+                self.transferAddressY()
             if self.cycle == 257 and self.scanline >= 0:
                 # memset
                 self.spriteScanline = [self.sObjectAttributeEntry().setY(0b11).setId(0b11).setAttribute(0b11).setX(0b11) for i in range(8)]
