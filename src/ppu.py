@@ -647,7 +647,7 @@ class PPU2C02:
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
         # if color > 0:
         #     print("color: {color}".format(color=color))
-        return self.palettePanel[self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F]
+        return self.palettePanel[color]
 
     def getPatternTable(self, i: uint8, palette: uint8) -> Sprite:
         for tileY in range(0,16):
@@ -737,23 +737,17 @@ class PPU2C02:
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
     def clock(self, debug: bool = False) -> void:
-
-        log = []
         if -1 <= self.scanline < 240:
-            log.append("|-1 <= self.scanline < 240|")
             if self.scanline == 0 and self.cycle == 0:
-                log.append("|self.scanline == 0 and self.cycle == 0|")
                 self.cycle = 1
             if self.scanline == -1 and self.cycle == 1:
-                log.append("|self.scanline == -1 and self.cycle == 1|")
                 self.status.set_vertical_blank(uint8(0))
                 self.status.set_sprite_overflow(uint8(0))
                 self.status.set_sprite_zero_hit(uint8(0))
                 for i in range(0,8):
                     self.sprite_shifter_pattern_hi[i] = 0
                     self.sprite_shifter_pattern_lo[i] = 0
-            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338):
-                log.append("|(2 <= self.cycle < 258) or (321 <= self.cycle < 338)|")
+            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.updateShifters()
                 v: uint16 = (self.cycle - 1) % 8
                 if v == 0:
@@ -784,17 +778,14 @@ class PPU2C02:
                 elif v == 7:
                     self.incrementScrollX()
             if self.cycle == 256:
-                log.append("|self.cycle == 256|")
+                
                 self.incrementScrollY()
-            if self.cycle == 257:
-                log.append("|self.cycle == 257|")
+            if self.cycle == 257:                
                 self.loadBackgroundShifters()
                 self.transferAddressX()
-            if self.cycle == 338 or self.cycle == 340:
-                log.append("|self.cycle == 338 or self.cycle == 340|")
+            if self.cycle == 338 or self.cycle == 340:                
                 self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
-            if self.scanline == -1 and 280 <= self.cycle < 305:
-                log.append("|self.scanline == -1 and 280 <= self.cycle < 305|")
+            if self.scanline == -1 and 280 <= self.cycle < 305:               
                 self.transferAddressY()
             if self.cycle == 257 and self.scanline >= 0:
                 # memset
@@ -869,10 +860,9 @@ class PPU2C02:
                     self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi
         if self.scanline == 240:
             pass
-        if 241 <= self.scanline < 261:
-            log.append("|241 <= self.scanline < 261|")
+        if 241 <= self.scanline < 261:            
             if self.scanline == 241 and self.cycle == 1:
-                log.append("|self.scanline == 241 and self.cycle == 1|")
+                
                 self.status.set_vertical_blank(uint8(1))
                 if self.control.get_enable_nmi():
                     self.nmi = True
@@ -937,9 +927,6 @@ class PPU2C02:
                             self.status.set_sprite_zero_hit(1)
 
         self.spriteScreen.setPixel(self.cycle - 1, self.scanline, self.getColorFromPaletteTable(palette, pixel))
-        
-        # if debug:
-        #     print(" -> ".join(log))
 
         self.cycle += 1
         if self.cycle >= 341:
