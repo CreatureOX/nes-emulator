@@ -1,7 +1,7 @@
 import PySimpleGUI as gui
 import pygame
 import os
-from numpy import uint16, void, swapaxes
+from numpy import uint16, void
 from cartridge import Cartridge
 from bus import CPUBus
 
@@ -149,7 +149,7 @@ class Emulator:
         self.bus.ppu.frame_complete = False
         self.drawCPU()
         self.drawCode()    
-        surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+        surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
         return True
