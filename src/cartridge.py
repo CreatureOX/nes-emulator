@@ -78,24 +78,20 @@ class Cartridge:
                 self.mapper = Mapper000(PRGBanks, CHRBanks)
             
     def readByCPU(self, addr: uint16) -> Tuple[bool, uint8]:
-        addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByCPU(addr)
-        return (success, uint8(self.PRGMemory[mapped_addr] if success else 0x00))
+        return (success, self.PRGMemory[mapped_addr] if success else 0x00)
 
     def writeByCPU(self, addr: uint16, data: uint8) -> bool:
-        addr, data = uint16(addr), uint8(data)
         success, mapped_addr = self.mapper.mapWriteByCPU(addr)
         if success:
             self.PRGMemory[mapped_addr] = data
         return success
 
     def readByPPU(self, addr: uint16) -> Tuple[bool, uint8]:
-        addr = uint16(addr)
         success, mapped_addr = self.mapper.mapReadByPPU(addr)
-        return (success, uint8(self.CHRMemory[mapped_addr] if success else 0x00))
+        return (success, self.CHRMemory[mapped_addr] if success else 0x00)
 
     def writeByPPU(self, addr: uint16, data: uint8) -> bool:
-        addr, data = uint16(addr), uint8(data)
         success, mapped_addr = self.mapper.mapWriteByPPU(addr)
         if success:
             self.CHRMemory[mapped_addr] = data

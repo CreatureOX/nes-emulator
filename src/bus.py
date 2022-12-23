@@ -39,7 +39,6 @@ class CPUBus:
         self.ppu.connectCartridge(self.cartridge)
 
     def read(self, addr: uint16, readOnly: bool = False) -> uint8:
-        addr = uint16(addr)
         success, data = self.cartridge.readByCPU(addr)
         if success:
             pass
@@ -54,10 +53,9 @@ class CPUBus:
         elif 0x4016 <= addr <= 0x4017:
             data = (self.controller_state[addr & 0x0001] & 0x80) > 0
             self.controller_state[addr & 0x0001] <<= 1
-        return uint8(data)
+        return data
 
     def write(self, addr: uint16, data: uint8) -> void:
-        addr, data = uint16(addr), uint8(data)
         success = self.cartridge.writeByCPU(addr, data)
         if success:
             pass
@@ -88,10 +86,10 @@ class CPUBus:
                         self.dma_dummy = False
                 else:
                     if self.nSystemClockCounter % 2 == 0:
-                        self.dma_data = self.read(uint16(self.dma_page << 8) | self.dma_addr)
+                        self.dma_data = self.read((self.dma_page << 8) | self.dma_addr)
                     else:
                         self.ppu.pOAM[self.dma_addr] = self.dma_data
-                        self.dma_addr += uint8(1)
+                        self.dma_addr += 1
                         if self.dma_addr == 0x00:
                             self.dma_transfer = False
                             self.dma_dummy = True
