@@ -1,16 +1,16 @@
 from enum import IntEnum
 from typing import List, Dict
-from numpy import uint16, uint32, uint8, int8, void
+from numpy import uint16, uint8, int8
 
 from bus import CPUBus
 
 class Op:
     name: str
-    operate: str
-    addrmode: str
+    operate: callable
+    addrmode: callable
     cycles: int 
 
-    def __init__(self, name: str, operate: str, addrmode: str, cycles: int) -> None:
+    def __init__(self, name: str, operate: callable, addrmode: callable, cycles: int) -> None:
         self.name = name
         self.operate = operate
         self.addrmode = addrmode
@@ -25,22 +25,22 @@ class CPU6502:
     status: uint8 = 0x00 # Status Register
 
     def set_a(self, a: uint8):
-        self.a = uint8(a) if type(a) != uint8 else a
+        self.a = a & 0xFF
 
     def set_x(self, x: uint8):
-        self.x = uint8(x) if type(x) != uint8 else x
+        self.x = x & 0xFF
 
     def set_y(self, y: uint8):
-        self.y = uint8(y) if type(y) != uint8 else y
+        self.y = y & 0xFF
 
     def set_stkp(self, stkp: uint8):
-        self.stkp = uint8(stkp) if type(stkp) != uint8 else stkp
+        self.stkp = stkp & 0xFF
 
     def set_pc(self, pc: uint16):
-        self.pc = uint16(pc) if type(pc) != uint8 else pc
+        self.pc = pc & 0xFFFF
 
     def set_status(self, status: uint8):
-        self.status = uint8(status) if type(status) != uint8 else status
+        self.status = status & 0xFF
 
     class FLAGS(IntEnum):
         C = (1 << 0), # Carry Bit
@@ -55,7 +55,7 @@ class CPU6502:
     def getFlag(self, f: FLAGS) -> uint8:
         return 1 if (self.status & f.value) > 0 else 0
 
-    def setFlag(self, f: FLAGS, v: bool) -> void: 
+    def setFlag(self, f: FLAGS, v: bool) -> None: 
         if v:
             self.set_status(self.status | f.value)
         else:
@@ -65,11 +65,11 @@ class CPU6502:
     bus: CPUBus
      
     def read(self, addr: uint16) -> uint8:
-        addr = uint16(addr) if type(addr) != uint16 else addr
+        addr &= 0xFFFF
         return self.bus.read(addr, False)
 
-    def write(self, addr: uint16, data: uint8) -> void:
-        addr, data = uint16(addr) if type(addr) != uint16 else addr, uint8(data) if type(data) != uint8 else data
+    def write(self, addr: uint16, data: uint8) -> None:
+        addr, data = addr & 0xFFFF, data & 0xFF
         self.bus.write(addr, data)
 
     fetched: uint8 = 0x00
@@ -77,13 +77,13 @@ class CPU6502:
     addr_rel: uint16 = 0x0000
 
     def set_fetched(self, fetched: uint8):
-        self.fetched = uint8(fetched) if type(fetched) != uint8 else fetched
+        self.fetched = fetched & 0xFF
 
     def set_addr_abs(self, addr_abs: uint16):
-        self.addr_abs = uint16(addr_abs) if type(addr_abs) != uint16 else addr_abs
+        self.addr_abs = addr_abs & 0xFFFF
 
     def set_addr_rel(self, addr_rel: uint16):
-        self.addr_rel = uint16(addr_rel) if type(addr_rel) != uint16 else addr_rel
+        self.addr_rel = addr_rel & 0xFFFF
 
     def IMP(self) -> uint8:
         '''
@@ -141,9 +141,9 @@ class CPU6502:
         '''
         Address Mode: Absolute 
         '''
-        lo = (self.read(self.pc))
+        lo = self.read(self.pc)
         self.set_pc(self.pc + 1)
-        hi = (self.read(self.pc))
+        hi = self.read(self.pc)
         self.set_pc(self.pc + 1)
         
         self.set_addr_abs((hi << 8) | lo)
@@ -153,9 +153,9 @@ class CPU6502:
         '''
         Address Mode: Absolute with X Offset
         '''
-        lo = (self.read(self.pc))
+        lo = self.read(self.pc)
         self.set_pc(self.pc + 1)
-        hi = (self.read(self.pc))
+        hi = self.read(self.pc)
         self.set_pc(self.pc + 1)
         
         self.set_addr_abs((hi << 8) | lo)
@@ -167,9 +167,9 @@ class CPU6502:
         '''
         Address Mode: Absolute with Y Offset
         '''
-        lo = (self.read(self.pc))
+        lo = self.read(self.pc)
         self.set_pc(self.pc + 1)
-        hi = (self.read(self.pc))
+        hi = self.read(self.pc)
         self.set_pc(self.pc + 1)
         
         self.set_addr_abs((hi << 8) | lo)
@@ -181,9 +181,9 @@ class CPU6502:
         '''
         Address Mode: Indirect
         '''
-        ptr_lo = (self.read(self.pc))
+        ptr_lo = self.read(self.pc)
         self.set_pc(self.pc + 1)
-        ptr_hi = (self.read(self.pc))
+        ptr_hi = self.read(self.pc)
         self.set_pc(self.pc + 1)
         
         ptr = (ptr_hi << 8) | ptr_lo
@@ -227,7 +227,7 @@ class CPU6502:
     remaining_cycles: uint8 = 0x00
 
     def set_temp(self, temp: uint16):
-        self.temp = uint16(temp)
+        self.temp = temp & 0xFFFF
 
     def fetch(self) -> uint8:
         '''
@@ -364,7 +364,7 @@ class CPU6502:
         self.fetch()
         self.set_temp(self.a & self.fetched)
 
-        self.setFlag(self.FLAGS.Z, uint8(self.temp & 0x00FF) == 0x00)
+        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x00)
         self.setFlag(self.FLAGS.N, self.fetched & (1 << 7))
         self.setFlag(self.FLAGS.V, self.fetched & (1 << 6))
 
@@ -979,54 +979,27 @@ class CPU6502:
 
     def __init__(self, bus: CPUBus) -> None:
         self.bus = bus
-        self.address_modes = {
-            "IMP": self.IMP, "IMM": self.IMM,
-            "ZP0": self.ZP0, "ZPX": self.ZPX,
-            "ZPY": self.ZPY, "REL": self.REL,
-            "ABS": self.ABS, "ABX": self.ABX,
-            "ABY": self.ABY, "IND": self.IND,
-            "IZX": self.IZX, "IZY": self.IZY,
-        }
-
-        self.operates = {
-            "ADC": self.ADC, "AND": self.AND, "ASL": self.ASL, "BCC": self.BCC,
-            "BCS": self.BCS, "BEQ": self.BEQ, "BIT": self.BIT, "BMI": self.BMI,
-            "BNE": self.BNE, "BPL": self.BPL, "BRK": self.BRK, "BVC": self.BVC,
-            "BVS": self.BVS, "CLC": self.CLC, "CLD": self.CLD, "CLI": self.CLI,
-            "CLV": self.CLV, "CMP": self.CMP, "CPX": self.CPX, "CPY": self.CPY,
-            "DEC": self.DEC, "DEX": self.DEX, "DEY": self.DEY, "EOR": self.EOR,
-            "INC": self.INC, "INX": self.INX, "INY": self.INY, "JMP": self.JMP,
-            "JSR": self.JSR, "LDA": self.LDA, "LDX": self.LDX, "LDY": self.LDY,
-            "LSR": self.LSR, "NOP": self.NOP, "ORA": self.ORA, "PHA": self.PHA,
-            "PHP": self.PHP, "PLA": self.PLA, "PLP": self.PLP, "ROL": self.ROL,
-            "ROR": self.ROR, "RTI": self.RTI, "RTS": self.RTS, "SBC": self.SBC,
-            "SEC": self.SEC, "SED": self.SED, "SEI": self.SEI, "STA": self.STA,
-            "STX": self.STX, "STY": self.STY, "TAX": self.TAX, "TAY": self.TAY,
-            "TSX": self.TSX, "TXA": self.TXA, "TXS": self.TXS, "TYA": self.TYA,
-
-            "XXX": self.XXX,
-        }
 
         self.lookup = [
-            Op( "BRK", "BRK", "IMM", 7 ),Op( "ORA", "ORA", "IZX", 6 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 3 ),Op( "ORA", "ORA", "ZP0", 3 ),Op( "ASL", "ASL", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "PHP", "PHP", "IMP", 3 ),Op( "ORA", "ORA", "IMM", 2 ),Op( "ASL", "ASL", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "NOP", "IMP", 4 ),Op( "ORA", "ORA", "ABS", 4 ),Op( "ASL", "ASL", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BPL", "BPL", "REL", 2 ),Op( "ORA", "ORA", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "ORA", "ORA", "ZPX", 4 ),Op( "ASL", "ASL", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "CLC", "CLC", "IMP", 2 ),Op( "ORA", "ORA", "ABY", 4 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "ORA", "ORA", "ABX", 4 ),Op( "ASL", "ASL", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
-            Op( "JSR", "JSR", "ABS", 6 ),Op( "AND", "AND", "IZX", 6 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "BIT", "BIT", "ZP0", 3 ),Op( "AND", "AND", "ZP0", 3 ),Op( "ROL", "ROL", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "PLP", "PLP", "IMP", 4 ),Op( "AND", "AND", "IMM", 2 ),Op( "ROL", "ROL", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "BIT", "BIT", "ABS", 4 ),Op( "AND", "AND", "ABS", 4 ),Op( "ROL", "ROL", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BMI", "BMI", "REL", 2 ),Op( "AND", "AND", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "AND", "AND", "ZPX", 4 ),Op( "ROL", "ROL", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "SEC", "SEC", "IMP", 2 ),Op( "AND", "AND", "ABY", 4 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "AND", "AND", "ABX", 4 ),Op( "ROL", "ROL", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
-            Op( "RTI", "RTI", "IMP", 6 ),Op( "EOR", "EOR", "IZX", 6 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 3 ),Op( "EOR", "EOR", "ZP0", 3 ),Op( "LSR", "LSR", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "PHA", "PHA", "IMP", 3 ),Op( "EOR", "EOR", "IMM", 2 ),Op( "LSR", "LSR", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "JMP", "JMP", "ABS", 3 ),Op( "EOR", "EOR", "ABS", 4 ),Op( "LSR", "LSR", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BVC", "BVC", "REL", 2 ),Op( "EOR", "EOR", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "EOR", "EOR", "ZPX", 4 ),Op( "LSR", "LSR", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "CLI", "CLI", "IMP", 2 ),Op( "EOR", "EOR", "ABY", 4 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "EOR", "EOR", "ABX", 4 ),Op( "LSR", "LSR", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
-            Op( "RTS", "RTS", "IMP", 6 ),Op( "ADC", "ADC", "IZX", 6 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 3 ),Op( "ADC", "ADC", "ZP0", 3 ),Op( "ROR", "ROR", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "PLA", "PLA", "IMP", 4 ),Op( "ADC", "ADC", "IMM", 2 ),Op( "ROR", "ROR", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "JMP", "JMP", "IND", 5 ),Op( "ADC", "ADC", "ABS", 4 ),Op( "ROR", "ROR", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BVS", "BVS", "REL", 2 ),Op( "ADC", "ADC", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "ADC", "ADC", "ZPX", 4 ),Op( "ROR", "ROR", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "SEI", "SEI", "IMP", 2 ),Op( "ADC", "ADC", "ABY", 4 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "ADC", "ADC", "ABX", 4 ),Op( "ROR", "ROR", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
-            Op( "???", "NOP", "IMP", 2 ),Op( "STA", "STA", "IZX", 6 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 6 ),Op( "STY", "STY", "ZP0", 3 ),Op( "STA", "STA", "ZP0", 3 ),Op( "STX", "STX", "ZP0", 3 ),Op( "???", "XXX", "IMP", 3 ),Op( "DEY", "DEY", "IMP", 2 ),Op( "???", "NOP", "IMP", 2 ),Op( "TXA", "TXA", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "STY", "STY", "ABS", 4 ),Op( "STA", "STA", "ABS", 4 ),Op( "STX", "STX", "ABS", 4 ),Op( "???", "XXX", "IMP", 4 ),
-            Op( "BCC", "BCC", "REL", 2 ),Op( "STA", "STA", "IZY", 6 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 6 ),Op( "STY", "STY", "ZPX", 4 ),Op( "STA", "STA", "ZPX", 4 ),Op( "STX", "STX", "ZPY", 4 ),Op( "???", "XXX", "IMP", 4 ),Op( "TYA", "TYA", "IMP", 2 ),Op( "STA", "STA", "ABY", 5 ),Op( "TXS", "TXS", "IMP", 2 ),Op( "???", "XXX", "IMP", 5 ),Op( "???", "NOP", "IMP", 5 ),Op( "STA", "STA", "ABX", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "???", "XXX", "IMP", 5 ),
-            Op( "LDY", "LDY", "IMM", 2 ),Op( "LDA", "LDA", "IZX", 6 ),Op( "LDX", "LDX", "IMM", 2 ),Op( "???", "XXX", "IMP", 6 ),Op( "LDY", "LDY", "ZP0", 3 ),Op( "LDA", "LDA", "ZP0", 3 ),Op( "LDX", "LDX", "ZP0", 3 ),Op( "???", "XXX", "IMP", 3 ),Op( "TAY", "TAY", "IMP", 2 ),Op( "LDA", "LDA", "IMM", 2 ),Op( "TAX", "TAX", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "LDY", "LDY", "ABS", 4 ),Op( "LDA", "LDA", "ABS", 4 ),Op( "LDX", "LDX", "ABS", 4 ),Op( "???", "XXX", "IMP", 4 ),
-            Op( "BCS", "BCS", "REL", 2 ),Op( "LDA", "LDA", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 5 ),Op( "LDY", "LDY", "ZPX", 4 ),Op( "LDA", "LDA", "ZPX", 4 ),Op( "LDX", "LDX", "ZPY", 4 ),Op( "???", "XXX", "IMP", 4 ),Op( "CLV", "CLV", "IMP", 2 ),Op( "LDA", "LDA", "ABY", 4 ),Op( "TSX", "TSX", "IMP", 2 ),Op( "???", "XXX", "IMP", 4 ),Op( "LDY", "LDY", "ABX", 4 ),Op( "LDA", "LDA", "ABX", 4 ),Op( "LDX", "LDX", "ABY", 4 ),Op( "???", "XXX", "IMP", 4 ),
-            Op( "CPY", "CPY", "IMM", 2 ),Op( "CMP", "CMP", "IZX", 6 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "CPY", "CPY", "ZP0", 3 ),Op( "CMP", "CMP", "ZP0", 3 ),Op( "DEC", "DEC", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "INY", "INY", "IMP", 2 ),Op( "CMP", "CMP", "IMM", 2 ),Op( "DEX", "DEX", "IMP", 2 ),Op( "???", "XXX", "IMP", 2 ),Op( "CPY", "CPY", "ABS", 4 ),Op( "CMP", "CMP", "ABS", 4 ),Op( "DEC", "DEC", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BNE", "BNE", "REL", 2 ),Op( "CMP", "CMP", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "CMP", "CMP", "ZPX", 4 ),Op( "DEC", "DEC", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "CLD", "CLD", "IMP", 2 ),Op( "CMP", "CMP", "ABY", 4 ),Op( "NOP", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "CMP", "CMP", "ABX", 4 ),Op( "DEC", "DEC", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
-            Op( "CPX", "CPX", "IMM", 2 ),Op( "SBC", "SBC", "IZX", 6 ),Op( "???", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "CPX", "CPX", "ZP0", 3 ),Op( "SBC", "SBC", "ZP0", 3 ),Op( "INC", "INC", "ZP0", 5 ),Op( "???", "XXX", "IMP", 5 ),Op( "INX", "INX", "IMP", 2 ),Op( "SBC", "SBC", "IMM", 2 ),Op( "NOP", "NOP", "IMP", 2 ),Op( "???", "SBC", "IMP", 2 ),Op( "CPX", "CPX", "ABS", 4 ),Op( "SBC", "SBC", "ABS", 4 ),Op( "INC", "INC", "ABS", 6 ),Op( "???", "XXX", "IMP", 6 ),
-            Op( "BEQ", "BEQ", "REL", 2 ),Op( "SBC", "SBC", "IZY", 5 ),Op( "???", "XXX", "IMP", 2 ),Op( "???", "XXX", "IMP", 8 ),Op( "???", "NOP", "IMP", 4 ),Op( "SBC", "SBC", "ZPX", 4 ),Op( "INC", "INC", "ZPX", 6 ),Op( "???", "XXX", "IMP", 6 ),Op( "SED", "SED", "IMP", 2 ),Op( "SBC", "SBC", "ABY", 4 ),Op( "NOP", "NOP", "IMP", 2 ),Op( "???", "XXX", "IMP", 7 ),Op( "???", "NOP", "IMP", 4 ),Op( "SBC", "SBC", "ABX", 4 ),Op( "INC", "INC", "ABX", 7 ),Op( "???", "XXX", "IMP", 7 ),
+            Op( "BRK", self.BRK, self.IMM, 7 ),Op( "ORA", self.ORA, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "ORA", self.ORA, self.ZP0, 3 ),Op( "ASL", self.ASL, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PHP", self.PHP, self.IMP, 3 ),Op( "ORA", self.ORA, self.IMM, 2 ),Op( "ASL", self.ASL, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ABS, 4 ),Op( "ASL", self.ASL, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BPL", self.BPL, self.REL, 2 ),Op( "ORA", self.ORA, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ZPX, 4 ),Op( "ASL", self.ASL, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLC", self.CLC, self.IMP, 2 ),Op( "ORA", self.ORA, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ABX, 4 ),Op( "ASL", self.ASL, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
+            Op( "JSR", self.JSR, self.ABS, 6 ),Op( "AND", self.AND, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "BIT", self.BIT, self.ZP0, 3 ),Op( "AND", self.AND, self.ZP0, 3 ),Op( "ROL", self.ROL, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PLP", self.PLP, self.IMP, 4 ),Op( "AND", self.AND, self.IMM, 2 ),Op( "ROL", self.ROL, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "BIT", self.BIT, self.ABS, 4 ),Op( "AND", self.AND, self.ABS, 4 ),Op( "ROL", self.ROL, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BMI", self.BMI, self.REL, 2 ),Op( "AND", self.AND, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "AND", self.AND, self.ZPX, 4 ),Op( "ROL", self.ROL, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SEC", self.SEC, self.IMP, 2 ),Op( "AND", self.AND, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "AND", self.AND, self.ABX, 4 ),Op( "ROL", self.ROL, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
+            Op( "RTI", self.RTI, self.IMP, 6 ),Op( "EOR", self.EOR, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "EOR", self.EOR, self.ZP0, 3 ),Op( "LSR", self.LSR, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PHA", self.PHA, self.IMP, 3 ),Op( "EOR", self.EOR, self.IMM, 2 ),Op( "LSR", self.LSR, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "JMP", self.JMP, self.ABS, 3 ),Op( "EOR", self.EOR, self.ABS, 4 ),Op( "LSR", self.LSR, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BVC", self.BVC, self.REL, 2 ),Op( "EOR", self.EOR, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "EOR", self.EOR, self.ZPX, 4 ),Op( "LSR", self.LSR, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLI", self.CLI, self.IMP, 2 ),Op( "EOR", self.EOR, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "EOR", self.EOR, self.ABX, 4 ),Op( "LSR", self.LSR, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
+            Op( "RTS", self.RTS, self.IMP, 6 ),Op( "ADC", self.ADC, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "ADC", self.ADC, self.ZP0, 3 ),Op( "ROR", self.ROR, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PLA", self.PLA, self.IMP, 4 ),Op( "ADC", self.ADC, self.IMM, 2 ),Op( "ROR", self.ROR, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "JMP", self.JMP, self.IND, 5 ),Op( "ADC", self.ADC, self.ABS, 4 ),Op( "ROR", self.ROR, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BVS", self.BVS, self.REL, 2 ),Op( "ADC", self.ADC, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ADC", self.ADC, self.ZPX, 4 ),Op( "ROR", self.ROR, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SEI", self.SEI, self.IMP, 2 ),Op( "ADC", self.ADC, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ADC", self.ADC, self.ABX, 4 ),Op( "ROR", self.ROR, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
+            Op( "???", self.NOP, self.IMP, 2 ),Op( "STA", self.STA, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "STY", self.STY, self.ZP0, 3 ),Op( "STA", self.STA, self.ZP0, 3 ),Op( "STX", self.STX, self.ZP0, 3 ),Op( "???", self.XXX, self.IMP, 3 ),Op( "DEY", self.DEY, self.IMP, 2 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "TXA", self.TXA, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "STY", self.STY, self.ABS, 4 ),Op( "STA", self.STA, self.ABS, 4 ),Op( "STX", self.STX, self.ABS, 4 ),Op( "???", self.XXX, self.IMP, 4 ),
+            Op( "BCC", self.BCC, self.REL, 2 ),Op( "STA", self.STA, self.IZY, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "STY", self.STY, self.ZPX, 4 ),Op( "STA", self.STA, self.ZPX, 4 ),Op( "STX", self.STX, self.ZPY, 4 ),Op( "???", self.XXX, self.IMP, 4 ),Op( "TYA", self.TYA, self.IMP, 2 ),Op( "STA", self.STA, self.ABY, 5 ),Op( "TXS", self.TXS, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "???", self.NOP, self.IMP, 5 ),Op( "STA", self.STA, self.ABX, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "???", self.XXX, self.IMP, 5 ),
+            Op( "LDY", self.LDY, self.IMM, 2 ),Op( "LDA", self.LDA, self.IZX, 6 ),Op( "LDX", self.LDX, self.IMM, 2 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "LDY", self.LDY, self.ZP0, 3 ),Op( "LDA", self.LDA, self.ZP0, 3 ),Op( "LDX", self.LDX, self.ZP0, 3 ),Op( "???", self.XXX, self.IMP, 3 ),Op( "TAY", self.TAY, self.IMP, 2 ),Op( "LDA", self.LDA, self.IMM, 2 ),Op( "TAX", self.TAX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "LDY", self.LDY, self.ABS, 4 ),Op( "LDA", self.LDA, self.ABS, 4 ),Op( "LDX", self.LDX, self.ABS, 4 ),Op( "???", self.XXX, self.IMP, 4 ),
+            Op( "BCS", self.BCS, self.REL, 2 ),Op( "LDA", self.LDA, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "LDY", self.LDY, self.ZPX, 4 ),Op( "LDA", self.LDA, self.ZPX, 4 ),Op( "LDX", self.LDX, self.ZPY, 4 ),Op( "???", self.XXX, self.IMP, 4 ),Op( "CLV", self.CLV, self.IMP, 2 ),Op( "LDA", self.LDA, self.ABY, 4 ),Op( "TSX", self.TSX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 4 ),Op( "LDY", self.LDY, self.ABX, 4 ),Op( "LDA", self.LDA, self.ABX, 4 ),Op( "LDX", self.LDX, self.ABY, 4 ),Op( "???", self.XXX, self.IMP, 4 ),
+            Op( "CPY", self.CPY, self.IMM, 2 ),Op( "CMP", self.CMP, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "CPY", self.CPY, self.ZP0, 3 ),Op( "CMP", self.CMP, self.ZP0, 3 ),Op( "DEC", self.DEC, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "INY", self.INY, self.IMP, 2 ),Op( "CMP", self.CMP, self.IMM, 2 ),Op( "DEX", self.DEX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "CPY", self.CPY, self.ABS, 4 ),Op( "CMP", self.CMP, self.ABS, 4 ),Op( "DEC", self.DEC, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BNE", self.BNE, self.REL, 2 ),Op( "CMP", self.CMP, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "CMP", self.CMP, self.ZPX, 4 ),Op( "DEC", self.DEC, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLD", self.CLD, self.IMP, 2 ),Op( "CMP", self.CMP, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "CMP", self.CMP, self.ABX, 4 ),Op( "DEC", self.DEC, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
+            Op( "CPX", self.CPX, self.IMM, 2 ),Op( "SBC", self.SBC, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "CPX", self.CPX, self.ZP0, 3 ),Op( "SBC", self.SBC, self.ZP0, 3 ),Op( "INC", self.INC, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "INX", self.INX, self.IMP, 2 ),Op( "SBC", self.SBC, self.IMM, 2 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.SBC, self.IMP, 2 ),Op( "CPX", self.CPX, self.ABS, 4 ),Op( "SBC", self.SBC, self.ABS, 4 ),Op( "INC", self.INC, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
+            Op( "BEQ", self.BEQ, self.REL, 2 ),Op( "SBC", self.SBC, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "SBC", self.SBC, self.ZPX, 4 ),Op( "INC", self.INC, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SED", self.SED, self.IMP, 2 ),Op( "SBC", self.SBC, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "SBC", self.SBC, self.ABX, 4 ),Op( "INC", self.INC, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
         ]
     
-    def reset(self) -> void:
+    def reset(self) -> None:
         '''
         Reset Interrupt
         '''
@@ -1048,7 +1021,7 @@ class CPU6502:
         
         self.remaining_cycles = 8
 
-    def irq(self) -> void:
+    def irq(self) -> None:
         '''
         Interrupt Request
         '''
@@ -1071,7 +1044,7 @@ class CPU6502:
 
             self.remaining_cycles = 7
     
-    def nmi(self) -> void:
+    def nmi(self) -> None:
         '''
         Non-Maskable Interrupt Request
         '''
@@ -1093,9 +1066,9 @@ class CPU6502:
 
         self.remaining_cycles = 8
 
-    clock_count: uint32 = 0
+    clock_count: int = 0
 
-    def clock(self, debug: bool = False) -> void:
+    def clock(self, debug: bool = False) -> None:
         '''
         Perform one clock cycle
         '''
@@ -1105,8 +1078,8 @@ class CPU6502:
             self.set_pc(self.pc + 1)
             self.remaining_cycles = self.lookup[self.opcode].cycles
             op = self.lookup[self.opcode]
-            additional_cycle1: uint8 = self.address_modes[op.addrmode]()
-            additional_cycle2: uint8 = self.operates[op.operate]()
+            additional_cycle1: uint8 = op.addrmode()
+            additional_cycle2: uint8 = op.operate()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.setFlag(self.FLAGS.U, True)
             # if debug:
@@ -1121,7 +1094,7 @@ class CPU6502:
     def complete(self) -> bool:
         return self.remaining_cycles == 0
     
-    def disassemble(self, start: uint16, end: uint16) -> void:
+    def disassemble(self, start: uint16, end: uint16) -> None:
         for addr in range(start, end, 16):
             print("${addr:#04X}: {codes}".format(\
                 addr=addr,\
@@ -1202,65 +1175,65 @@ class CPU6502:
     def toReadable(self, start: uint16, end: uint16) -> Dict[uint16, str]:
         asm = {}
 
-        addr: uint32 = start
+        addr: int = start
         while addr < end:
             opcode = self.bus.read(addr, True)
             opaddr = addr
             addr += 1
             op = self.lookup[opcode]
-            if op.addrmode == "IMP":
+            if op.addrmode == self.IMP:
                 value = "    "
-            if op.addrmode == "IMM":
+            if op.addrmode == self.IMM:
                 value = "#${value:02X}".format(value=self.bus.read(addr, True))
                 addr += 1
-            elif op.addrmode == "ZP0":
+            elif op.addrmode == self.ZP0:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=lo) 
-            elif op.addrmode == "ZPX":
+            elif op.addrmode ==self.ZPX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=lo) 
-            elif op.addrmode == "ZPY":
+            elif op.addrmode == self.ZPY:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=lo)
-            elif op.addrmode == "IZX":
+            elif op.addrmode == self.IZX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X},X)".format(value=lo)
-            elif op.addrmode == "IZY":
+            elif op.addrmode == self.IZY:
                 lo = self.bus.read(addr, True)
                 addr += 1  
                 value = "(${value:02X},Y)".format(value=lo)  
-            elif op.addrmode == "ABS":
+            elif op.addrmode == self.ABS:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=hi<<8|lo)
-            elif op.addrmode == "ABX":
+            elif op.addrmode == self.ABX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=hi<<8|lo)
-            elif op.addrmode == "ABY":
+            elif op.addrmode == self.ABY:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=hi<<8|lo)
-            elif op.addrmode == "IND":
+            elif op.addrmode == self.IND:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X})".format(value=hi<<8|lo)
-            elif op.addrmode == "REL":
+            elif op.addrmode == self.REL:
                 inst = self.bus.read(addr, True)
                 addr += 1
                 offset = addr + int8(inst)
                 value = "${value:02X} [${offset:04X}]".format(value=inst,offset=offset)
-            asm[opaddr] = "${addr:04X}: {name} {value:11s} ({addrmode})".format(addr=opaddr,name=op.name,value=value,addrmode=op.addrmode)
+            asm[opaddr] = "${addr:04X}: {name} {value:11s} ({addrmode})".format(addr=opaddr,name=op.name,value=value,addrmode=op.addrmode.__name__)
         return asm

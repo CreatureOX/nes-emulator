@@ -1,5 +1,6 @@
 from typing import List
-from numpy import uint16, uint8, uint32, void
+from numpy import uint16, uint8, uint32
+
 from cartridge import Cartridge
 
 class Bus:
@@ -11,7 +12,7 @@ class Bus:
             return self.ram[addr]
         return 0x00
 
-    def write(self, addr: uint16, data: uint8) -> void:
+    def write(self, addr: uint16, data: uint8) -> None:
         if 0x0000 <= addr <= 0xFFFF:
             self.ram[addr] = data
 
@@ -55,7 +56,7 @@ class CPUBus:
             self.controller_state[addr & 0x0001] <<= 1
         return data
 
-    def write(self, addr: uint16, data: uint8) -> void:
+    def write(self, addr: uint16, data: uint8) -> None:
         success = self.cartridge.writeByCPU(addr, data)
         if success:
             pass
@@ -99,24 +100,3 @@ class CPUBus:
             self.ppu.nmi = False
             self.cpu.nmi()
         self.nSystemClockCounter += 1
-
-if __name__ == '__main__':
-    cart = Cartridge("./nestest.nes")
-    bus = CPUBus(cart)
-    bus.reset()
-
-    def test():
-        while True:
-            bus.clock()
-            if bus.ppu.frame_complete:
-                break
-        while True:
-            bus.clock()
-            if bus.cpu.complete():
-                break
-        bus.ppu.frame_complete = False
-
-    for _ in range(6):
-        test()
-    #bus.cpu.disassemble(start=0xC000, end=0xC020)
-

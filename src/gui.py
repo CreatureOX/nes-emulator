@@ -1,7 +1,9 @@
 import PySimpleGUI as gui
 import pygame
 import os
-from numpy import uint16, void
+from numpy import uint16
+from threading import Thread, Event
+
 from cartridge import Cartridge
 from bus import CPUBus
 
@@ -55,10 +57,10 @@ class Emulator:
         self.fps = 30
         pygame.display.init()
 
-    def drawRAM(self, start_addr: uint16, end_addr: uint16) -> void:
+    def drawRAM(self, start_addr: uint16, end_addr: uint16) -> None:
         self.window['HEX'].Update(self.bus.cpu.toHex(start=start_addr, end=end_addr))
         
-    def drawCPU(self) -> void:
+    def drawCPU(self) -> None:
         self.window["N"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.N > 0 else 'WHITE')
         self.window["V"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.V > 0 else 'WHITE')
         self.window["-"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.U > 0 else 'WHITE')
@@ -72,7 +74,7 @@ class Emulator:
         self.window["Y"].Update("Y: ${y:02X}".format(y=self.bus.cpu.y))
         self.window["SP"].Update("SP: ${stkp:04X}".format(stkp=self.bus.cpu.stkp))
 
-    def drawCode(self, delta: int = 10) -> void:
+    def drawCode(self, delta: int = 10) -> None:
         start, end = max(self.bus.cpu.pc- delta, 0x0000), self.bus.cpu.pc + delta
         asm = self.bus.cpu.toReadable(start, end)
         self.window['READABLE'].Update("")
@@ -128,7 +130,7 @@ class Emulator:
                 break
         self.drawCPU()
         self.drawCode()    
-        surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+        surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
         return True
@@ -154,9 +156,8 @@ class Emulator:
         pygame.display.flip()
         return True
 
-    def run(self) -> bool:
-        gameLoop = True
-        while gameLoop:
+    def run(self, stop: Event) -> bool:
+        while not stop.is_set():
             pygame.event.pump()
             self.gameClock.tick(self.fps)
             while True:
@@ -164,9 +165,10 @@ class Emulator:
                 if self.bus.ppu.frame_complete:
                     break
             self.bus.ppu.frame_complete = False
-            surf = pygame.surfarray.make_surface(swapaxes(self.bus.ppu.getScreen().rgb.astype('uint8'), 0, 1))
+            surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
             self.gameScreen.blit(surf, (0,0))
             pygame.display.flip()
+        print("done")
         return True
 
     def reset(self) -> bool:
@@ -179,10 +181,12 @@ class Emulator:
         return True   
 
     def emulate(self) -> None:
+        stop = Event()
         while True:
             event, values = self.window.read()
             success = True
             if event in (None, 'Exit'):
+                stop.set()
                 break
             elif event == 'Open File':
                 success = self.openFile()
@@ -193,13 +197,15 @@ class Emulator:
             elif event == 'Frame':
                 success = self.frame()
             elif event == 'Run':
-                success = self.run()
+                #success = self.run()
+                asyncRun = Thread(target=self.run, args=(stop,))
+                asyncRun.start()
             elif event == 'Reset':
                 success = self.reset()
             elif event == 'About':
                 gui.popup('Nes Emulator\nVersion: 0\nAuthor: CreatureOX\n')
             if not success:
-                continue   
+                continue      
         self.window.close()
 
 emu = Emulator()

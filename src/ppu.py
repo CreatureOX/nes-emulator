@@ -1,5 +1,5 @@
 from typing import List
-from numpy import ndarray, uint16, uint8, void, zeros
+from numpy import ndarray, uint16, uint8, zeros
 from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure
 
 from bus import CPUBus
@@ -239,7 +239,7 @@ class PPU2C02:
                 self.vram_addr.reg += 32 if self.control.bits.increment_mode == 1 else 1    
         return data
 
-    def writeByCPU(self, addr: uint16, data: uint8) -> void:
+    def writeByCPU(self, addr: uint16, data: uint8) -> None:
         if addr == 0x0000:
             # Control
             self.control.reg = data
@@ -323,7 +323,7 @@ class PPU2C02:
             data = self.paletteTable[addr] & (0x30 if self.mask.bits.grayscale == 1 else 0x3F)
         return data
 
-    def writeByPPU(self, addr: uint16, data: uint8) -> void:
+    def writeByPPU(self, addr: uint16, data: uint8) -> None:
         addr &= 0x3FFF     
 
         success = self.cartridge.writeByPPU(addr, data)
@@ -363,7 +363,7 @@ class PPU2C02:
                 addr = 0x000C
             self.paletteTable[addr] = data            
 
-    def setPalettePanel(self) -> void:    
+    def setPalettePanel(self) -> None:    
         self.palettePanel[0x00],self.palettePanel[0x01],self.palettePanel[0x02],self.palettePanel[0x03],self.palettePanel[0x04],self.palettePanel[0x05],self.palettePanel[0x06],self.palettePanel[0x07],self.palettePanel[0x08],self.palettePanel[0x09],self.palettePanel[0x0a],self.palettePanel[0x0b],self.palettePanel[0x0c],self.palettePanel[0x0d],self.palettePanel[0x0e],self.palettePanel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
         self.palettePanel[0x10],self.palettePanel[0x11],self.palettePanel[0x12],self.palettePanel[0x13],self.palettePanel[0x14],self.palettePanel[0x15],self.palettePanel[0x16],self.palettePanel[0x17],self.palettePanel[0x18],self.palettePanel[0x19],self.palettePanel[0x1a],self.palettePanel[0x1b],self.palettePanel[0x1c],self.palettePanel[0x1d],self.palettePanel[0x1e],self.palettePanel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
         self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
@@ -373,7 +373,7 @@ class PPU2C02:
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
         # if color > 0:
         #     print("color: {color}".format(color=color))
-        return list(self.palettePanel[color])
+        return self.palettePanel[color]
 
     def getPatternTable(self, i: uint8, palette: uint8) -> ndarray:
         for tileY in range(0,16):
@@ -389,7 +389,7 @@ class PPU2C02:
         
         return self.spritePatternTable[i]
 
-    def reset(self) -> void:
+    def reset(self) -> None:
         self.fine_x = 0x00
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
@@ -458,7 +458,7 @@ class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
-    def clock(self, debug: bool = False) -> void:
+    def clock(self, debug: bool = False) -> None:
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
