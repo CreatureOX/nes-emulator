@@ -1,6 +1,7 @@
 from typing import List
 from numpy import ndarray, uint16, uint8, zeros
-from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure
+from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure, cast, POINTER, memset, sizeof
+import copy
 
 from bus import CPUBus
 from cartridge import Cartridge
@@ -105,54 +106,20 @@ class PPU2C02:
     background_shifter_attribute_lo: uint16 = 0x0000
     background_shifter_attribute_hi: uint16 = 0x0000
 
-    class sObjectAttributeEntry:
-        y: uint8
-        id: uint8
-        attribute: uint8
-        x: uint8
+    class sObjectAttributeEntry(LittleEndianStructure):
+        _fields_ = [
+            ("y", c_uint8),
+            ("id", c_uint8),
+            ("attribute", c_uint8),
+            ("x", c_uint8),
+        ]
 
-        def __init__(self) -> None:
-            self.y = 0
-            self.id = 0
-            self.attribute = 0
-            self.x = 0
-
-        def setY(self, y: uint8):
-            self.y = y
-            return self
-
-        def setId(self, id: uint8):
-            self.id = id
-            return self
-
-        def setAttribute(self, attribute: uint8):
-            self.attribute = attribute
-            return self
-
-        def setX(self, x: uint8):
-            self.x = x
-            return self
-
-    OAM: List[sObjectAttributeEntry] = [sObjectAttributeEntry()] * 64
-    pOAM: List[uint8] = [0x00] * 4 * 64
-
-    def uint8ArrToObjArr(self, uint8Arr: List[uint8]) -> List[sObjectAttributeEntry]:
-        objArr: List[self.sObjectAttributeEntry] = []
-        for i in range(0, len(uint8Arr), 4):
-            obj = self.sObjectAttributeEntry()
-            obj.y, obj.id, obj.attribute, obj.x = uint8Arr[i], uint8Arr[i+1], uint8Arr[i+2], uint8Arr[i+3]
-            objArr.append(obj)
-        return objArr
-
-    def objArrToUint8Arr(self, objArr: List[sObjectAttributeEntry]) -> List[uint8]:
-        uint8Arr: List[uint8] = []
-        for obj in objArr:
-            uint8Arr.extend([obj.y, obj.id, obj.attribute, obj.x])
-        return uint8Arr
+    OAM = (sObjectAttributeEntry * 64)()
+    pOAM: List[uint8] = cast(OAM, POINTER(c_uint8))
 
     oam_addr: uint8 = 0x00
 
-    spriteScanline: List[sObjectAttributeEntry] = [sObjectAttributeEntry()] * 8
+    spriteScanline = (sObjectAttributeEntry * 8)()
     sprite_count: uint8
     sprite_shifter_pattern_lo: List[uint8] = [0x00] * 8
     sprite_shifter_pattern_hi: List[uint8] = [0x00] * 8
@@ -171,6 +138,7 @@ class PPU2C02:
     def __init__(self, bus: CPUBus) -> None:
         self.bus = bus
         self.setPalettePanel()
+        self.screenWidth, self.screenHeight, _ = self.spriteScreen.shape
 
     def connectCartridge(self, cartridge: Cartridge):
         self.cartridge = cartridge
@@ -257,7 +225,6 @@ class PPU2C02:
         elif addr == 0x0004:
             # OAM Data
             self.pOAM[self.oam_addr] = data
-            self.OAM = self.uint8ArrToObjArr(self.pOAM)
         elif addr == 0x0005:
             # Scroll
             if self.address_latch == 0:
@@ -385,7 +352,7 @@ class PPU2C02:
                     for col in range(0,8):
                         pixel: uint8 = (tile_lsb & 0x01) << 1 | (tile_msb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
-                        self.spritePatternTable[i][tileX * 8 + (7 - col), tileY * 8 + row] = self.getColorFromPaletteTable(palette, pixel)
+                        self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
         
         return self.spritePatternTable[i]
 
@@ -411,12 +378,12 @@ class PPU2C02:
                 self.vram_addr.bits.coarse_x = 0
                 self.vram_addr.bits.nametable_x = ~self.vram_addr.bits.nametable_x
             else:
-                self.vram_addr.bits.coarse_x = self.vram_addr.bits.coarse_x + 1
+                self.vram_addr.bits.coarse_x += 1
 
     def incrementScrollY(self) -> None:
         if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
             if self.vram_addr.bits.fine_y < 7:
-                self.vram_addr.bits.fine_y = self.vram_addr.bits.fine_y + 1
+                self.vram_addr.bits.fine_y += 1
             else:
                 self.vram_addr.bits.fine_y = 0
                 if self.vram_addr.bits.coarse_y == 29:
@@ -425,7 +392,7 @@ class PPU2C02:
                 elif self.vram_addr.bits.coarse_y == 31:
                     self.vram_addr.bits.coarse_y = 0
                 else:
-                    self.vram_addr.bits.coarse_y = self.vram_addr.bits.coarse_y + 1
+                    self.vram_addr.bits.coarse_y += 1
 
     def transferAddressX(self) -> None:
         if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
@@ -441,8 +408,8 @@ class PPU2C02:
     def loadBackgroundShifters(self) -> None:
         self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
         self.background_shifter_pattern_hi = ((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-        self.background_shifter_attribute_lo = 0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) else 0x00
-        self.background_shifter_attribute_hi = 0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) else 0x00
+        self.background_shifter_attribute_lo = 0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) > 0 else 0x00
+        self.background_shifter_attribute_hi = 0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) > 0 else 0x00
 
     def updateShifters(self) -> None:
         if self.mask.bits.render_background == 1:
@@ -451,7 +418,7 @@ class PPU2C02:
             self.background_shifter_attribute_lo <<= 1
             self.background_shifter_attribute_hi <<= 1
         if self.mask.bits.render_sprites == 1 and self.cycle >= 1 and self.cycle < 258:
-            for i in range(0,self.sprite_count):
+            for i in range(0, self.sprite_count):
                 if self.spriteScanline[i].x > 0:
                     self.spriteScanline[i].x -= 1
                 else:
@@ -466,7 +433,7 @@ class PPU2C02:
                 self.status.bits.vertical_blank = 0
                 self.status.bits.sprite_overflow = 0
                 self.status.bits.sprite_zero_hit = 0
-                for i in range(0,8):
+                for i in range(0, 8):
                     self.sprite_shifter_pattern_hi[i] = 0
                     self.sprite_shifter_pattern_lo[i] = 0
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
@@ -509,23 +476,21 @@ class PPU2C02:
             if self.scanline == -1 and 280 <= self.cycle < 305:               
                 self.transferAddressY()
             if self.cycle == 257 and self.scanline >= 0:
-                # memset
-                self.spriteScanline = [self.sObjectAttributeEntry().setY(0b11).setId(0b11).setAttribute(0b11).setX(0b11) for i in range(8)]
+                memset(self.spriteScanline, 0xFF, 8 * sizeof(self.sObjectAttributeEntry))
                 self.sprite_count = 0
-                for i in range(0,8):
+                for i in range(0, 8):
                     self.sprite_shifter_pattern_lo[i] = 0
                     self.sprite_shifter_pattern_hi[i] = 0
                 nOAMEntry: uint8 = 0
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
-                    diff: uint16 = (self.scanline - self.OAM[nOAMEntry].y)
+                    diff: uint16 = (self.scanline - self.OAM[nOAMEntry].y) & 0xFFFF
                     diff_compare = 16 if self.control.bits.sprite_size == 1 else 8
                     if diff >= 0 and diff < diff_compare:
                         if self.sprite_count < 8:
                             if nOAMEntry == 0:
                                 self.bSpriteZeroHitPossible = True
-                            #memcpy
-                            self.spriteScanline[self.sprite_count] = self.OAM[nOAMEntry]
+                            self.spriteScanline[self.sprite_count] = copy.deepcopy(self.OAM[nOAMEntry])
                             self.sprite_count += 1
                     nOAMEntry += 1
                 self.status.bits.sprite_overflow = 1 if self.sprite_count > 8 else 0
@@ -592,12 +557,12 @@ class PPU2C02:
         if self.mask.bits.render_background == 1:
             bit_mux: uint16 = 0x8000 >> self.fine_x
 
-            background_pixel_0: uint8 = (self.background_shifter_pattern_lo & bit_mux) > 0
-            background_pixel_1: uint8 = (self.background_shifter_pattern_hi & bit_mux) > 0
-            background_pixel = (background_pixel_0 << 1) | background_pixel_1
+            background_pixel_0: uint8 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
+            background_pixel_1: uint8 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
+            background_pixel = (background_pixel_1 << 1) | background_pixel_0
 
-            background_palette_0: uint8 = (self.background_shifter_attribute_lo & bit_mux) > 0
-            background_palette_1: uint8 = (self.background_shifter_attribute_hi & bit_mux) > 0
+            background_palette_0: uint8 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
+            background_palette_1: uint8 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
             background_palette = (background_palette_1 << 1) | background_palette_0
 
         foreground_pixel: uint8 = 0
@@ -606,13 +571,13 @@ class PPU2C02:
 
         if self.mask.bits.render_sprites == 1:
             self.bSpriteZeroBeingRendered = False
-            for i in range(0,self.sprite_count):
+            for i in range(0, self.sprite_count):
                 if self.spriteScanline[i].x == 0:
-                    foreground_pixel_lo: uint8 = (self.sprite_shifter_pattern_lo[i]&0x80) > 0
-                    foreground_pixel_hi: uint8 = (self.sprite_shifter_pattern_hi[i]&0x80) > 0
-                    foreground_pixel = (foreground_pixel_hi<<1) | foreground_pixel_lo
-                    foreground_palette = (self.spriteScanline[i].attribute&0x03) + 0x04
-                    foreground_priority = (self.spriteScanline[i].attribute&0x20) == 0
+                    foreground_pixel_lo: uint8 = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
+                    foreground_pixel_hi: uint8 = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
+                    foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
+                    foreground_palette = (self.spriteScanline[i].attribute & 0x03) + 0x04
+                    foreground_priority = 1 if (self.spriteScanline[i].attribute & 0x20) == 0 else 0
 
                     if foreground_pixel != 0:
                         if i == 0:
@@ -638,16 +603,15 @@ class PPU2C02:
                 pixel = background_pixel
                 palette = background_palette
             if self.bSpriteZeroHitPossible and self.bSpriteZeroBeingRendered:
-                if self.mask.bits.render_background & self.mask.bits.render_sprites == 1:
-                    if (~(self.mask.bits.render_background_left | self.mask.bits.render_sprites_left) == 1):
+                if self.mask.bits.render_background & self.mask.bits.render_sprites != 0:
+                    if (~(self.mask.bits.render_background_left | self.mask.bits.render_sprites_left) != 0):
                         if 9 <= self.cycle < 258:
                             self.status.bits.sprite_zero_hit = 1
                     else:
                         if 1 <= self.cycle < 258:
                             self.status.bits.sprite_zero_hit = 1
 
-        width, height, _ = self.spriteScreen.shape
-        if 0 <= self.cycle - 1 < width and 0 <= self.scanline < height: 
+        if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
             self.spriteScreen[self.cycle - 1, self.scanline] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
