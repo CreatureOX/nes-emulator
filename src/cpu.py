@@ -1076,8 +1076,8 @@ class CPU6502:
             self.opcode = self.read(self.pc)
             self.setFlag(self.FLAGS.U, True)
             self.set_pc(self.pc + 1)
-            self.remaining_cycles = self.lookup[self.opcode].cycles
             op = self.lookup[self.opcode]
+            self.remaining_cycles = op.cycles
             additional_cycle1: uint8 = op.addrmode()
             additional_cycle2: uint8 = op.operate()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
