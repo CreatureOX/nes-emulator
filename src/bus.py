@@ -51,8 +51,8 @@ class CPUBus:
             self.dma_page = data
             self.dma_addr = 0x00
             self.dma_transfer = True
-        elif 0x4016 <= addr <= 0x4017:
-            data = (self.controller_state[addr & 0x0001] & 0x80) > 0
+        elif 0x4016 <= addr <= 0x4017:       
+            data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
         return data
 

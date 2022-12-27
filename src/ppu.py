@@ -549,7 +549,7 @@ class PPU2C02:
         if 241 <= self.scanline < 261:            
             if self.scanline == 241 and self.cycle == 1:
                 self.status.bits.vertical_blank = 1
-                if self.control.bits.enable_nmi:
+                if self.control.bits.enable_nmi == 1:
                     self.nmi = True
 
         background_pixel: uint8 = 0x00
