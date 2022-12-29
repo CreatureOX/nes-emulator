@@ -158,20 +158,16 @@ class Emulator:
 
     def run(self, stop: Event) -> bool:
         while not stop.is_set():
+            self.bus.controller[0] = 0x00
             for event in pygame.event.get():
-                self.bus.controller[0] = 0x00
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_UP:
-                        print("K_UP")
                         self.bus.controller[0] |= 0x08
                     elif event.key == pygame.K_DOWN:
-                        print("K_DOWN")
                         self.bus.controller[0] |= 0x04
                     elif event.key == pygame.K_LEFT:
-                        print("K_LEFT")
                         self.bus.controller[0] |= 0x02
                     elif event.key == pygame.K_RIGHT:
-                        print("K_RIGHT")
                         self.bus.controller[0] |= 0x01
             #self.gameClock.tick(self.fps)
             while True:

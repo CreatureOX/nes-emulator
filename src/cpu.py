@@ -233,7 +233,7 @@ class CPU6502:
         '''
         fetch opcode
         '''
-        if self.lookup[self.opcode].addrmode != "IMP":
+        if self.lookup[self.opcode].addrmode != self.IMP:
             self.fetched = self.read(self.addr_abs)
         return self.fetched
             
@@ -303,7 +303,7 @@ class CPU6502:
         self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
         self.setFlag(self.FLAGS.N, self.temp & 0x80)
         
-        if (self.lookup[self.opcode].addrmode == "IMP"):
+        if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
             self.write(self.addr_abs, self.temp & 0x00FF)
@@ -712,7 +712,7 @@ class CPU6502:
         self.set_temp(self.fetched >> 1)   
         self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
         self.setFlag(self.FLAGS.N, self.temp & 0x0080)
-        if (self.lookup[self.opcode].addrmode == "IMP"):
+        if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
             self.write(self.addr_abs, self.temp & 0x00FF)
@@ -799,7 +799,7 @@ class CPU6502:
         self.setFlag(self.FLAGS.C, self.temp & 0xFF00)
         self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x0000)
         self.setFlag(self.FLAGS.N, self.temp & 0x0080)
-        if (self.lookup[self.opcode].addrmode == "IMP"):
+        if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
             self.write(self.addr_abs, self.temp & 0x00FF)
@@ -814,7 +814,7 @@ class CPU6502:
         self.setFlag(self.FLAGS.C, self.fetched & 0x01)
         self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x00)
         self.setFlag(self.FLAGS.N, self.temp & 0x0080)
-        if (self.lookup[self.opcode].addrmode == "IMP"):
+        if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
             self.write(self.addr_abs, self.temp & 0x00FF)
@@ -1107,56 +1107,56 @@ class CPU6502:
             opaddr = addr
             addr += 1
             op = self.lookup[opcode]
-            if op.addrmode == "IMP":
+            if op.addrmode == self.IMP:
                 value = "    "
-            if op.addrmode == "IMM":
+            if op.addrmode == self.IMM:
                 value = "#${value:02X}".format(value=self.bus.read(addr, True))
                 addr += 1
-            elif op.addrmode == "ZP0":
+            elif op.addrmode == self.ZP0:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=lo) 
-            elif op.addrmode == "ZPX":
+            elif op.addrmode == self.ZPX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=lo) 
-            elif op.addrmode == "ZPY":
+            elif op.addrmode == self.ZPY:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=lo)
-            elif op.addrmode == "IZX":
+            elif op.addrmode == self.IZX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X},X)".format(value=lo)
-            elif op.addrmode == "IZY":
+            elif op.addrmode == self.IZY:
                 lo = self.bus.read(addr, True)
                 addr += 1  
                 value = "(${value:02X},Y)".format(value=lo)  
-            elif op.addrmode == "ABS":
+            elif op.addrmode == self.ABS:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=hi<<8|lo)
-            elif op.addrmode == "ABX":
+            elif op.addrmode == self.ABX:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=hi<<8|lo)
-            elif op.addrmode == "ABY":
+            elif op.addrmode == self.ABY:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=hi<<8|lo)
-            elif op.addrmode == "IND":
+            elif op.addrmode == self.IND:
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X})".format(value=hi<<8|lo)
-            elif op.addrmode == "REL":
+            elif op.addrmode == self.REL:
                 inst = self.bus.read(addr, True)
                 addr += 1
                 offset = addr + int8(inst)

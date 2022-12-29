@@ -54,6 +54,7 @@ class CPUBus:
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
+            self.controller_state[addr & 0x0001] &= 0xFF
         return data
 
     def write(self, addr: uint16, data: uint8) -> None:
@@ -65,7 +66,7 @@ class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4016 <= addr <= 0x4017:
-            self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
+            self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001] & 0xFF
 
     def reset(self) -> None:
         self.cartridge.reset()
