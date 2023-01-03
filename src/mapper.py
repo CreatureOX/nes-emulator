@@ -3,8 +3,8 @@ from numpy import uint16, uint32, uint8
 
 
 class Mapper:
-    nPRGBanks: uint8 = 0
-    nCHRBanks: uint8 = 0
+    nPRGBanks: uint8
+    nCHRBanks: uint8
 
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
         self.nPRGBanks = prgBanks

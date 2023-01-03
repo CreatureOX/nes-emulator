@@ -6,6 +6,8 @@ from threading import Thread, Event
 
 from cartridge import Cartridge
 from bus import CPUBus
+from cpu import C, Z, I, D, B, U, V, N
+
 
 class Emulator:
     menu_def = [
@@ -61,13 +63,13 @@ class Emulator:
         self.window['HEX'].Update(self.bus.cpu.toHex(start=start_addr, end=end_addr))
         
     def drawCPU(self) -> None:
-        self.window["N"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.N > 0 else 'WHITE')
-        self.window["V"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.V > 0 else 'WHITE')
-        self.window["-"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.U > 0 else 'WHITE')
-        self.window["B"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.B > 0 else 'WHITE')
-        self.window["D"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.D > 0 else 'WHITE')
-        self.window["I"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.I > 0 else 'WHITE')
-        self.window["Z"].Update(text_color='RED' if self.bus.cpu.status & self.bus.cpu.FLAGS.Z > 0 else 'WHITE')
+        self.window["N"].Update(text_color='RED' if self.bus.cpu.status & N > 0 else 'WHITE')
+        self.window["V"].Update(text_color='RED' if self.bus.cpu.status & V > 0 else 'WHITE')
+        self.window["-"].Update(text_color='RED' if self.bus.cpu.status & U > 0 else 'WHITE')
+        self.window["B"].Update(text_color='RED' if self.bus.cpu.status & B > 0 else 'WHITE')
+        self.window["D"].Update(text_color='RED' if self.bus.cpu.status & D > 0 else 'WHITE')
+        self.window["I"].Update(text_color='RED' if self.bus.cpu.status & I > 0 else 'WHITE')
+        self.window["Z"].Update(text_color='RED' if self.bus.cpu.status & Z > 0 else 'WHITE')
         self.window["PC"].Update("PC: ${PC:04X}".format(PC=self.bus.cpu.pc))
         self.window["A"].Update("A: ${a:02X}".format(a=self.bus.cpu.a))
         self.window["X"].Update("X: ${x:02X}".format(x=self.bus.cpu.x))
@@ -161,6 +163,14 @@ class Emulator:
             self.bus.controller[0] = 0x00
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_x:
+                        self.bus.controller[0] |= 0x80
+                    elif event.key == pygame.K_z:
+                        self.bus.controller[0] |= 0x40
+                    elif event.key == pygame.K_a:
+                        self.bus.controller[0] |= 0x20
+                    elif event.key == pygame.K_s:
+                        self.bus.controller[0] |= 0x10
                     if event.key == pygame.K_UP:
                         self.bus.controller[0] |= 0x08
                     elif event.key == pygame.K_DOWN:
@@ -178,7 +188,6 @@ class Emulator:
             surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
             self.gameScreen.blit(surf, (0,0))
             pygame.display.flip()
-        print("done")
         return True
 
     def reset(self) -> bool:

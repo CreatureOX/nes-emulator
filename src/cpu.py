@@ -1,8 +1,17 @@
-from enum import IntEnum
 from typing import List, Dict
 from numpy import uint16, uint8, int8
 
 from bus import CPUBus
+
+
+C = 1 << 0 # Carry Bit
+Z = 1 << 1 # Zero
+I = 1 << 2 # Disable Interrupts
+D = 1 << 3 # Decimal Mode
+B = 1 << 4 # Break
+U = 1 << 5 # Unused
+V = 1 << 6 # Overflow
+N = 1 << 7 # Negative
 
 class Op:
     name: str
@@ -17,12 +26,12 @@ class Op:
         self.cycles = cycles
 
 class CPU6502:
-    a: uint8 = 0x00 # Accumlator Register
-    x: uint8 = 0x00 # X Register
-    y: uint8 = 0x00 # Y Register
-    stkp: uint8 = 0x00 # Stack Pointer
-    pc: uint16 = 0x0000 # Program Counter
-    status: uint8 = 0x00 # Status Register
+    a: uint8 # Accumlator Register
+    x: uint8 # X Register
+    y: uint8 # Y Register
+    stkp: uint8 # Stack Pointer
+    pc: uint16 # Program Counter
+    status: uint8 # Status Register
 
     def set_a(self, a: uint8):
         self.a = a & 0xFF
@@ -42,26 +51,16 @@ class CPU6502:
     def set_status(self, status: uint8):
         self.status = status & 0xFF
 
-    class FLAGS(IntEnum):
-        C = (1 << 0), # Carry Bit
-        Z = (1 << 1), # Zero
-        I = (1 << 2), # Disable Interrupts
-        D = (1 << 3), # Decimal Mode
-        B = (1 << 4), # Break
-        U = (1 << 5), # Unused
-        V = (1 << 6), # Overflow
-        N = (1 << 7), # Negative
+    def getFlag(self, f: int) -> uint8:
+        return 1 if (self.status & f) > 0 else 0
 
-    def getFlag(self, f: FLAGS) -> uint8:
-        return 1 if (self.status & f.value) > 0 else 0
-
-    def setFlag(self, f: FLAGS, v: bool) -> None: 
+    def setFlag(self, f: int, v: bool) -> None: 
         if v:
-            self.set_status(self.status | f.value)
+            self.set_status(self.status | f)
         else:
-            self.set_status(self.status & ~f.value)
+            self.set_status(self.status & ~f)
 
-    ram: List[uint8] = [0x00] * 2 * 1024
+    ram: List[uint8]
     bus: CPUBus
      
     def read(self, addr: uint16) -> uint8:
@@ -72,9 +71,9 @@ class CPU6502:
         addr, data = addr & 0xFFFF, data & 0xFF
         self.bus.write(addr, data)
 
-    fetched: uint8 = 0x00
-    addr_abs: uint16 = 0x0000
-    addr_rel: uint16 = 0x0000
+    fetched: uint8
+    addr_abs: uint16
+    addr_rel: uint16
 
     def set_fetched(self, fetched: uint8):
         self.fetched = fetched & 0xFF
@@ -222,9 +221,9 @@ class CPU6502:
 
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
-    opcode: uint8 = 0x00
-    temp: uint16 = 0x0000
-    remaining_cycles: uint8 = 0x00
+    opcode: uint8
+    temp: uint16
+    remaining_cycles: uint8
 
     def set_temp(self, temp: uint16):
         self.temp = temp & 0xFFFF
@@ -245,12 +244,12 @@ class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.a + self.fetched + self.getFlag(self.FLAGS.C))
+        self.set_temp(self.a + self.fetched + self.getFlag(C))
 
-        self.setFlag(self.FLAGS.C, self.temp > 255)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0)
-        self.setFlag(self.FLAGS.V, (~(self.a ^ self.fetched) & (self.a ^ self.temp)) & 0x0080)
-        self.setFlag(self.FLAGS.N, self.temp & 0x80)
+        self.setFlag(C, self.temp > 255)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0)
+        self.setFlag(V, (~(self.a ^ self.fetched) & (self.a ^ self.temp)) & 0x0080)
+        self.setFlag(N, self.temp & 0x80)
         
         self.set_a(self.temp & 0x00FF)
         return 1
@@ -264,12 +263,12 @@ class CPU6502:
         '''
         self.fetch()
         value = self.fetched ^ 0x00FF
-        self.set_temp(self.a + value + self.getFlag(self.FLAGS.C))
+        self.set_temp(self.a + value + self.getFlag(C))
 
-        self.setFlag(self.FLAGS.C, self.temp & 0xFF00)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0)
-        self.setFlag(self.FLAGS.V, (self.temp ^ self.a) & (self.temp ^ value) & 0x0080)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(C, self.temp & 0xFF00)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0)
+        self.setFlag(V, (self.temp ^ self.a) & (self.temp ^ value) & 0x0080)
+        self.setFlag(N, self.temp & 0x0080)
 
         self.set_a(self.temp & 0x00FF)
         return 1
@@ -284,8 +283,8 @@ class CPU6502:
         self.fetch()
         self.set_a(self.a & self.fetched)
         
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         
         return 1
 
@@ -299,9 +298,9 @@ class CPU6502:
         self.fetch()
         self.set_temp(self.fetched << 1)
         
-        self.setFlag(self.FLAGS.C, (self.temp & 0xFF00) > 0)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x80)
+        self.setFlag(C, (self.temp & 0xFF00) > 0)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
+        self.setFlag(N, self.temp & 0x80)
         
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
@@ -315,7 +314,7 @@ class CPU6502:
         Function:    if(C == 0) pc = address 
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.C) == 0):
+        if (self.getFlag(C) == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
             
@@ -331,7 +330,7 @@ class CPU6502:
         Function:    if(C == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.C) == 1):
+        if (self.getFlag(C) == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
             
@@ -347,7 +346,7 @@ class CPU6502:
         Function:    if(Z == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.Z) == 1):
+        if (self.getFlag(Z) == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
             
@@ -364,9 +363,9 @@ class CPU6502:
         self.fetch()
         self.set_temp(self.a & self.fetched)
 
-        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x00)
-        self.setFlag(self.FLAGS.N, self.fetched & (1 << 7))
-        self.setFlag(self.FLAGS.V, self.fetched & (1 << 6))
+        self.setFlag(Z, self.temp & 0x00FF == 0x00)
+        self.setFlag(N, self.fetched & (1 << 7))
+        self.setFlag(V, self.fetched & (1 << 6))
 
         return 0
 
@@ -376,7 +375,7 @@ class CPU6502:
         Function:    if(N == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.N) == 1):
+        if (self.getFlag(N) == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
             
@@ -391,7 +390,7 @@ class CPU6502:
         Function:    if(Z == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.Z) == 0):
+        if (self.getFlag(Z) == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
 
@@ -407,7 +406,7 @@ class CPU6502:
         Function:    if(N == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.N) == 0):
+        if (self.getFlag(N) == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
 
@@ -426,16 +425,16 @@ class CPU6502:
         '''
         self.set_pc(self.pc + 1)
     
-        self.setFlag(self.FLAGS.I, 1)
+        self.setFlag(I, 1)
         self.write(0x0100 + self.stkp, (self.pc >> 8) & 0x00FF)
         self.set_stkp(self.stkp - 1)
         self.write(0x0100 + self.stkp, self.pc & 0x00FF)
         self.set_stkp(self.stkp - 1)
 
-        self.setFlag(self.FLAGS.B, 1)
+        self.setFlag(B, 1)
         self.write(0x0100 + self.stkp, self.status)
         self.set_stkp(self.stkp - 1)
-        self.setFlag(self.FLAGS.B, 0)
+        self.setFlag(B, 0)
         
         self.set_pc(self.read(0xFFFE) | self.read(0xFFFF) << 8)
         return 0
@@ -446,7 +445,7 @@ class CPU6502:
         Function:    if(V == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.V) == 0):
+        if (self.getFlag(V) == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
 
@@ -462,7 +461,7 @@ class CPU6502:
         Function:    if(V == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.getFlag(self.FLAGS.V) == 1):
+        if (self.getFlag(V) == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.pc + self.addr_rel)
 
@@ -478,7 +477,7 @@ class CPU6502:
         Function:    C = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.C, False)
+        self.setFlag(C, False)
         return 0
 
     def CLD(self) -> uint8:
@@ -487,7 +486,7 @@ class CPU6502:
         Function:    D = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.D, False)
+        self.setFlag(D, False)
         return 0
 
     def CLI(self) -> uint8:
@@ -496,7 +495,7 @@ class CPU6502:
         Function:    I = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.I, False)
+        self.setFlag(I, False)
         return 0
 
     def CLV(self) -> uint8:
@@ -505,7 +504,7 @@ class CPU6502:
         Function:    V = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.V, False)
+        self.setFlag(V, False)
         return 0
 
     def CMP(self) -> uint8:
@@ -517,9 +516,9 @@ class CPU6502:
         '''
         self.fetch()
         self.set_temp(self.a - self.fetched)
-        self.setFlag(self.FLAGS.C, self.a >= self.fetched)
-        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(C, self.a >= self.fetched)
+        self.setFlag(Z, self.temp & 0x00FF == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         return 1
 
     def CPX(self) -> uint8:
@@ -531,9 +530,9 @@ class CPU6502:
         '''
         self.fetch()
         self.set_temp(self.x - self.fetched)
-        self.setFlag(self.FLAGS.C, self.x >= self.fetched)
-        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(C, self.x >= self.fetched)
+        self.setFlag(Z, self.temp & 0x00FF == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         return 0
 
     def CPY(self) -> uint8:
@@ -545,9 +544,9 @@ class CPU6502:
         '''
         self.fetch()
         self.set_temp(self.y - self.fetched)
-        self.setFlag(self.FLAGS.C, self.y >= self.fetched)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(C, self.y >= self.fetched)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         return 0
 
     def DEC(self) -> uint8:
@@ -560,8 +559,8 @@ class CPU6502:
         self.fetch()
         self.set_temp(self.fetched - 1)
         self.write(self.addr_abs, self.temp & 0x00FF)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         return 0
 
     def DEX(self) -> uint8:
@@ -572,8 +571,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_x(self.x - 1)
-        self.setFlag(self.FLAGS.Z, self.x == 0x00)
-        self.setFlag(self.FLAGS.N, self.x & 0x80)
+        self.setFlag(Z, self.x == 0x00)
+        self.setFlag(N, self.x & 0x80)
         return 0
 
     def DEY(self) -> uint8:
@@ -584,8 +583,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_y(self.y - 1)
-        self.setFlag(self.FLAGS.Z, self.y == 0x00)
-        self.setFlag(self.FLAGS.N, self.y & 0x80)
+        self.setFlag(Z, self.y == 0x00)
+        self.setFlag(N, self.y & 0x80)
         return 0
 
     def EOR(self) -> uint8:
@@ -597,8 +596,8 @@ class CPU6502:
         '''
         self.fetch()
         self.set_a(self.a ^ self.fetched)   
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 1
 
     def INC(self) -> uint8:
@@ -611,8 +610,8 @@ class CPU6502:
         self.fetch()
         self.set_temp(self.fetched + 1)
         self.write(self.addr_abs, self.temp & 0x00FF)
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         return 0
 
     def INX(self) -> uint8:
@@ -623,8 +622,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_x(self.x + 1)
-        self.setFlag(self.FLAGS.Z, self.x == 0x00)
-        self.setFlag(self.FLAGS.N, self.x & 0x80)
+        self.setFlag(Z, self.x == 0x00)
+        self.setFlag(N, self.x & 0x80)
         return 0
 
     def INY(self) -> uint8:
@@ -635,8 +634,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_y(self.y + 1)
-        self.setFlag(self.FLAGS.Z, self.y == 0x00)
-        self.setFlag(self.FLAGS.N, self.y & 0x80)
+        self.setFlag(Z, self.y == 0x00)
+        self.setFlag(N, self.y & 0x80)
         return 0
 
     def JMP(self) -> uint8:
@@ -673,8 +672,8 @@ class CPU6502:
         '''
         self.fetch()
         self.set_a(self.fetched)
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 1
 
     def LDX(self) -> uint8:
@@ -686,8 +685,8 @@ class CPU6502:
         '''
         self.fetch()
         self.set_x(self.fetched)
-        self.setFlag(self.FLAGS.Z, self.x == 0x00)
-        self.setFlag(self.FLAGS.N, self.x & 0x80)
+        self.setFlag(Z, self.x == 0x00)
+        self.setFlag(N, self.x & 0x80)
         return 1
 
     def LDY(self) -> uint8:
@@ -699,8 +698,8 @@ class CPU6502:
         '''
         self.fetch()
         self.set_y(self.fetched)
-        self.setFlag(self.FLAGS.Z, self.y == 0x00)
-        self.setFlag(self.FLAGS.N, self.y & 0x80)
+        self.setFlag(Z, self.y == 0x00)
+        self.setFlag(N, self.y & 0x80)
         return 1
 
     def LSR(self) -> uint8:
@@ -708,10 +707,10 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.setFlag(self.FLAGS.C, self.fetched & 0x0001)
+        self.setFlag(C, self.fetched & 0x0001)
         self.set_temp(self.fetched >> 1)   
-        self.setFlag(self.FLAGS.Z, (self.temp & 0x00FF) == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
@@ -740,8 +739,8 @@ class CPU6502:
         '''
         self.fetch()
         self.set_a(self.a | self.fetched)
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 1
 
     def PHA(self) -> uint8:
@@ -760,9 +759,9 @@ class CPU6502:
         Function:    status -> stack
         Return:      Require additional 0 clock cycle
         '''
-        self.write(0x0100 + self.stkp, self.status | self.FLAGS.B | self.FLAGS.U)
-        self.setFlag(self.FLAGS.B, 0)
-        self.setFlag(self.FLAGS.U, 0)
+        self.write(0x0100 + self.stkp, self.status | B | U)
+        self.setFlag(B, 0)
+        self.setFlag(U, 0)
         self.set_stkp(self.stkp - 1)
         return 0
 
@@ -775,8 +774,8 @@ class CPU6502:
         '''
         self.set_stkp(self.stkp + 1)
         self.set_a(self.read(0x0100 + self.stkp))
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 0
 
     def PLP(self) -> uint8:
@@ -787,7 +786,7 @@ class CPU6502:
         '''
         self.set_stkp(self.stkp + 1)
         self.set_status(self.read(0x0100 + self.stkp))
-        self.setFlag(self.FLAGS.U, 1)
+        self.setFlag(U, 1)
         return 0
 
     def ROL(self) -> uint8:
@@ -795,10 +794,10 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp((self.fetched << 1) | self.getFlag(self.FLAGS.C))
-        self.setFlag(self.FLAGS.C, self.temp & 0xFF00)
-        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x0000)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.set_temp((self.fetched << 1) | self.getFlag(C))
+        self.setFlag(C, self.temp & 0xFF00)
+        self.setFlag(Z, self.temp & 0x00FF == 0x0000)
+        self.setFlag(N, self.temp & 0x0080)
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
@@ -810,10 +809,10 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.getFlag(self.FLAGS.C) << 7 | (self.fetched >> 1))
-        self.setFlag(self.FLAGS.C, self.fetched & 0x01)
-        self.setFlag(self.FLAGS.Z, self.temp & 0x00FF == 0x00)
-        self.setFlag(self.FLAGS.N, self.temp & 0x0080)
+        self.set_temp(self.getFlag(C) << 7 | (self.fetched >> 1))
+        self.setFlag(C, self.fetched & 0x01)
+        self.setFlag(Z, self.temp & 0x00FF == 0x00)
+        self.setFlag(N, self.temp & 0x0080)
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.set_a(self.temp & 0x00FF)
         else:
@@ -826,8 +825,8 @@ class CPU6502:
         '''
         self.set_stkp(self.stkp + 1)
         self.set_status(self.read(0x0100 + self.stkp))
-        self.set_status(self.status & ~self.FLAGS.B)
-        self.set_status(self.status & ~self.FLAGS.U)
+        self.set_status(self.status & ~B)
+        self.set_status(self.status & ~U)
 
         self.set_stkp(self.stkp + 1)
         self.set_pc(self.read(0x0100 + self.stkp))
@@ -853,7 +852,7 @@ class CPU6502:
         Function:    C = 1 
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.C, True)
+        self.setFlag(C, True)
         return 0
 
     def SED(self) -> uint8:
@@ -862,7 +861,7 @@ class CPU6502:
         Function:    D = 1
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.D, True)
+        self.setFlag(D, True)
         return 0
 
     def SEI(self) -> uint8:
@@ -871,7 +870,7 @@ class CPU6502:
         Function:    I = 1
         Return:      Require additional 0 clock cycle
         '''
-        self.setFlag(self.FLAGS.I, True)
+        self.setFlag(I, True)
         return 0
 
     def STA(self) -> uint8:
@@ -909,8 +908,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_x(self.a)
-        self.setFlag(self.FLAGS.Z, self.x == 0x00)
-        self.setFlag(self.FLAGS.N, self.x & 0x80)
+        self.setFlag(Z, self.x == 0x00)
+        self.setFlag(N, self.x & 0x80)
         return 0
 
     def TAY(self) -> uint8:
@@ -921,8 +920,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_y(self.a)
-        self.setFlag(self.FLAGS.Z, self.y == 0x00)
-        self.setFlag(self.FLAGS.N, self.y & 0x80)
+        self.setFlag(Z, self.y == 0x00)
+        self.setFlag(N, self.y & 0x80)
         return 0
 
     def TSX(self) -> uint8:
@@ -933,8 +932,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_x(self.stkp)
-        self.setFlag(self.FLAGS.Z, self.x == 0x00)
-        self.setFlag(self.FLAGS.N, self.x & 0x80)
+        self.setFlag(Z, self.x == 0x00)
+        self.setFlag(N, self.x & 0x80)
         return 0
 
     def TXA(self) -> uint8:
@@ -945,8 +944,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_a(self.x)
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 0
 
     def TXS(self) -> uint8:
@@ -966,8 +965,8 @@ class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.set_a(self.y)
-        self.setFlag(self.FLAGS.Z, self.a == 0x00)
-        self.setFlag(self.FLAGS.N, self.a & 0x80)
+        self.setFlag(Z, self.a == 0x00)
+        self.setFlag(N, self.a & 0x80)
         return 0
 
     def XXX(self) -> uint8:
@@ -978,7 +977,25 @@ class CPU6502:
         return 0
 
     def __init__(self, bus: CPUBus) -> None:
+        self.a = 0x00
+        self.x = 0x00
+        self.y = 0x00
+        self.stkp = 0x00
+        self.pc = 0x0000
+        self.status = 0x00
+
+        self.ram = [0x00] * 2 * 1024
         self.bus = bus
+
+        self.fetched = 0x00
+        self.addr_abs = 0x0000
+        self.addr_rel = 0x0000
+
+        self.opcode = 0x00
+        self.temp = 0x0000
+        self.remaining_cycles = 0x00
+
+        self.clock_count = 0
 
         self.lookup = [
             Op( "BRK", self.BRK, self.IMM, 7 ),Op( "ORA", self.ORA, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "ORA", self.ORA, self.ZP0, 3 ),Op( "ASL", self.ASL, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PHP", self.PHP, self.IMP, 3 ),Op( "ORA", self.ORA, self.IMM, 2 ),Op( "ASL", self.ASL, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ABS, 4 ),Op( "ASL", self.ASL, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
@@ -1013,7 +1030,7 @@ class CPU6502:
         self.x = 0x00
         self.y = 0x00
         self.stkp = 0xFD
-        self.status = 0x00 | self.FLAGS.U
+        self.status = 0x00 | U
         
         self.addr_rel = 0x0000
         self.addr_abs = 0x0000
@@ -1025,15 +1042,15 @@ class CPU6502:
         '''
         Interrupt Request
         '''
-        if (self.getFlag(self.FLAGS.I) == 0):
+        if (self.getFlag(I) == 0):
             self.write(0x0100 + self.stkp, (self.pc >> 8) & 0x00FF)
             self.set_stkp(self.stkp - 1)
             self.write(0x0100 + self.stkp, self.pc & 0x00FF)
             self.set_stkp(self.stkp - 1)
             
-            self.setFlag(self.FLAGS.B, 0)
-            self.setFlag(self.FLAGS.U, 1)
-            self.setFlag(self.FLAGS.I, 1)
+            self.setFlag(B, 0)
+            self.setFlag(U, 1)
+            self.setFlag(I, 1)
             self.write(0x0100 + self.stkp, self.status)
             self.set_stkp(self.stkp - 1)
 
@@ -1053,9 +1070,9 @@ class CPU6502:
         self.write(0x0100 + self.stkp, self.pc & 0x00FF)
         self.set_stkp(self.stkp - 1)
 
-        self.setFlag(self.FLAGS.B, 0)
-        self.setFlag(self.FLAGS.U, 1)
-        self.setFlag(self.FLAGS.I, 1)
+        self.setFlag(B, 0)
+        self.setFlag(U, 1)
+        self.setFlag(I, 1)
         self.write(0x0100 + self.stkp, self.status)
         self.set_stkp(self.stkp - 1)
 
@@ -1066,22 +1083,22 @@ class CPU6502:
 
         self.remaining_cycles = 8
 
-    clock_count: int = 0
+    clock_count: int
 
-    def clock(self, debug: bool = False) -> None:
+    def clock(self) -> None:
         '''
         Perform one clock cycle
         '''
         if self.remaining_cycles == 0:
             self.opcode = self.read(self.pc)
-            self.setFlag(self.FLAGS.U, True)
+            self.setFlag(U, True)
             self.set_pc(self.pc + 1)
             op = self.lookup[self.opcode]
             self.remaining_cycles = op.cycles
             additional_cycle1: uint8 = op.addrmode()
             additional_cycle2: uint8 = op.operate()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
-            self.setFlag(self.FLAGS.U, True)
+            self.setFlag(U, True)
             # if debug:
             #     print(op)
             #     print("A: {A} X:{X} Y:{Y} STKP:{STKP} PC: {PC} STATUS:{STATUS}".format(A=hex(self.a), X=hex(self.x), Y=hex(self.y), STKP=hex(self.stkp), PC=hex(self.pc), STATUS=hex(self.status)))

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any
 from numpy import ndarray, uint16, uint8, zeros
 from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure, cast, POINTER, memset, sizeof
 import copy
@@ -7,146 +7,201 @@ from bus import CPUBus
 from cartridge import Cartridge
 
 
+VERTICAL = 0
+HORIZONTAL = 1 
+
+class Status(Union):
+    class Bits(LittleEndianStructure):
+        _fields_ = [
+            ("unused", c_uint8, 5),
+            ("sprite_overflow", c_uint8, 1),
+            ("sprite_zero_hit", c_uint8, 1),
+            ("vertical_blank", c_uint8, 1),
+        ]
+
+    _fields_ = [
+        ("bits", Bits),
+        ("reg", c_uint8),
+    ]
+
+class Mask(Union):
+    class Bits(LittleEndianStructure):
+        _fields_ = [
+            ("grayscale", c_uint8, 1),
+            ("render_background_left", c_uint8, 1),
+            ("render_sprites_left", c_uint8, 1),
+            ("render_background", c_uint8, 1),
+            ("render_sprites", c_uint8, 1),
+            ("enhance_red", c_uint8, 1),
+            ("enhance_green", c_uint8, 1),
+            ("enhance_blue", c_uint8, 1),
+        ]
+
+    _fields_ = [
+        ("bits", Bits),
+        ("reg", c_uint8),
+    ]
+
+class PPUCTRL(Union):
+    class Bits(LittleEndianStructure):
+        _fields_ = [
+            ("nametable_x", c_uint8, 1),
+            ("nametable_y", c_uint8, 1),
+            ("increment_mode", c_uint8, 1),
+            ("pattern_sprite", c_uint8, 1),
+            ("pattern_background", c_uint8, 1),
+            ("sprite_size", c_uint8, 1),
+            ("slave_mode", c_uint8, 1),
+            ("enable_nmi", c_uint8, 1),
+        ]
+
+    _fields_ = [
+        ("bits", Bits),
+        ("reg", c_uint8),
+    ]
+
+class LoopRegister(Union):
+    class Bits(LittleEndianStructure):
+        _fields_ = [
+            ("coarse_x", c_uint16, 5),
+            ("coarse_y", c_uint16, 5),
+            ("nametable_x", c_uint16, 1),
+            ("nametable_y", c_uint16, 1),
+            ("fine_y", c_uint16, 3),
+            ("unused", c_uint16, 1),
+        ]
+
+    _fields_ = [
+        ("bits", Bits),
+        ("reg", c_uint16),
+    ]
+
+class sObjectAttributeEntry(LittleEndianStructure):
+    _fields_ = [
+        ("y", c_uint8),
+        ("id", c_uint8),
+        ("attribute", c_uint8),
+        ("x", c_uint8),
+    ]
+
+def flipbyte(b: uint8) -> uint8:
+    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
+    b = (b & 0xCC) >> 2 | (b & 0x33) << 2
+    b = (b & 0xAA) >> 1 | (b & 0x55) << 1
+    return b
+
 class PPU2C02:
-    class Status(Union):
-        class Bits(LittleEndianStructure):
-            _fields_ = [
-                ("unused", c_uint8, 5),
-                ("sprite_overflow", c_uint8, 1),
-                ("sprite_zero_hit", c_uint8, 1),
-                ("vertical_blank", c_uint8, 1),
-            ]
+    patternTable: List[List[uint8]]
+    nameTable: List[List[uint8]]
+    paletteTable: List[uint8]
 
-        _fields_ = [
-            ("bits", Bits),
-            ("reg", c_uint8),
-        ]
+    palettePanel: List[tuple]
+    spriteScreen: ndarray
+    spriteNameTable: List[ndarray]
+    spritePatternTable: List[ndarray]
 
-    class Mask(Union):
-        class Bits(LittleEndianStructure):
-            _fields_ = [
-                ("grayscale", c_uint8, 1),
-                ("render_background_left", c_uint8, 1),
-                ("render_sprites_left", c_uint8, 1),
-                ("render_background", c_uint8, 1),
-                ("render_sprites", c_uint8, 1),
-                ("enhance_red", c_uint8, 1),
-                ("enhance_green", c_uint8, 1),
-                ("enhance_blue", c_uint8, 1),
-            ]
+    status: Status
+    mask: Mask
+    control: PPUCTRL
+    vram_addr: LoopRegister
+    tram_addr: LoopRegister
 
-        _fields_ = [
-            ("bits", Bits),
-            ("reg", c_uint8),
-        ]
+    fine_x: uint8
 
-    class PPUCTRL(Union):
-        class Bits(LittleEndianStructure):
-            _fields_ = [
-                ("nametable_x", c_uint8, 1),
-                ("nametable_y", c_uint8, 1),
-                ("increment_mode", c_uint8, 1),
-                ("pattern_sprite", c_uint8, 1),
-                ("pattern_background", c_uint8, 1),
-                ("sprite_size", c_uint8, 1),
-                ("slave_mode", c_uint8, 1),
-                ("enable_nmi", c_uint8, 1),
-            ]
+    address_latch: uint8
+    ppu_data_buffer: uint8
 
-        _fields_ = [
-            ("bits", Bits),
-            ("reg", c_uint8),
-        ]
+    scanline: uint16
+    cycle: uint16
 
-    class LoopRegister(Union):
-        class Bits(LittleEndianStructure):
-            _fields_ = [
-                ("coarse_x", c_uint16, 5),
-                ("coarse_y", c_uint16, 5),
-                ("nametable_x", c_uint16, 1),
-                ("nametable_y", c_uint16, 1),
-                ("fine_y", c_uint16, 3),
-                ("unused", c_uint16, 1),
-            ]
+    background_next_tile_id: uint8
+    background_next_tile_attribute: uint8
+    background_next_tile_lsb: uint8
+    background_next_tile_msb: uint8
+    background_shifter_pattern_lo: uint16
+    background_shifter_pattern_hi: uint16
+    background_shifter_attribute_lo: uint16
+    background_shifter_attribute_hi: uint16
 
-        _fields_ = [
-            ("bits", Bits),
-            ("reg", c_uint16),
-        ]
+    OAM: Any
+    pOAM: List[uint8]
 
-    patternTable: List[List[uint8]] = [[0x00] * 64 * 64] * 2
-    nameTable: List[List[uint8]] = [[0x00] * 32 * 32] * 2
-    paletteTable: List[uint8] = [0x00] * 32
+    oam_addr: uint8
 
-    palettePanel: List[tuple] = [None] * 4 * 16
-    spriteScreen: ndarray = zeros((256,240,3)).astype(uint8)
-    spriteNameTable: List[ndarray] = [zeros((256,240,3)).astype(uint8),zeros((256,240,3)).astype(uint8)]
-    spritePatternTable: List[ndarray] = [zeros((128,128,3)).astype(uint8),zeros((128,128,3)).astype(uint8)]
-
-    status: Status = Status()
-    mask: Mask = Mask()
-    control: PPUCTRL = PPUCTRL()
-    vram_addr: LoopRegister = LoopRegister()
-    tram_addr: LoopRegister = LoopRegister()
-
-    fine_x: uint8 = 0x00
-
-    address_latch: uint8 = 0x00
-    ppu_data_buffer: uint8 = 0x00
-
-    scanline: uint16 = 0
-    cycle: uint16 = 0
-
-    background_next_tile_id: uint8 = 0x00
-    background_next_tile_attribute: uint8 = 0x00
-    background_next_tile_lsb: uint8 = 0x00
-    background_next_tile_msb: uint8 = 0x00
-    background_shifter_pattern_lo: uint16 = 0x0000
-    background_shifter_pattern_hi: uint16 = 0x0000
-    background_shifter_attribute_lo: uint16 = 0x0000
-    background_shifter_attribute_hi: uint16 = 0x0000
-
-    class sObjectAttributeEntry(LittleEndianStructure):
-        _fields_ = [
-            ("y", c_uint8),
-            ("id", c_uint8),
-            ("attribute", c_uint8),
-            ("x", c_uint8),
-        ]
-
-    OAM = (sObjectAttributeEntry * 64)()
-    pOAM: List[uint8] = cast(OAM, POINTER(c_uint8))
-
-    oam_addr: uint8 = 0x00
-
-    spriteScanline = (sObjectAttributeEntry * 8)()
+    spriteScanline: Any
     sprite_count: uint8
-    sprite_shifter_pattern_lo: List[uint8] = [0x00] * 8
-    sprite_shifter_pattern_hi: List[uint8] = [0x00] * 8
+    sprite_shifter_pattern_lo: List[uint8]
+    sprite_shifter_pattern_hi: List[uint8]
 
-    bSpriteZeroHitPossible: bool = False
-    bSpriteZeroBeingRendered: bool = False
+    bSpriteZeroHitPossible: bool
+    bSpriteZeroBeingRendered: bool
 
     cartridge: Cartridge
 
-    nmi: bool = False
+    nmi: bool
 
-    frame_complete: bool = False 
+    frame_complete: bool 
 
     bus: CPUBus
 
     def __init__(self, bus: CPUBus) -> None:
+        self.patternTable = [[0x00] * 64 * 64] * 2
+        self.nameTable = [[0x00] * 32 * 32] * 2
+        self.paletteTable = [0x00] * 32
+        
+        self.palettePanel = [None] * 4 * 16
+        self.spriteScreen = zeros((256,240,3)).astype(uint8)
+        self.spriteNameTable = [zeros((256,240,3)).astype(uint8),zeros((256,240,3)).astype(uint8)]
+        self.spritePatternTable = [zeros((128,128,3)).astype(uint8),zeros((128,128,3)).astype(uint8)]
+
+        self.status = Status()
+        self.mask = Mask()
+        self.control = PPUCTRL()
+        self.vram_addr = LoopRegister()
+        self.tram_addr = LoopRegister()
+
+        self.fine_x = 0x00
+
+        self.address_latch = 0x00
+        self.ppu_data_buffer = 0x00
+
+        self.scanline = 0
+        self.cycle = 0
+
+        self.background_next_tile_id = 0x00
+        self.background_next_tile_attribute = 0x00
+        self.background_next_tile_lsb = 0x00
+        self.background_next_tile_msb = 0x00
+        self.background_shifter_pattern_lo = 0x0000
+        self.background_shifter_pattern_hi = 0x0000
+        self.background_shifter_attribute_lo = 0x0000
+        self.background_shifter_attribute_hi = 0x0000
+
+        self.OAM = (sObjectAttributeEntry * 64)()
+        self.pOAM = cast(self.OAM, POINTER(c_uint8))
+
+        self.oam_addr = 0x00
+
+        self.spriteScanline = (sObjectAttributeEntry * 8)()
+
+        self.sprite_shifter_pattern_lo = [0x00] * 8
+        self.sprite_shifter_pattern_hi = [0x00] * 8
+        self.bSpriteZeroHitPossible = False
+        self.bSpriteZeroBeingRendered = False
+        self.nmi = False
+        self.frame_complete = False
+
         self.bus = bus
         self.setPalettePanel()
-        self.screenWidth, self.screenHeight, _ = self.spriteScreen.shape
+        self.screenWidth, self.screenHeight = 256, 240
 
-    def connectCartridge(self, cartridge: Cartridge):
+    def connectCartridge(self, cartridge) -> None:
         self.cartridge = cartridge
     
     def getScreen(self) -> ndarray:
         return self.spriteScreen
 
-    def readByCPU(self, addr: uint16, readonly: bool = False) -> uint8:
+    def readByCPU(self, addr: uint16, readonly: bool) -> uint8:
         data = 0x00
 
         if readonly:
@@ -249,7 +304,7 @@ class PPU2C02:
             self.writeByPPU(self.vram_addr.reg, data)
             self.vram_addr.reg += 32 if self.control.bits.increment_mode else 1
 
-    def readByPPU(self, addr: uint16, readonly: bool = False) -> uint8:
+    def readByPPU(self, addr: uint16) -> uint8:
         addr &= 0x3FFF
 
         success, data = self.cartridge.readByPPU(addr)
@@ -259,7 +314,7 @@ class PPU2C02:
             data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == Cartridge.MIRROR.VERTICAL:
+            if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -268,7 +323,7 @@ class PPU2C02:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
                     data = self.nameTable[1][addr & 0x03FF]                                 
-            elif self.cartridge.mirror == Cartridge.MIRROR.HORIZONTAL:
+            elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -300,7 +355,7 @@ class PPU2C02:
             self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == Cartridge.MIRROR.VERTICAL:
+            if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -309,7 +364,7 @@ class PPU2C02:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
                     self.nameTable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror == Cartridge.MIRROR.HORIZONTAL:
+            elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -425,7 +480,7 @@ class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
-    def clock(self, debug: bool = False) -> None:
+    def clock(self) -> None:
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
@@ -476,7 +531,7 @@ class PPU2C02:
             if self.scanline == -1 and 280 <= self.cycle < 305:               
                 self.transferAddressY()
             if self.cycle == 257 and self.scanline >= 0:
-                memset(self.spriteScanline, 0xFF, 8 * sizeof(self.sObjectAttributeEntry))
+                memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
                 self.sprite_count = 0
                 for i in range(0, 8):
                     self.sprite_shifter_pattern_lo[i] = 0
@@ -533,12 +588,6 @@ class PPU2C02:
                     sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
                     
                     if self.spriteScanline[i].attribute & 0x40 != 0:
-                        def flipbyte(b: uint8) -> uint8:
-                            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
-                            b = (b & 0xCC) >> 2 | (b & 0x33) << 2
-                            b = (b & 0xAA) >> 1 | (b & 0x55) << 1
-                            return b
-
                         sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
                         sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
 

@@ -3,6 +3,7 @@ from numpy import uint16, uint8, uint32
 
 from cartridge import Cartridge
 
+
 class Bus:
     def __init__(self) -> None:
         self.ram = [0x00] * 64 * 1024
@@ -17,19 +18,31 @@ class Bus:
             self.ram[addr] = data
 
 class CPUBus:
-    ram: List[uint8] = [0x00] * 2 * 1024
-    controller: List[uint8] = [0x00] * 2
-    controller_state: List[uint8] = [0x00] * 2
-    nSystemClockCounter: uint32 = 0
+    ram: List[uint8]
+    controller: List[uint8]
+    controller_state: List[uint8]
+    nSystemClockCounter: uint32
 
-    dma_page: uint8 = 0x00
-    dma_addr: uint8 = 0x00
-    dma_data: uint8 = 0x00
+    dma_page: uint8
+    dma_addr: uint8
+    dma_data: uint8
 
-    dma_dummy: bool = False
-    dma_transfer: bool = False
+    dma_dummy: bool
+    dma_transfer: bool
 
     def __init__(self, cartridge: Cartridge) -> None:
+        self.ram = [0x00] * 2 * 1024
+        self.controller = [0x00] * 2
+        self.controller_state = [0x00] * 2
+        self.nSystemClockCounter = 0
+
+        self.dma_page = 0x00
+        self.dma_addr = 0x00
+        self.dma_data = 0x00
+
+        self.dma_dummy = False
+        self.dma_transfer = False
+
         from cpu import CPU6502
         from ppu import PPU2C02
 
@@ -39,7 +52,7 @@ class CPUBus:
         self.cartridge.connectBus(self)
         self.ppu.connectCartridge(self.cartridge)
 
-    def read(self, addr: uint16, readOnly: bool = False) -> uint8:
+    def read(self, addr: uint16, readOnly: bool) -> uint8:
         success, data = self.cartridge.readByCPU(addr)
         if success:
             pass
@@ -88,7 +101,7 @@ class CPUBus:
                         self.dma_dummy = False
                 else:
                     if self.nSystemClockCounter % 2 == 0:
-                        self.dma_data = self.read((self.dma_page << 8) | self.dma_addr)
+                        self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
                         self.ppu.pOAM[self.dma_addr] = self.dma_data
                         self.dma_addr += 1
