@@ -1,5 +1,5 @@
 from typing import Tuple, List
-from numpy import uint16, uint8, frombuffer
+from numpy import uint16, uint8, frombuffer, array
 
 from mapper import Mapper, Mapper000
 
@@ -66,8 +66,12 @@ class Cartridge:
             self.PRGMemory = frombuffer(nes.read(16384 * PRGBanks), dtype=uint8).copy()
 
             CHRBanks = self.header.chr_rom_chunks
-            self.CHRMemory = frombuffer(nes.read(8192 * CHRBanks), dtype=uint8).copy() if CHRBanks > 0 else frombuffer(nes.read(8192), dtype=uint8).copy()
-
+            if CHRBanks == 0:
+                chrMemory = frombuffer(nes.read(8192), dtype=uint8).copy()
+                self.CHRMemory = array([0x00] * 8192, dtype=uint8) if len(chrMemory) == 0 else chrMemory
+            else:
+                self.CHRMemory = frombuffer(nes.read(8192 * CHRBanks), dtype=uint8).copy()
+                
             if self.header.mapper2 & 0b10 != 0:
                 self.playChoiceINSTMemory = nes.read(8192)
                 self.playChoicePMemory = nes.read(16)
