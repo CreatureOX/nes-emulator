@@ -90,11 +90,11 @@ cdef class PPU2C02:
     @cython.locals(v=uint16_t, nOAMEntry=uint8_t, \
     diff=uint16_t, diff_compare=int, \
     sprite_pattern_bits_lo=uint8_t, sprite_pattern_bits_hi=uint8_t, \
-    sprite_pattern_addr_lo=uint8_t, sprite_pattern_addr_hi=uint8_t, \
+    sprite_pattern_addr_lo=uint16_t, sprite_pattern_addr_hi=uint16_t, \
     background_pixel=uint8_t, background_palette=uint8_t, bit_mux=uint16_t, \
     background_pixel_0=uint8_t, background_pixel_1=uint8_t, background_pixel=uint8_t, \
     background_palette_0=uint8_t, background_palette_1=uint8_t, background_palette=uint8_t, \
     foreground_pixel=uint8_t, foreground_palette=uint8_t, foreground_priority=uint8_t, \
     foreground_pixel_lo=uint8_t, foreground_pixel_hi=uint8_t, \
     pixel=uint8_t, palette=uint8_t)
-    cpdef void clock(self)
+    cpdef void clock(self) except *

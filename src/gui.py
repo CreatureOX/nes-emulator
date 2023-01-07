@@ -1,8 +1,9 @@
 import PySimpleGUI as gui
 import pygame
 import os
-from numpy import uint16
+from numpy import uint16, swapaxes
 from threading import Thread, Event
+from PIL import Image
 
 from cartridge import Cartridge
 from bus import CPUBus
@@ -12,11 +13,11 @@ from cpu import C, Z, I, D, B, U, V, N
 class Emulator:
     menu_def = [
         ['File', ['Open File','Exit']],
-        ['Debug', ['Hex Viewer',]],
+        ['Debug', ['Hex Viewer','Snapshot']],
         ['Help', ['About',]],
     ]
     
-    screen_layout = [[gui.Graph(key="SCREEN", canvas_size=(240,256), graph_bottom_left=(0,0), graph_top_right=(500,500), background_color='BLACK')]]
+    screen_layout = [[gui.Graph(key="SCREEN", canvas_size=(256,240), graph_bottom_left=(0,0), graph_top_right=(256,240), background_color='BLACK')]]
     utils_layout = [
         [gui.Button('Clock'),gui.Button('Frame'),gui.Button('Reset'),gui.Button('Run'),],
         [
@@ -54,7 +55,7 @@ class Emulator:
         self.window = gui.Window('NES Emulator', self.layout, size = (1024, 500), resizable = True).Finalize()
         os.environ['SDL_WINDOWID'] = str(self.window['SCREEN'].TKCanvas.winfo_id())
         os.environ['SDL_VIDEODRIVER'] = 'windib'
-        self.gameScreen = pygame.display.set_mode((240, 256))
+        self.gameScreen = pygame.display.set_mode((256, 240))
         self.gameClock = pygame.time.Clock()
         self.fps = 30
         pygame.display.init()
@@ -153,7 +154,8 @@ class Emulator:
         self.bus.ppu.frame_complete = False
         self.drawCPU()
         self.drawCode()    
-        surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
+        n = swapaxes(self.bus.ppu.getScreen(), 0, 1)
+        surf = pygame.surfarray.make_surface(n)
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
         return True
@@ -185,7 +187,9 @@ class Emulator:
                 if self.bus.ppu.frame_complete:
                     break
             self.bus.ppu.frame_complete = False
-            surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
+            n = swapaxes(self.bus.ppu.getScreen(), 0, 1)
+            surf = pygame.surfarray.make_surface(n)
+            #surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
             self.gameScreen.blit(surf, (0,0))
             pygame.display.flip()
         return True
@@ -198,6 +202,9 @@ class Emulator:
         self.drawCPU()
         self.drawCode()
         return True   
+
+    def snapshot(self) -> bool:
+        Image.fromarray(self.bus.ppu.getScreen()).save("test.jpg")
 
     def emulate(self) -> None:
         stop = Event()
@@ -219,6 +226,8 @@ class Emulator:
                 #success = self.run()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
+            elif event == 'Snapshot':
+                success = self.snapshot()
             elif event == 'Reset':
                 success = self.reset()
             elif event == 'About':

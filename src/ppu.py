@@ -150,9 +150,10 @@ class PPU2C02:
         self.paletteTable = [0x00] * 32
         
         self.palettePanel = [None] * 4 * 16
-        self.spriteScreen = zeros((256,240,3)).astype(uint8)
-        self.spriteNameTable = [zeros((256,240,3)).astype(uint8),zeros((256,240,3)).astype(uint8)]
-        self.spritePatternTable = [zeros((128,128,3)).astype(uint8),zeros((128,128,3)).astype(uint8)]
+        self.screenWidth, self.screenHeight = 256, 240
+        self.spriteScreen = zeros((self.screenHeight,self.screenWidth,3))
+        self.spriteNameTable = [zeros((self.screenHeight,self.screenWidth,3)),zeros((self.screenHeight,self.screenWidth,3))]
+        self.spritePatternTable = [zeros((128,128,3)),zeros((128,128,3))]
 
         self.status = Status()
         self.mask = Mask()
@@ -193,7 +194,6 @@ class PPU2C02:
 
         self.bus = bus
         self.setPalettePanel()
-        self.screenWidth, self.screenHeight = 256, 240
 
     def connectCartridge(self, cartridge) -> None:
         self.cartridge = cartridge
@@ -551,8 +551,8 @@ class PPU2C02:
                 self.status.bits.sprite_overflow = 1 if self.sprite_count > 8 else 0
             if self.cycle == 340:
                 for i in range(0, self.sprite_count):
-                    sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0, 0
-                    sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0, 0
+                    sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
+                    sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
                     if self.control.bits.sprite_size == 0:
                         if (self.spriteScanline[i].attribute & 0x80) == 0:
                             sprite_pattern_addr_lo = (self.control.bits.pattern_sprite<<12) \
@@ -661,7 +661,7 @@ class PPU2C02:
                             self.status.bits.sprite_zero_hit = 1
 
         if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
-            self.spriteScreen[self.cycle - 1, self.scanline] = self.getColorFromPaletteTable(palette, pixel)
+            self.spriteScreen[self.scanline, self.cycle - 1] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
         if self.cycle >= 341:
