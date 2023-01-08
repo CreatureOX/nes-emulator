@@ -42,7 +42,7 @@ class Mapper000(Mapper):
         return (False, addr)
 
     def mapWriteByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
-        if 0x8000 <= addr <= 0x1FFF:
+        if 0x0000 <= addr <= 0x1FFF:
             if self.nCHRBanks == 0:
                 return (True, addr)
         return (False, addr)

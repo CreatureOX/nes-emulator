@@ -1,9 +1,10 @@
 import PySimpleGUI as gui
 import pygame
 import os
-from numpy import uint16, swapaxes
+from numpy import uint16, uint8, swapaxes
 from threading import Thread, Event
-from PIL import Image
+from PIL import Image, ImageTk
+import matplotlib.pyplot as plt
 
 from cartridge import Cartridge
 from bus import CPUBus
@@ -13,7 +14,7 @@ from cpu import C, Z, I, D, B, U, V, N
 class Emulator:
     menu_def = [
         ['File', ['Open File','Exit']],
-        ['Debug', ['Hex Viewer','Snapshot']],
+        ['Debug', ['Hex Viewer','Snapshot','PatternTable0','PatternTable1']],
         ['Help', ['About',]],
     ]
     
@@ -38,6 +39,10 @@ class Emulator:
             gui.Text("SP: $0x0000",key="SP",size=(10,1)),
         ],
         [gui.Multiline(key="READABLE", size=(128,10), background_color='BLUE', disabled=True)],
+        [
+            gui.Image(key="P0", size=(128,128), background_color='BLACK'),
+            gui.Image(key="P1", size=(128,128), background_color='BLACK')
+        ]
     ]
 
     layout = [
@@ -83,6 +88,12 @@ class Emulator:
         self.window['READABLE'].Update("")
         for addr, inst in asm.items():
             self.window['READABLE'].print(inst, text_color="CYAN" if addr == self.bus.cpu.pc else 'WHITE')  
+
+    def drawPatternTable(self) -> None:
+        p0_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.bus.ppu.getPatternTable(0,0))))
+        self.window['P0'].update(data=p0_img)
+        p1_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.bus.ppu.getPatternTable(1,0))))
+        self.window['P1'].update(data=p1_img)
 
     def openFile(self) -> bool:
         filename = gui.popup_get_file('file to open', file_types=(("NES Files","*.nes"),), no_window=True)
@@ -154,6 +165,7 @@ class Emulator:
         self.bus.ppu.frame_complete = False
         self.drawCPU()
         self.drawCode()    
+        self.drawPatternTable()
         n = swapaxes(self.bus.ppu.getScreen(), 0, 1)
         surf = pygame.surfarray.make_surface(n)
         self.gameScreen.blit(surf, (0,0))
@@ -206,6 +218,10 @@ class Emulator:
     def snapshot(self) -> bool:
         Image.fromarray(self.bus.ppu.getScreen()).save("test.jpg")
 
+    def patternTable(self,i) -> bool:
+        Image.fromarray(uint8(self.bus.ppu.getPatternTable(i, 0))).show()
+        return True
+
     def emulate(self) -> None:
         stop = Event()
         while True:
@@ -228,6 +244,10 @@ class Emulator:
                 asyncRun.start()
             elif event == 'Snapshot':
                 success = self.snapshot()
+            elif event == 'PatternTable0':
+                success = self.patternTable(0)
+            elif event == 'PatternTable1':
+                success = self.patternTable(1)
             elif event == 'Reset':
                 success = self.reset()
             elif event == 'About':
