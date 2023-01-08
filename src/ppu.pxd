@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t, uint16_t, int16_t
 from numpy cimport ndarray
 
 from bus cimport CPUBus
@@ -30,8 +30,8 @@ cdef class PPU2C02:
     cdef uint8_t address_latch
     cdef uint8_t ppu_data_buffer
 
-    cdef uint16_t scanline
-    cdef uint16_t cycle
+    cdef int16_t scanline
+    cdef int16_t cycle
 
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
@@ -88,7 +88,7 @@ cdef class PPU2C02:
     cdef void loadBackgroundShifters(self)
     cdef void updateShifters(self)
     @cython.locals(v=uint16_t, nOAMEntry=uint8_t, \
-    diff=uint16_t, diff_compare=int, \
+    diff=int16_t, diff_compare=int, \
     sprite_pattern_bits_lo=uint8_t, sprite_pattern_bits_hi=uint8_t, \
     sprite_pattern_addr_lo=uint16_t, sprite_pattern_addr_hi=uint16_t, \
     background_pixel=uint8_t, background_palette=uint8_t, bit_mux=uint16_t, \

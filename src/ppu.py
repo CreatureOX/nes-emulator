@@ -1,5 +1,5 @@
 from typing import List, Any
-from numpy import ndarray, uint16, uint8, zeros
+from numpy import ndarray, uint16, int16, uint8, zeros
 from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure, cast, POINTER, memset, sizeof
 import copy
 
@@ -111,8 +111,8 @@ class PPU2C02:
     address_latch: uint8
     ppu_data_buffer: uint8
 
-    scanline: uint16
-    cycle: uint16
+    scanline: int16
+    cycle: int16
 
     background_next_tile_id: uint8
     background_next_tile_attribute: uint8
@@ -539,7 +539,7 @@ class PPU2C02:
                 nOAMEntry: uint8 = 0
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
-                    diff: uint16 = (self.scanline - self.OAM[nOAMEntry].y) & 0xFFFF
+                    diff = self.scanline - self.OAM[nOAMEntry].y
                     diff_compare = 16 if self.control.bits.sprite_size == 1 else 8
                     if diff >= 0 and diff < diff_compare:
                         if self.sprite_count < 8:
@@ -557,11 +557,11 @@ class PPU2C02:
                         if (self.spriteScanline[i].attribute & 0x80) == 0:
                             sprite_pattern_addr_lo = (self.control.bits.pattern_sprite<<12) \
                                 | (self.spriteScanline[i].id<<4) \
-                                | (self.scanline - self.spriteScanline[i].y)
+                                | ((self.scanline - self.spriteScanline[i].y) & 0xFFFF)
                         else:
                             sprite_pattern_addr_lo = (self.control.bits.pattern_sprite<<12) \
                                 | (self.spriteScanline[i].id<<4) \
-                                | (7 - (self.scanline - self.spriteScanline[i].y))
+                                | ((7 - (self.scanline - self.spriteScanline[i].y)) & 0xFFFF)
                     else:
                         if (self.spriteScanline[i].attribute & 0x80) == 0:
                             if self.scanline - self.spriteScanline[i].y < 8:
