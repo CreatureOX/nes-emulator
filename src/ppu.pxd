@@ -43,7 +43,7 @@ cdef class PPU2C02:
     cdef uint16_t background_shifter_attribute_hi
 
     cdef object OAM
-    cdef object pOAM
+    cdef public object pOAM
 
     cdef uint8_t oam_addr
 

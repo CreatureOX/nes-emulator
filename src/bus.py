@@ -40,7 +40,7 @@ class CPUBus:
         self.dma_addr = 0x00
         self.dma_data = 0x00
 
-        self.dma_dummy = False
+        self.dma_dummy = True
         self.dma_transfer = False
 
         from cpu import CPU6502
@@ -60,10 +60,6 @@ class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
-        elif addr == 0x4014:
-            self.dma_page = data
-            self.dma_addr = 0x00
-            self.dma_transfer = True
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -77,6 +73,10 @@ class CPUBus:
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
+        elif addr == 0x4014:
+            self.dma_page = data
+            self.dma_addr = 0x00
+            self.dma_transfer = True
         elif 0x4016 <= addr <= 0x4017:
             self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
 

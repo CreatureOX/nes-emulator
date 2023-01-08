@@ -101,7 +101,7 @@ class Emulator:
             return False
         self.cart = Cartridge(filename)
         self.bus = CPUBus(self.cart)
-        self.bus.cpu.reset()
+        self.bus.reset()
         self.window.TKroot.title('NES Emulator ' + filename)
         self.drawCPU()
         self.drawCode()
