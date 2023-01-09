@@ -539,7 +539,7 @@ class PPU2C02:
                 nOAMEntry: uint8 = 0
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
-                    diff = self.scanline - self.OAM[nOAMEntry].y
+                    diff = self.scanline - int16(self.OAM[nOAMEntry].y)
                     diff_compare = 16 if self.control.bits.sprite_size == 1 else 8
                     if diff >= 0 and diff < diff_compare:
                         if self.sprite_count < 8:

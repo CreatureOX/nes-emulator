@@ -62,7 +62,7 @@ class Emulator:
         os.environ['SDL_VIDEODRIVER'] = 'windib'
         self.gameScreen = pygame.display.set_mode((256, 240))
         self.gameClock = pygame.time.Clock()
-        self.fps = 30
+        self.fps = 60
         pygame.display.init()
 
     def drawRAM(self, start_addr: uint16, end_addr: uint16) -> None:
@@ -193,7 +193,7 @@ class Emulator:
                         self.bus.controller[0] |= 0x02
                     elif event.key == pygame.K_RIGHT:
                         self.bus.controller[0] |= 0x01
-            #self.gameClock.tick(self.fps)
+            self.gameClock.tick(self.fps)
             while True:
                 self.bus.clock()
                 if self.bus.ppu.frame_complete:
