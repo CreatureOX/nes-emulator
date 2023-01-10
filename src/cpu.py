@@ -51,10 +51,10 @@ class CPU6502:
     def set_status(self, status: uint8):
         self.status = status & 0xFF
 
-    def getFlag(self, f: int) -> uint8:
+    def getFlag(self, f: uint8) -> uint8:
         return 1 if (self.status & f) > 0 else 0
 
-    def setFlag(self, f: int, v: bool) -> None: 
+    def setFlag(self, f: uint8, v: bool) -> None: 
         if v:
             self.set_status(self.status | f)
         else:

@@ -23,8 +23,8 @@ cdef class CPU6502:
     cdef void set_stkp(self, uint8_t)
     cdef void set_pc(self, uint16_t)
     cdef void set_status(self, uint8_t)
-    cdef uint8_t getFlag(self, FLAGS)
-    cdef void setFlag(self, FLAGS, bint)
+    cdef uint8_t getFlag(self, uint8_t)
+    cdef void setFlag(self, uint8_t, bint)
 
     cdef uint8_t[2048] ram
     cdef CPUBus bus
