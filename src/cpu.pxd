@@ -120,11 +120,11 @@ cdef class CPU6502:
     
     cdef list lookup
     
-    cpdef void reset(self)
-    cpdef void irq(self)
-    cpdef void nmi(self)
+    cdef void reset(self)
+    cdef void irq(self)
+    cdef void nmi(self)
 
     cdef int clock_count
 
-    cpdef void clock(self)
+    cdef void clock(self)
     cpdef bint complete(self)

@@ -34,4 +34,4 @@ cdef class Cartridge:
     cdef (bint, uint8_t) readByPPU(self, uint16_t)
     cdef bint writeByPPU(self, uint16_t, uint8_t)
     cdef void connectBus(self, CPUBus)
-    cpdef void reset(self)
+    cdef void reset(self)
