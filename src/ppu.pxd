@@ -67,7 +67,7 @@ cdef class PPU2C02:
     cdef int screenHeight
 
     cpdef void connectCartridge(self, Cartridge)
-    cpdef ndarray getScreen(self)
+    cpdef uint8_t[:,:,:] getScreen(self)
 
     @cython.locals(data=uint8_t)
     cpdef uint8_t readByCPU(self, uint16_t, bint)
@@ -82,7 +82,7 @@ cdef class PPU2C02:
     cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
     @cython.locals(tileY=uint16_t,tileX=uint16_t,offset=uint16_t, \
     tile_lsb=uint8_t,tile_msb=uint8_t,pixel=uint8_t)
-    cpdef ndarray getPatternTable(self, uint8_t, uint8_t)
+    cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t, uint8_t)
     cpdef void reset(self)
 
     cdef void incrementScrollX(self)
@@ -101,4 +101,4 @@ cdef class PPU2C02:
     foreground_pixel=uint8_t, foreground_palette=uint8_t, foreground_priority=uint8_t, \
     foreground_pixel_lo=uint8_t, foreground_pixel_hi=uint8_t, \
     pixel=uint8_t, palette=uint8_t)
-    cpdef void clock(self)
+    cpdef void clock(self) except *

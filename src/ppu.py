@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import List, Tuple, Any
 from numpy import ndarray, uint16, int16, uint8, zeros
 from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure, cast, POINTER, memset, sizeof
 import copy
@@ -95,7 +95,7 @@ class PPU2C02:
     nameTable: List[List[uint8]]
     paletteTable: List[uint8]
 
-    palettePanel: List[tuple]
+    palettePanel: List[Tuple[uint8,uint8,uint8]]
     spriteScreen: ndarray
     spriteNameTable: List[ndarray]
     spritePatternTable: List[ndarray]
@@ -151,7 +151,7 @@ class PPU2C02:
         
         self.palettePanel = [None] * 4 * 16
         self.screenWidth, self.screenHeight = 256, 240
-        self.spriteScreen = zeros((self.screenHeight,self.screenWidth,3))
+        self.spriteScreen = zeros((self.screenHeight,self.screenWidth,3)).astype(uint8)
         self.spriteNameTable = [zeros((self.screenHeight,self.screenWidth,3)),zeros((self.screenHeight,self.screenWidth,3))]
         self.spritePatternTable = [zeros((128,128,3)),zeros((128,128,3))]
 
@@ -391,7 +391,7 @@ class PPU2C02:
         self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
         self.palettePanel[0x30],self.palettePanel[0x31],self.palettePanel[0x32],self.palettePanel[0x33],self.palettePanel[0x34],self.palettePanel[0x35],self.palettePanel[0x36],self.palettePanel[0x37],self.palettePanel[0x38],self.palettePanel[0x39],self.palettePanel[0x3a],self.palettePanel[0x3b],self.palettePanel[0x3c],self.palettePanel[0x3d],self.palettePanel[0x3e],self.palettePanel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
    
-    def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> tuple:
+    def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> Tuple[uint8,uint8,uint8]:
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
         # if color > 0:
         #     print("color: {color}".format(color=color))
