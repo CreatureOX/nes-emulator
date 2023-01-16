@@ -10,55 +10,205 @@ from cartridge import Cartridge
 VERTICAL = 0
 HORIZONTAL = 1 
 
-class Status(Union):
-    class Bits(LittleEndianStructure):
-        _fields_ = [
-            ("unused", c_uint8, 5),
-            ("sprite_overflow", c_uint8, 1),
-            ("sprite_zero_hit", c_uint8, 1),
-            ("vertical_blank", c_uint8, 1),
-        ]
+# class Status(Union):
+#     class Bits(LittleEndianStructure):
+#         _fields_ = [
+#             ("unused", c_uint8, 5),
+#             ("sprite_overflow", c_uint8, 1),
+#             ("sprite_zero_hit", c_uint8, 1),
+#             ("vertical_blank", c_uint8, 1),
+#         ]
 
-    _fields_ = [
-        ("bits", Bits),
-        ("reg", c_uint8),
-    ]
+#     _fields_ = [
+#         ("bits", Bits),
+#         ("reg", c_uint8),
+#     ]
 
-class Mask(Union):
-    class Bits(LittleEndianStructure):
-        _fields_ = [
-            ("grayscale", c_uint8, 1),
-            ("render_background_left", c_uint8, 1),
-            ("render_sprites_left", c_uint8, 1),
-            ("render_background", c_uint8, 1),
-            ("render_sprites", c_uint8, 1),
-            ("enhance_red", c_uint8, 1),
-            ("enhance_green", c_uint8, 1),
-            ("enhance_blue", c_uint8, 1),
-        ]
+class Status:
+    def __init__(self) -> None:
+        self.reg = 0b00000000
 
-    _fields_ = [
-        ("bits", Bits),
-        ("reg", c_uint8),
-    ]
+    def set_reg(self,val):
+        self.reg = val
 
-class PPUCTRL(Union):
-    class Bits(LittleEndianStructure):
-        _fields_ = [
-            ("nametable_x", c_uint8, 1),
-            ("nametable_y", c_uint8, 1),
-            ("increment_mode", c_uint8, 1),
-            ("pattern_sprite", c_uint8, 1),
-            ("pattern_background", c_uint8, 1),
-            ("sprite_size", c_uint8, 1),
-            ("slave_mode", c_uint8, 1),
-            ("enable_nmi", c_uint8, 1),
-        ]
+    def get_reg(self):
+        return self.reg
+    
+    def set_unused(self,val):
+        self.reg |= val & 0b11111
+    
+    def get_unused(self):
+        return self.reg & 0b11111
+    
+    def set_sprite_overflow(self,val):
+        self.reg |= (val << 5) & 0b100000
+    
+    def get_sprite_overflow(self):
+        return (self.reg & 0b100000) >> 5
+    
+    def set_sprite_zero_hit(self,val):
+        self.reg |= (val << 6) & 0b1000000
+    
+    def get_sprite_zero_hit(self):
+        return (self.reg & 0b1000000) >> 6
+    
+    def set_vertical_blank(self,val):
+        self.reg |= (val << 7) & 0b10000000
+    
+    def get_vertical_blank(self):
+        return (self.reg & 0b10000000) >> 7
 
-    _fields_ = [
-        ("bits", Bits),
-        ("reg", c_uint8),
-    ]
+# class Mask(Union):
+#     class Bits(LittleEndianStructure):
+#         _fields_ = [
+#             ("grayscale", c_uint8, 1),
+#             ("render_background_left", c_uint8, 1),
+#             ("render_sprites_left", c_uint8, 1),
+#             ("render_background", c_uint8, 1),
+#             ("render_sprites", c_uint8, 1),
+#             ("enhance_red", c_uint8, 1),
+#             ("enhance_green", c_uint8, 1),
+#             ("enhance_blue", c_uint8, 1),
+#         ]
+
+#     _fields_ = [
+#         ("bits", Bits),
+#         ("reg", c_uint8),
+#     ]
+
+class Mask:
+    def __init__(self) -> None:
+        self.reg = 0b00000000
+
+    def set_reg(self,val):
+        self.reg = val
+
+    def get_reg(self):
+        return self.reg
+
+    def set_grayscale(self,val):
+        self.reg |= val & 0b1
+
+    def get_grayscale(self):
+        return self.reg & 0b1
+
+    def set_render_background_left(self,val):
+        self.reg |= (val << 1) & 0b10
+
+    def get_render_background_left(self):
+        return (self.reg & 0b10) >> 1
+
+    def set_render_sprites_left(self,val):
+        self.reg |= (val << 2) & 0b100
+    
+    def get_render_sprites_left(self):
+        return (self.reg & 0b100) >> 2
+
+    def set_render_background(self,val):
+        self.reg |= (val << 3) & 0b1000
+    
+    def get_render_background(self):
+        return (self.reg & 0b1000) >> 3
+
+    def set_render_sprites(self,val):
+        self.reg |= (val << 4) & 0b10000
+    
+    def get_render_sprites(self):
+        return (self.reg & 0b10000) >> 4
+
+    def set_enhance_red(self,val):
+        self.reg |= (val << 5) & 0b100000
+    
+    def get_enhance_red(self):
+        return (self.reg & 0b100000) >> 5
+
+    def set_enhance_green(self,val):
+        self.reg |= (val << 6) & 0b1000000
+    
+    def get_enhance_green(self):
+        return (self.reg & 0b1000000) >> 6
+
+    def set_enhance_blue(self,val):
+        self.reg |= (val << 7) & 0b10000000
+    
+    def get_enhance_blue(self):
+        return (self.reg & 0b10000000) >> 7
+
+# class PPUCTRL(Union):
+#     class Bits(LittleEndianStructure):
+#         _fields_ = [
+#             ("nametable_x", c_uint8, 1),
+#             ("nametable_y", c_uint8, 1),
+#             ("increment_mode", c_uint8, 1),
+#             ("pattern_sprite", c_uint8, 1),
+#             ("pattern_background", c_uint8, 1),
+#             ("sprite_size", c_uint8, 1),
+#             ("slave_mode", c_uint8, 1),
+#             ("enable_nmi", c_uint8, 1),
+#         ]
+
+#     _fields_ = [
+#         ("bits", Bits),
+#         ("reg", c_uint8),
+#     ]
+
+class PPUCTRL:
+    def __init__(self) -> None:
+        self.reg = 0b00000000
+
+    def set_reg(self,val):
+        self.reg = val
+
+    def get_reg(self):
+        return self.reg
+
+    def set_nametable_x(self,val):
+        self.reg |= val & 0b1
+
+    def get_nametable_x(self):
+        return self.reg & 0b1
+
+    def set_nametable_y(self,val):
+        self.reg |= (val << 1) & 0b10
+
+    def get_nametable_y(self):
+        return (self.reg & 0b10) >> 1
+
+    def set_increment_mode(self,val):
+        self.reg |= (val << 2) & 0b100
+    
+    def get_increment_mode(self):
+        return (self.reg & 0b100) >> 2
+
+    def set_pattern_sprite(self,val):
+        self.reg |= (val << 3) & 0b1000
+    
+    def get_pattern_sprite(self):
+        return (self.reg & 0b1000) >> 3
+
+    def set_pattern_background(self,val):
+        self.reg |= (val << 4) & 0b10000
+    
+    def get_pattern_background(self):
+        return (self.reg & 0b10000) >> 4
+
+    def set_sprite_size(self,val):
+        self.reg |= (val << 5) & 0b100000
+    
+    def get_sprite_size(self):
+        return (self.reg & 0b100000) >> 5
+
+    def set_slave_mode(self,val):
+        self.reg |= (val << 6) & 0b1000000
+    
+    def get_slave_mode(self):
+        return (self.reg & 0b1000000) >> 6
+
+    def set_enable_nmi(self,val):
+        self.reg |= (val << 7) & 0b10000000
+    
+    def get_enable_nmi(self):
+        return (self.reg & 0b10000000) >> 7
 
 class LoopRegister(Union):
     class Bits(LittleEndianStructure):
@@ -153,7 +303,7 @@ class PPU2C02:
         self.screenWidth, self.screenHeight = 256, 240
         self.spriteScreen = zeros((self.screenHeight,self.screenWidth,3)).astype(uint8)
         self.spriteNameTable = [zeros((self.screenHeight,self.screenWidth,3)),zeros((self.screenHeight,self.screenWidth,3))]
-        self.spritePatternTable = [zeros((128,128,3)),zeros((128,128,3))]
+        self.spritePatternTable = [zeros((128,128,3)).astype(uint8),zeros((128,128,3)).astype(uint8)]
 
         self.status = Status()
         self.mask = Mask()
@@ -207,13 +357,13 @@ class PPU2C02:
         if readonly:
             if addr == 0x0000:
                 # Control
-                data = self.control.reg
+                data = self.control.get_reg()
             elif addr == 0x0001:
                 # Mask
-                data = self.mask.reg
+                data = self.mask.get_reg()
             elif addr == 0x0002:
                 # Status
-                data = self.status.reg
+                data = self.status.get_reg()
             elif addr == 0x0003:
                 # OAM Address
                 pass
@@ -238,8 +388,8 @@ class PPU2C02:
                 pass
             elif addr == 0x0002:
                 # Status
-                data = (self.status.reg & 0xE0) | (self.ppu_data_buffer & 0x1F)
-                self.status.bits.vertical_blank = 0
+                data = (self.status.get_reg() & 0xE0) | (self.ppu_data_buffer & 0x1F)
+                self.status.set_vertical_blank(0)
                 self.address_latch = 0
             elif addr == 0x0003:
                 # OAM Address
@@ -259,18 +409,18 @@ class PPU2C02:
                 self.ppu_data_buffer = self.readByPPU(self.vram_addr.reg)
                 if self.vram_addr.reg >= 0x3F00:
                     data = self.ppu_data_buffer
-                self.vram_addr.reg += 32 if self.control.bits.increment_mode == 1 else 1    
+                self.vram_addr.reg += 32 if self.control.get_increment_mode() == 1 else 1    
         return data
 
     def writeByCPU(self, addr: uint16, data: uint8) -> None:
         if addr == 0x0000:
             # Control
-            self.control.reg = data
-            self.tram_addr.bits.nametable_x = self.control.bits.nametable_x
-            self.tram_addr.bits.nametable_y = self.control.bits.nametable_y
+            self.control.set_reg(data)
+            self.tram_addr.bits.nametable_x = self.control.get_nametable_x()
+            self.tram_addr.bits.nametable_y = self.control.get_nametable_y()
         elif addr == 0x0001:
             # Mask
-            self.mask.reg = data
+            self.mask.set_reg(data)
         elif addr == 0x0002:
             # Status
             pass
@@ -302,7 +452,7 @@ class PPU2C02:
         elif addr == 0x0007:
             # PPU Data
             self.writeByPPU(self.vram_addr.reg, data)
-            self.vram_addr.reg += 32 if self.control.bits.increment_mode else 1
+            self.vram_addr.reg += 32 if self.control.get_increment_mode() else 1
 
     def readByPPU(self, addr: uint16) -> uint8:
         addr &= 0x3FFF
@@ -342,7 +492,7 @@ class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            data = self.paletteTable[addr] & (0x30 if self.mask.bits.grayscale == 1 else 0x3F)
+            data = self.paletteTable[addr] & (0x30 if self.mask.get_grayscale() == 1 else 0x3F)
         return data
 
     def writeByPPU(self, addr: uint16, data: uint8) -> None:
@@ -421,14 +571,14 @@ class PPU2C02:
         self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
         self.background_shifter_pattern_lo, self.background_shifter_pattern_hi = 0x0000, 0x0000
         self.background_shifter_attribute_lo, self.background_shifter_attribute_hi = 0x0000, 0x0000
-        self.status.reg = 0x00
-        self.mask.reg = 0x00
-        self.control.reg = 0x00
+        self.status.set_reg(0x00)
+        self.mask.set_reg(0x00)
+        self.control.set_reg(0x00)
         self.vram_addr.reg = 0x0000
         self.tram_addr.reg = 0x0000
 
     def incrementScrollX(self) -> None:
-        if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
             if self.vram_addr.bits.coarse_x == 31:
                 self.vram_addr.bits.coarse_x = 0
                 self.vram_addr.bits.nametable_x = ~self.vram_addr.bits.nametable_x
@@ -436,7 +586,7 @@ class PPU2C02:
                 self.vram_addr.bits.coarse_x += 1
 
     def incrementScrollY(self) -> None:
-        if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
             if self.vram_addr.bits.fine_y < 7:
                 self.vram_addr.bits.fine_y += 1
             else:
@@ -450,12 +600,12 @@ class PPU2C02:
                     self.vram_addr.bits.coarse_y += 1
 
     def transferAddressX(self) -> None:
-        if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
             self.vram_addr.bits.nametable_x = self.tram_addr.bits.nametable_x
             self.vram_addr.bits.coarse_x = self.tram_addr.bits.coarse_x
 
     def transferAddressY(self) -> None:
-        if self.mask.bits.render_background == 1 or self.mask.bits.render_sprites == 1:
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
             self.vram_addr.bits.fine_y = self.tram_addr.bits.fine_y
             self.vram_addr.bits.nametable_y = self.tram_addr.bits.nametable_y
             self.vram_addr.bits.coarse_y = self.tram_addr.bits.coarse_y
@@ -467,12 +617,12 @@ class PPU2C02:
         self.background_shifter_attribute_hi = 0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) > 0 else 0x00
 
     def updateShifters(self) -> None:
-        if self.mask.bits.render_background == 1:
+        if self.mask.get_render_background() == 1:
             self.background_shifter_pattern_lo <<= 1
             self.background_shifter_pattern_hi <<= 1
             self.background_shifter_attribute_lo <<= 1
             self.background_shifter_attribute_hi <<= 1
-        if self.mask.bits.render_sprites == 1 and self.cycle >= 1 and self.cycle < 258:
+        if self.mask.get_render_sprites() == 1 and self.cycle >= 1 and self.cycle < 258:
             for i in range(0, self.sprite_count):
                 if self.spriteScanline[i].x > 0:
                     self.spriteScanline[i].x -= 1
@@ -485,9 +635,9 @@ class PPU2C02:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
             if self.scanline == -1 and self.cycle == 1:
-                self.status.bits.vertical_blank = 0
-                self.status.bits.sprite_overflow = 0
-                self.status.bits.sprite_zero_hit = 0
+                self.status.set_vertical_blank(0)
+                self.status.set_sprite_overflow(0)
+                self.status.set_sprite_zero_hit(0)
                 for i in range(0, 8):
                     self.sprite_shifter_pattern_hi[i] = 0
                     self.sprite_shifter_pattern_lo[i] = 0
@@ -510,12 +660,12 @@ class PPU2C02:
                         self.background_next_tile_attribute >>= 2
                     self.background_next_tile_attribute &= 0x03
                 elif v == 4:
-                    self.background_next_tile_lsb = self.readByPPU((self.control.bits.pattern_background << 12) \
+                    self.background_next_tile_lsb = self.readByPPU((self.control.get_pattern_background() << 12) \
                         + (self.background_next_tile_id << 4) \
                         + (self.vram_addr.bits.fine_y) + 0
                     )
                 elif v == 6:
-                    self.background_next_tile_msb = self.readByPPU((self.control.bits.pattern_background << 12) \
+                    self.background_next_tile_msb = self.readByPPU((self.control.get_pattern_background() << 12) \
                         + (self.background_next_tile_id << 4) \
                         + (self.vram_addr.bits.fine_y) + 8
                     )
@@ -540,7 +690,7 @@ class PPU2C02:
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
                     diff = self.scanline - int16(self.OAM[nOAMEntry].y)
-                    diff_compare = 16 if self.control.bits.sprite_size == 1 else 8
+                    diff_compare = 16 if self.control.get_sprite_size() == 1 else 8
                     if diff >= 0 and diff < diff_compare:
                         if self.sprite_count < 8:
                             if nOAMEntry == 0:
@@ -548,18 +698,18 @@ class PPU2C02:
                             self.spriteScanline[self.sprite_count] = copy.deepcopy(self.OAM[nOAMEntry])
                             self.sprite_count += 1
                     nOAMEntry += 1
-                self.status.bits.sprite_overflow = 1 if self.sprite_count > 8 else 0
+                self.status.set_sprite_overflow(1 if self.sprite_count > 8 else 0)
             if self.cycle == 340:
                 for i in range(0, self.sprite_count):
                     sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
                     sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
-                    if self.control.bits.sprite_size == 0:
+                    if self.control.get_sprite_size() == 0:
                         if (self.spriteScanline[i].attribute & 0x80) == 0:
-                            sprite_pattern_addr_lo = (self.control.bits.pattern_sprite<<12) \
+                            sprite_pattern_addr_lo = (self.control.get_pattern_sprite()<<12) \
                                 | (self.spriteScanline[i].id<<4) \
                                 | ((self.scanline - self.spriteScanline[i].y) & 0xFFFF)
                         else:
-                            sprite_pattern_addr_lo = (self.control.bits.pattern_sprite<<12) \
+                            sprite_pattern_addr_lo = (self.control.get_pattern_sprite()<<12) \
                                 | (self.spriteScanline[i].id<<4) \
                                 | ((7 - (self.scanline - self.spriteScanline[i].y)) & 0xFFFF)
                     else:
@@ -597,13 +747,13 @@ class PPU2C02:
             pass
         if 241 <= self.scanline < 261:            
             if self.scanline == 241 and self.cycle == 1:
-                self.status.bits.vertical_blank = 1
-                if self.control.bits.enable_nmi == 1:
+                self.status.set_vertical_blank(1)
+                if self.control.get_enable_nmi() == 1:
                     self.nmi = True
 
         background_pixel: uint8 = 0x00
         background_palette: uint8 = 0x00
-        if self.mask.bits.render_background == 1:
+        if self.mask.get_render_background() == 1:
             bit_mux: uint16 = 0x8000 >> self.fine_x
 
             background_pixel_0: uint8 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
@@ -618,7 +768,7 @@ class PPU2C02:
         foreground_palette: uint8 = 0x00
         foreground_priority: uint8 = 0x00
 
-        if self.mask.bits.render_sprites == 1:
+        if self.mask.get_render_sprites() == 1:
             self.bSpriteZeroBeingRendered = False
             for i in range(0, self.sprite_count):
                 if self.spriteScanline[i].x == 0:
@@ -652,13 +802,13 @@ class PPU2C02:
                 pixel = background_pixel
                 palette = background_palette
             if self.bSpriteZeroHitPossible and self.bSpriteZeroBeingRendered:
-                if self.mask.bits.render_background & self.mask.bits.render_sprites != 0:
-                    if (~(self.mask.bits.render_background_left | self.mask.bits.render_sprites_left) != 0):
+                if self.mask.get_render_background() & self.mask.get_render_sprites() != 0:
+                    if (~(self.mask.get_render_background_left() | self.mask.get_render_sprites_left()) != 0):
                         if 9 <= self.cycle < 258:
-                            self.status.bits.sprite_zero_hit = 1
+                            self.status.set_sprite_zero_hit(1)
                     else:
                         if 1 <= self.cycle < 258:
-                            self.status.bits.sprite_zero_hit = 1
+                            self.status.set_sprite_zero_hit(1)
 
         if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
             self.spriteScreen[self.scanline, self.cycle - 1] = self.getColorFromPaletteTable(palette, pixel)

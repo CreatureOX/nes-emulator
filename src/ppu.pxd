@@ -9,6 +9,67 @@ import cython
 
 cdef uint8_t flipbyte(uint8_t b)
 
+cdef class Status:
+    cdef uint8_t reg
+
+    cdef void set_reg(self,uint8_t)
+    cdef uint8_t get_reg(self)
+
+    cdef void set_unused(self,uint8_t)
+    cdef uint8_t get_unused(self)
+    cdef void set_sprite_overflow(self,uint8_t)
+    cdef uint8_t get_sprite_overflow(self)
+    cdef void set_sprite_zero_hit(self,uint8_t)
+    cdef uint8_t get_sprite_zero_hit(self)
+    cdef void set_vertical_blank(self,uint8_t)
+    cdef uint8_t get_vertical_blank(self)
+
+cdef class Mask:
+    cdef uint8_t reg
+
+    cdef void set_reg(self,uint8_t)
+    cdef uint8_t get_reg(self)
+
+    cdef void set_grayscale(self,uint8_t)
+    cdef uint8_t get_grayscale(self)
+    cdef void set_render_background_left(self,uint8_t)
+    cdef uint8_t get_render_background_left(self)
+    cdef void set_render_sprites_left(self,uint8_t)
+    cdef uint8_t get_render_sprites_left(self)
+    cdef void set_render_background(self,uint8_t)
+    cdef uint8_t get_render_background(self)
+    cdef void set_render_sprites(self,uint8_t)
+    cdef uint8_t get_render_sprites(self)
+    cdef void set_enhance_red(self,uint8_t)
+    cdef uint8_t get_enhance_red(self)
+    cdef void set_enhance_green(self,uint8_t)
+    cdef uint8_t get_enhance_green(self)
+    cdef void set_enhance_blue(self,uint8_t)
+    cdef uint8_t get_enhance_blue(self)
+
+cdef class PPUCTRL:
+    cdef uint8_t reg
+    
+    cdef void set_reg(self,uint8_t)
+    cdef uint8_t get_reg(self)    
+
+    cdef void set_nametable_x(self,uint8_t)
+    cdef uint8_t get_nametable_x(self)
+    cdef void set_nametable_y(self,uint8_t)
+    cdef uint8_t get_nametable_y(self)
+    cdef void set_increment_mode(self,uint8_t)
+    cdef uint8_t get_increment_mode(self)
+    cdef void set_pattern_sprite(self,uint8_t)
+    cdef uint8_t get_pattern_sprite(self)
+    cdef void set_pattern_background(self,uint8_t)
+    cdef uint8_t get_pattern_background(self)
+    cdef void set_sprite_size(self,uint8_t)
+    cdef uint8_t get_sprite_size(self)
+    cdef void set_slave_mode(self,uint8_t)
+    cdef uint8_t get_slave_mode(self)
+    cdef void set_enable_nmi(self,uint8_t)
+    cdef uint8_t get_enable_nmi(self)
+
 cdef class PPU2C02:
     cdef uint8_t[2][4096] patternTable
     cdef uint8_t[2][1024] nameTable
@@ -19,9 +80,9 @@ cdef class PPU2C02:
     cdef list spriteNameTable
     cdef list spritePatternTable
 
-    cdef object status
-    cdef object mask
-    cdef object control
+    cdef Status status
+    cdef Mask mask
+    cdef PPUCTRL control
     cdef object vram_addr
     cdef object tram_addr
 
