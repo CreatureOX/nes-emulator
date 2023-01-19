@@ -1,7 +1,5 @@
 from typing import List, Tuple, Any
 from numpy import ndarray, uint16, int16, uint8, zeros
-from ctypes import c_uint8, c_uint16, Union, LittleEndianStructure, cast, POINTER, memset, sizeof
-import copy
 
 from bus import CPUBus
 from cartridge import Cartridge
@@ -218,13 +216,28 @@ class LoopRegister:
     def get_unused(self):
         return (self.reg & 0b100000_00000_00000) >> 15
 
-class sObjectAttributeEntry(LittleEndianStructure):
-    _fields_ = [
-        ("y", c_uint8),
-        ("id", c_uint8),
-        ("attribute", c_uint8),
-        ("x", c_uint8),
-    ]
+# class sObjectAttributeEntry(LittleEndianStructure):
+#     _fields_ = [
+#         ("y", c_uint8),
+#         ("id", c_uint8),
+#         ("attribute", c_uint8),
+#         ("x", c_uint8),
+#     ]
+
+# class sObjectAttributeEntry:
+#     def __init__(self,y,id,attribute,x) -> None:
+#         self.y = y
+#         self.id = id
+#         self.attribute = attribute 
+#         self.x = x
+
+Y = 0
+ID = 1
+ATTRIBUTE = 2
+X = 3
+
+def offset(i: uint8, offset: uint8):
+    return i*4+offset
 
 def flipbyte(b: uint8) -> uint8:
     b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
@@ -265,12 +278,13 @@ class PPU2C02:
     background_shifter_attribute_lo: uint16
     background_shifter_attribute_hi: uint16
 
-    OAM: Any
+    # OAM: List[sObjectAttributeEntry]
     pOAM: List[uint8]
 
     oam_addr: uint8
 
-    spriteScanline: Any
+    # spriteScanline: List[sObjectAttributeEntry]
+    pSpriteScanline: List[uint8]
     sprite_count: uint8
     sprite_shifter_pattern_lo: List[uint8]
     sprite_shifter_pattern_hi: List[uint8]
@@ -320,12 +334,15 @@ class PPU2C02:
         self.background_shifter_attribute_lo = 0x0000
         self.background_shifter_attribute_hi = 0x0000
 
-        self.OAM = (sObjectAttributeEntry * 64)()
-        self.pOAM = cast(self.OAM, POINTER(c_uint8))
+        # self.OAM = (sObjectAttributeEntry * 64)()
+        # self.pOAM = cast(self.OAM, POINTER(c_uint8))
+        self.pOAM = zeros((64 * 32), dtype=uint8)
 
         self.oam_addr = 0x00
 
-        self.spriteScanline = (sObjectAttributeEntry * 8)()
+        # self.spriteScanline = (sObjectAttributeEntry * 8)()
+        # self.spriteScanline = array([sObjectAttributeEntry(0x00,0x00,0x00,0x00) for _ in range(8)])
+        self.pSpriteScanline = zeros((8 * 32), dtype=uint8)
 
         self.sprite_shifter_pattern_lo = [0x00] * 8
         self.sprite_shifter_pattern_hi = [0x00] * 8
@@ -617,8 +634,10 @@ class PPU2C02:
             self.background_shifter_attribute_hi <<= 1
         if self.mask.get_render_sprites() == 1 and self.cycle >= 1 and self.cycle < 258:
             for i in range(0, self.sprite_count):
-                if self.spriteScanline[i].x > 0:
-                    self.spriteScanline[i].x -= 1
+                if self.pSpriteScanline[offset(i,X)] > 0:
+                    # self.spriteScanline[i].x = self.spriteScanline[i].x - 1
+                    # self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
+                    self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
                 else:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
@@ -674,7 +693,9 @@ class PPU2C02:
             if self.scanline == -1 and 280 <= self.cycle < 305:               
                 self.transferAddressY()
             if self.cycle == 257 and self.scanline >= 0:
-                memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
+                # memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
+                # self.spriteScanline = array([sObjectAttributeEntry(0xFF,0xFF,0xFF,0xFF) for _ in range(8)])
+                self.pSpriteScanline = [0xFF for _ in range(8 * 32)]
                 self.sprite_count = 0
                 for i in range(0, 8):
                     self.sprite_shifter_pattern_lo[i] = 0
@@ -682,13 +703,18 @@ class PPU2C02:
                 nOAMEntry: uint8 = 0
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
-                    diff = self.scanline - int16(self.OAM[nOAMEntry].y)
+                    # diff = self.scanline - int16(self.OAM(nOAMEntry).y)
+                    diff = self.scanline - int16(self.pOAM[offset(nOAMEntry, Y)])
                     diff_compare = 16 if self.control.get_sprite_size() == 1 else 8
                     if diff >= 0 and diff < diff_compare:
                         if self.sprite_count < 8:
                             if nOAMEntry == 0:
                                 self.bSpriteZeroHitPossible = True
-                            self.spriteScanline[self.sprite_count] = copy.deepcopy(self.OAM[nOAMEntry])
+                            # self.spriteScanline[self.sprite_count] = self.OAM(nOAMEntry)
+                            self.pSpriteScanline[offset(self.sprite_count,Y)] = self.pOAM[offset(nOAMEntry,Y)]
+                            self.pSpriteScanline[offset(self.sprite_count,ID)] = self.pOAM[offset(nOAMEntry,ID)]
+                            self.pSpriteScanline[offset(self.sprite_count,ATTRIBUTE)] = self.pOAM[offset(nOAMEntry,ATTRIBUTE)]
+                            self.pSpriteScanline[offset(self.sprite_count,X)] = self.pOAM[offset(nOAMEntry,X)]
                             self.sprite_count += 1
                     nOAMEntry += 1
                 self.status.set_sprite_overflow(1 if self.sprite_count > 8 else 0)
@@ -697,40 +723,40 @@ class PPU2C02:
                     sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
                     sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
                     if self.control.get_sprite_size() == 0:
-                        if (self.spriteScanline[i].attribute & 0x80) == 0:
+                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
                             sprite_pattern_addr_lo = (self.control.get_pattern_sprite()<<12) \
-                                | (self.spriteScanline[i].id<<4) \
-                                | ((self.scanline - self.spriteScanline[i].y) & 0xFFFF)
+                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
+                                | ((self.scanline - self.pSpriteScanline[offset(i,Y)]) & 0xFFFF)
                         else:
                             sprite_pattern_addr_lo = (self.control.get_pattern_sprite()<<12) \
-                                | (self.spriteScanline[i].id<<4) \
-                                | ((7 - (self.scanline - self.spriteScanline[i].y)) & 0xFFFF)
+                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
+                                | ((7 - (self.scanline - self.pSpriteScanline[offset(i,Y)])) & 0xFFFF)
                     else:
-                        if (self.spriteScanline[i].attribute & 0x80) == 0:
-                            if self.scanline - self.spriteScanline[i].y < 8:
-                                sprite_pattern_addr_lo = ((self.spriteScanline[i].id & 0x01)<<12) \
-                                    | ((self.spriteScanline[i].id & 0xFE)<<4) \
-                                    | ((self.scanline - self.spriteScanline[i].y)&0x07) 
+                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
+                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
+                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
+                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
+                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
                             else:
-                                sprite_pattern_addr_lo = ((self.spriteScanline[i].id & 0x01)<<12) \
-                                    | (((self.spriteScanline[i].id & 0xFE)+1)<<4) \
-                                    | ((self.scanline - self.spriteScanline[i].y)&0x07) 
+                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
+                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
+                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
                         else:
-                            if self.scanline - self.spriteScanline[i].y < 8:
-                                sprite_pattern_addr_lo = ((self.spriteScanline[i].id & 0x01)<<12) \
-                                    | (((self.spriteScanline[i].id & 0xFE)+1)<<4) \
-                                    | ((7-(self.scanline - self.spriteScanline[i].y))&0x07) 
+                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
+                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
+                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
+                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07) 
                             else:
-                                sprite_pattern_addr_lo = ((self.spriteScanline[i].id & 0x01)<<12) \
-                                    | ((self.spriteScanline[i].id & 0xFE)<<4) \
-                                    | ((7-(self.scanline - self.spriteScanline[i].y))&0x07)   
+                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
+                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
+                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07)   
                 
                     sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8
                     
                     sprite_pattern_bits_lo = self.readByPPU(sprite_pattern_addr_lo)
                     sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
                     
-                    if self.spriteScanline[i].attribute & 0x40 != 0:
+                    if self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x40 != 0:
                         sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
                         sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
 
@@ -764,12 +790,12 @@ class PPU2C02:
         if self.mask.get_render_sprites() == 1:
             self.bSpriteZeroBeingRendered = False
             for i in range(0, self.sprite_count):
-                if self.spriteScanline[i].x == 0:
+                if self.pSpriteScanline[offset(i,X)] == 0:
                     foreground_pixel_lo: uint8 = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
                     foreground_pixel_hi: uint8 = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
                     foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
-                    foreground_palette = (self.spriteScanline[i].attribute & 0x03) + 0x04
-                    foreground_priority = 1 if (self.spriteScanline[i].attribute & 0x20) == 0 else 0
+                    foreground_palette = (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x03) + 0x04
+                    foreground_priority = 1 if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x20) == 0 else 0
 
                     if foreground_pixel != 0:
                         if i == 0:

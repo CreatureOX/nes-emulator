@@ -2,7 +2,7 @@ from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
 from cartridge cimport Cartridge
 from cpu cimport CPU6502
-#from ppu cimport PPU2C02
+from ppu cimport PPU2C02
 
 import cython
 
@@ -21,7 +21,7 @@ cdef class CPUBus:
     cdef bint dma_transfer
 
     cdef public CPU6502 cpu 
-    cdef public object ppu
+    cdef public PPU2C02 ppu
     cdef Cartridge cartridge
 
     @cython.locals(success=bint, data=uint8_t)
@@ -29,4 +29,4 @@ cdef class CPUBus:
     @cython.locals(success=bint)
     cpdef void write(self, uint16_t, uint8_t)
     cpdef void reset(self)
-    cpdef void clock(self)
+    cpdef void clock(self) except * 

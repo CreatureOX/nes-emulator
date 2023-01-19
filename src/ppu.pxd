@@ -2,10 +2,12 @@ from libc.stdint cimport uint8_t, uint16_t, int16_t
 from numpy cimport ndarray
 
 from bus cimport CPUBus
-from cartridge cimport Cartridge, HORIZONTAL, VERTICAL
+from cartridge cimport Cartridge
 
 import cython
 
+cdef uint8_t HORIZONTAL
+cdef uint8_t VERTICAL
 
 cdef uint8_t flipbyte(uint8_t b)
 
@@ -89,6 +91,13 @@ cdef class LoopRegister:
     cdef void set_unused(self,uint16_t)
     cdef uint16_t get_unused(self)
 
+cdef uint8_t Y 
+cdef uint8_t ID
+cdef uint8_t ATTRIBUTE
+cdef uint8_t X 
+
+cdef uint8_t offset(uint8_t,uint8_t)
+
 cdef class PPU2C02:
     cdef uint8_t[2][4096] patternTable
     cdef uint8_t[2][1024] nameTable
@@ -122,12 +131,11 @@ cdef class PPU2C02:
     cdef uint16_t background_shifter_attribute_lo
     cdef uint16_t background_shifter_attribute_hi
 
-    cdef object OAM
-    cdef public object pOAM
+    cdef public uint8_t[2048] pOAM
 
     cdef uint8_t oam_addr
 
-    cdef object spriteScanline
+    cdef uint8_t[256] pSpriteScanline
     cdef uint8_t sprite_count
     cdef uint8_t[8] sprite_shifter_pattern_lo
     cdef uint8_t[8] sprite_shifter_pattern_hi
@@ -170,8 +178,9 @@ cdef class PPU2C02:
     cdef void transferAddressX(self)
     cdef void transferAddressY(self)
     cdef void loadBackgroundShifters(self)
+    @cython.locals(i=int)
     cdef void updateShifters(self)
-    @cython.locals(v=uint16_t, nOAMEntry=uint8_t, \
+    @cython.locals(i=int, v=uint16_t, nOAMEntry=uint8_t, \
     diff=int16_t, diff_compare=int, \
     sprite_pattern_bits_lo=uint8_t, sprite_pattern_bits_hi=uint8_t, \
     sprite_pattern_addr_lo=uint16_t, sprite_pattern_addr_hi=uint16_t, \
