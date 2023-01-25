@@ -4,17 +4,16 @@ import os
 from numpy import uint16, uint8, swapaxes
 from threading import Thread, Event
 from PIL import Image, ImageTk
-import matplotlib.pyplot as plt
+import pyximport; pyximport.install()
 
-from cartridge import Cartridge
-from bus import CPUBus
+from console import Console
 from cpu import C, Z, I, D, B, U, V, N
 
 
 class Emulator:
     menu_def = [
         ['File', ['Open File','Exit']],
-        ['Debug', ['Hex Viewer','Snapshot','PatternTable0','PatternTable1']],
+        ['Debug', ['Hex Viewer','PatternTable0','PatternTable1']],
         ['Help', ['About',]],
     ]
     
@@ -53,8 +52,7 @@ class Emulator:
         ],
     ]
 
-    cart: Cartridge
-    bus: CPUBus
+    console: Console
 
     def __init__(self) -> None:
         self.window = gui.Window('NES Emulator', self.layout, size = (1024, 500), resizable = True).Finalize()
@@ -66,49 +64,48 @@ class Emulator:
         pygame.display.init()
 
     def drawRAM(self, start_addr: uint16, end_addr: uint16) -> None:
-        self.window['HEX'].Update(self.bus.cpu.toHex(start=start_addr, end=end_addr))
+        self.window['HEX'].Update(self.console.bus.cpu.toHex(start=start_addr, end=end_addr))
         
     def drawCPU(self) -> None:
-        self.window["N"].Update(text_color='RED' if self.bus.cpu.status & N > 0 else 'WHITE')
-        self.window["V"].Update(text_color='RED' if self.bus.cpu.status & V > 0 else 'WHITE')
-        self.window["-"].Update(text_color='RED' if self.bus.cpu.status & U > 0 else 'WHITE')
-        self.window["B"].Update(text_color='RED' if self.bus.cpu.status & B > 0 else 'WHITE')
-        self.window["D"].Update(text_color='RED' if self.bus.cpu.status & D > 0 else 'WHITE')
-        self.window["I"].Update(text_color='RED' if self.bus.cpu.status & I > 0 else 'WHITE')
-        self.window["Z"].Update(text_color='RED' if self.bus.cpu.status & Z > 0 else 'WHITE')
-        self.window["PC"].Update("PC: ${PC:04X}".format(PC=self.bus.cpu.pc))
-        self.window["A"].Update("A: ${a:02X}".format(a=self.bus.cpu.a))
-        self.window["X"].Update("X: ${x:02X}".format(x=self.bus.cpu.x))
-        self.window["Y"].Update("Y: ${y:02X}".format(y=self.bus.cpu.y))
-        self.window["SP"].Update("SP: ${stkp:04X}".format(stkp=self.bus.cpu.stkp))
+        self.window["N"].Update(text_color='RED' if self.console.bus.cpu.status & N > 0 else 'WHITE')
+        self.window["V"].Update(text_color='RED' if self.console.bus.cpu.status & V > 0 else 'WHITE')
+        self.window["-"].Update(text_color='RED' if self.console.bus.cpu.status & U > 0 else 'WHITE')
+        self.window["B"].Update(text_color='RED' if self.console.bus.cpu.status & B > 0 else 'WHITE')
+        self.window["D"].Update(text_color='RED' if self.console.bus.cpu.status & D > 0 else 'WHITE')
+        self.window["I"].Update(text_color='RED' if self.console.bus.cpu.status & I > 0 else 'WHITE')
+        self.window["Z"].Update(text_color='RED' if self.console.bus.cpu.status & Z > 0 else 'WHITE')
+        self.window["PC"].Update("PC: ${PC:04X}".format(PC=self.console.bus.cpu.pc))
+        self.window["A"].Update("A: ${a:02X}".format(a=self.console.bus.cpu.a))
+        self.window["X"].Update("X: ${x:02X}".format(x=self.console.bus.cpu.x))
+        self.window["Y"].Update("Y: ${y:02X}".format(y=self.console.bus.cpu.y))
+        self.window["SP"].Update("SP: ${stkp:04X}".format(stkp=self.console.bus.cpu.stkp))
 
     def drawCode(self, delta: int = 10) -> None:
-        start, end = max(self.bus.cpu.pc- delta, 0x0000), self.bus.cpu.pc + delta
-        asm = self.bus.cpu.toReadable(start, end)
+        start, end = max(self.console.bus.cpu.pc- delta, 0x0000), self.console.bus.cpu.pc + delta
+        asm = self.console.bus.cpu.toReadable(start, end)
         self.window['READABLE'].Update("")
         for addr, inst in asm.items():
-            self.window['READABLE'].print(inst, text_color="CYAN" if addr == self.bus.cpu.pc else 'WHITE')  
+            self.window['READABLE'].print(inst, text_color="CYAN" if addr == self.console.bus.cpu.pc else 'WHITE')  
 
     def drawPatternTable(self) -> None:
-        p0_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.bus.ppu.getPatternTable(0,0))))
+        p0_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.console.bus.ppu.getPatternTable(0,0))))
         self.window['P0'].update(data=p0_img)
-        p1_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.bus.ppu.getPatternTable(1,0))))
+        p1_img = ImageTk.PhotoImage(image=Image.fromarray(uint8(self.console.bus.ppu.getPatternTable(1,0))))
         self.window['P1'].update(data=p1_img)
 
     def openFile(self) -> bool:
         filename = gui.popup_get_file('file to open', file_types=(("NES Files","*.nes"),), no_window=True)
         if filename is None or filename == '':
             return False
-        self.cart = Cartridge(filename)
-        self.bus = CPUBus(self.cart)
-        self.bus.reset()
+        self.console = Console(filename)
+        self.console.reset()
         self.window.TKroot.title('NES Emulator ' + filename)
         self.drawCPU()
         self.drawCode()
         return True
 
     def openHexViewer(self) -> bool:
-        if self.cart is None:
+        if self.console is None:
             gui.popup("Please load nes file!")
             return False
         layout = [
@@ -125,48 +122,32 @@ class Emulator:
             if event in (None, 'Exit'):
                 break
             elif event == "Disassemble":
-                hexcode = self.bus.cpu.toHex(int(values["START ADDR"], 16), int(values["END ADDR"], 16) )
+                hexcode = self.console.bus.cpu.toHex(int(values["START ADDR"], 16), int(values["END ADDR"], 16))
                 window["HEX"].Update(hexcode)
         window.close()
         return True
         
     def clock(self) -> bool:
-        if self.cart is None:
+        if self.console is None:
             gui.popup("Please load nes file!")
             return False
-        while True:
-            self.bus.clock()
-            if self.bus.cpu.complete():
-                break
-        while True:
-            self.bus.clock()
-            if not self.bus.cpu.complete():
-                break
+        self.console.clock()
         self.drawCPU()
         self.drawCode()    
-        surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
+        surf = pygame.surfarray.make_surface(self.console.bus.ppu.getScreen())
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
         return True
 
     def frame(self) -> bool:
-        if self.cart is None:
+        if self.console is None:
             gui.popup("Please load nes file!")
             return False
-            
-        while True:
-            self.bus.clock()
-            if self.bus.ppu.frame_complete:
-                break
-        while True:
-            self.bus.clock()
-            if self.bus.cpu.complete():
-                break
-        self.bus.ppu.frame_complete = False
+        self.console.frame()
         self.drawCPU()
         self.drawCode()    
         self.drawPatternTable()
-        n = swapaxes(self.bus.ppu.getScreen(), 0, 1)
+        n = swapaxes(self.console.bus.ppu.getScreen(), 0, 1)
         surf = pygame.surfarray.make_surface(n)
         self.gameScreen.blit(surf, (0,0))
         pygame.display.flip()
@@ -174,32 +155,28 @@ class Emulator:
 
     def run(self, stop: Event) -> bool:
         while not stop.is_set():
-            self.bus.controller[0] = 0x00
+            self.console.bus.controller[0] = 0x00
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_x:
-                        self.bus.controller[0] |= 0x80
+                        self.console.bus.controller[0] |= 0x80
                     elif event.key == pygame.K_z:
-                        self.bus.controller[0] |= 0x40
+                        self.console.bus.controller[0] |= 0x40
                     elif event.key == pygame.K_a:
-                        self.bus.controller[0] |= 0x20
+                        self.console.bus.controller[0] |= 0x20
                     elif event.key == pygame.K_s:
-                        self.bus.controller[0] |= 0x10
+                        self.console.bus.controller[0] |= 0x10
                     if event.key == pygame.K_UP:
-                        self.bus.controller[0] |= 0x08
+                        self.console.bus.controller[0] |= 0x08
                     elif event.key == pygame.K_DOWN:
-                        self.bus.controller[0] |= 0x04
+                        self.console.bus.controller[0] |= 0x04
                     elif event.key == pygame.K_LEFT:
-                        self.bus.controller[0] |= 0x02
+                        self.console.bus.controller[0] |= 0x02
                     elif event.key == pygame.K_RIGHT:
-                        self.bus.controller[0] |= 0x01
+                        self.console.bus.controller[0] |= 0x01
             self.gameClock.tick(self.fps)
-            while True:
-                self.bus.clock()
-                if self.bus.ppu.frame_complete:
-                    break
-            self.bus.ppu.frame_complete = False
-            n = swapaxes(self.bus.ppu.getScreen(), 0, 1)
+            self.console.run()
+            n = swapaxes(self.console.bus.ppu.getScreen(), 0, 1)
             surf = pygame.surfarray.make_surface(n)
             #surf = pygame.surfarray.make_surface(self.bus.ppu.getScreen())
             self.gameScreen.blit(surf, (0,0))
@@ -207,19 +184,16 @@ class Emulator:
         return True
 
     def reset(self) -> bool:
-        if self.cart is None:
+        if self.console is None:
             gui.popup("Please load nes file!")
             return False
-        self.bus.reset()
+        self.console.reset()
         self.drawCPU()
         self.drawCode()
         return True   
 
-    def snapshot(self) -> bool:
-        Image.fromarray(self.bus.ppu.getScreen()).save("test.jpg")
-
     def patternTable(self,i) -> bool:
-        Image.fromarray(uint8(self.bus.ppu.getPatternTable(i, 0))).show()
+        Image.fromarray(uint8(self.console.bus.ppu.getPatternTable(i, 0))).show()
         return True
 
     def emulate(self) -> None:
@@ -242,8 +216,6 @@ class Emulator:
                 #success = self.run()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
-            elif event == 'Snapshot':
-                success = self.snapshot()
             elif event == 'PatternTable0':
                 success = self.patternTable(0)
             elif event == 'PatternTable1':

@@ -12,6 +12,7 @@ setup(
         Extension("bus", sources=["./bus.py"]),
         Extension("cpu", sources=["./cpu.py"]),
         Extension("ppu", sources=["./ppu.py"]),
+        Extension("console", sources=["./console.py"]),
     ], compiler_directives={'language_level' : "3"}, 
     annotate=True),
     include_dirs=[np.get_include()]

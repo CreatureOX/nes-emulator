@@ -45,9 +45,11 @@ class CPUBus:
 
         from cpu import CPU6502
         from ppu import PPU2C02
+        # from apu import APU2A03
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
+        # self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connectBus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -60,6 +62,9 @@ class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
+        elif addr == 0x4015:
+            pass
+            # data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -73,6 +78,9 @@ class CPUBus:
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
+        elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
+            pass
+            # self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
             self.dma_page = data
             self.dma_addr = 0x00
@@ -102,7 +110,7 @@ class CPUBus:
                     if self.nSystemClockCounter % 2 == 0:
                         self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
-                        self.ppu.pOAM[self.dma_addr] = self.dma_data
+                        self.ppu.pOAM[self.dma_addr & 0xFF] = self.dma_data
                         self.dma_addr += 1
                         if self.dma_addr == 0x00:
                             self.dma_transfer = False
@@ -113,3 +121,7 @@ class CPUBus:
             self.ppu.nmi = False
             self.cpu.nmi()
         self.nSystemClockCounter += 1
+
+    def setSampleFreq(self, sampleRate: uint32):
+        self.audioTimePerSystemSample = 1.0 / sampleRate
+        self.audioTimePerNesClock = 1.0 / 5369318
