@@ -3,11 +3,10 @@ from numpy cimport ndarray
 
 from bus cimport CPUBus
 from cartridge cimport Cartridge
+from mapper cimport Mirror
 
 import cython
 
-cdef uint8_t HORIZONTAL
-cdef uint8_t VERTICAL
 
 cdef uint8_t flipbyte(uint8_t b)
 

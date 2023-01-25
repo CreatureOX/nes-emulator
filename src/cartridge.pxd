@@ -1,10 +1,8 @@
 from libc.stdint cimport uint8_t, uint16_t
 
-from mapper cimport Mapper, Mapper000
+from mapper cimport Mirror, Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
 from bus cimport CPUBus
 
-
-cdef int HORIZONTAL, VERTICAL
 
 cdef class Header:
     cdef str name
@@ -35,3 +33,5 @@ cdef class Cartridge:
     cdef bint writeByPPU(self, uint16_t, uint8_t)
     cdef void connectBus(self, CPUBus)
     cdef void reset(self)
+    cdef uint8_t getMirror(self)
+    cdef Mapper getMapper(self)

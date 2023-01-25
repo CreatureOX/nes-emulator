@@ -1,12 +1,9 @@
-from typing import List, Tuple, Any
+from typing import List, Tuple
 from numpy import ndarray, uint16, int16, uint8, zeros
 
 from bus import CPUBus
 from cartridge import Cartridge
-
-
-VERTICAL = 0
-HORIZONTAL = 1 
+from mapper import Mirror
 
 class Status:
     def __init__(self) -> None:
@@ -474,7 +471,7 @@ class PPU2C02:
             data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == VERTICAL:
+            if self.cartridge.mirror == Mirror.VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -483,7 +480,7 @@ class PPU2C02:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
                     data = self.nameTable[1][addr & 0x03FF]                                 
-            elif self.cartridge.mirror == HORIZONTAL:
+            elif self.cartridge.mirror == Mirror.HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -515,7 +512,7 @@ class PPU2C02:
             self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == VERTICAL:
+            if self.cartridge.mirror == Mirror.VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -524,7 +521,7 @@ class PPU2C02:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
                     self.nameTable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror == HORIZONTAL:
+            elif self.cartridge.mirror == Mirror.HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
