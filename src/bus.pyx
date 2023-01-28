@@ -8,8 +8,8 @@ from ppu cimport PPU2C02
 cdef class CPUBus:
     def __init__(self, Cartridge cartridge) -> None:
         self.ram = [0x00] * 2 * 1024
-        self.controller = [0x00] * 2
-        self.controller_state = [0x00] * 2
+        self.controller = [0x00,0x00]
+        self.controller_state = [0x00,0x00]
         self.nSystemClockCounter = 0
 
         self.dma_page = 0x00
@@ -19,13 +19,8 @@ cdef class CPUBus:
         self.dma_dummy = True
         self.dma_transfer = False
 
-        from cpu import CPU6502
-        from ppu import PPU2C02
-        # from apu import APU2A03
-
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
-        # self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connectBus(self)
         self.ppu.connectCartridge(self.cartridge)

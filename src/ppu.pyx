@@ -286,13 +286,13 @@ cdef class PPU2C02:
         self.bus = bus
         self.setPalettePanel()    
 
-    cpdef void connectCartridge(self, Cartridge cartridge):
+    cdef void connectCartridge(self, Cartridge cartridge):
         self.cartridge = cartridge   
 
     cpdef uint8_t[:,:,:] getScreen(self):
         return self.spriteScreen               
 
-    cpdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
+    cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
         data = 0x00
 
         if readonly:
@@ -354,7 +354,7 @@ cdef class PPU2C02:
                 self.vram_addr.set_reg(self.vram_addr.get_reg() + (32 if self.control.get_increment_mode() == 1 else 1  ))  
         return data
 
-    cpdef void writeByCPU(self, uint16_t addr, uint8_t data):
+    cdef void writeByCPU(self, uint16_t addr, uint8_t data):
         if addr == 0x0000:
             # Control
             self.control.set_reg(data)
@@ -396,7 +396,7 @@ cdef class PPU2C02:
             self.writeByPPU(self.vram_addr.get_reg(), data)
             self.vram_addr.set_reg(self.vram_addr.get_reg() + (32 if self.control.get_increment_mode() else 1))
 
-    cpdef uint8_t readByPPU(self, uint16_t addr):
+    cdef uint8_t readByPPU(self, uint16_t addr):
         addr &= 0x3FFF
 
         success, data = self.cartridge.readByPPU(addr)
@@ -437,7 +437,7 @@ cdef class PPU2C02:
             data = self.paletteTable[addr] & (0x30 if self.mask.get_grayscale() == 1 else 0x3F)
         return data
 
-    cpdef void writeByPPU(self, uint16_t addr, uint8_t data):
+    cdef void writeByPPU(self, uint16_t addr, uint8_t data):
         addr &= 0x3FFF     
 
         success = self.cartridge.writeByPPU(addr, data)
@@ -501,7 +501,7 @@ cdef class PPU2C02:
         
         return self.spritePatternTable[i]
 
-    cpdef void reset(self):
+    cdef void reset(self):
         self.fine_x = 0x00
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
@@ -572,7 +572,7 @@ cdef class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
-    cpdef void clock(self) except *:
+    cdef void clock(self) except *:
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
@@ -630,13 +630,13 @@ cdef class PPU2C02:
                 for i in range(0, 8):
                     self.sprite_shifter_pattern_lo[i] = 0
                     self.sprite_shifter_pattern_hi[i] = 0
-                nOAMEntry: uint8 = 0
+                nOAMEntry = 0
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
                     # diff = self.scanline - int16(self.OAM(nOAMEntry).y)
                     diff = self.scanline - np.int16(self.pOAM[offset(nOAMEntry, Y)])
                     diff_compare = 16 if self.control.get_sprite_size() == 1 else 8
-                    if diff >= 0 and diff < diff_compare:
+                    if 0 <= diff < diff_compare:
                         if self.sprite_count < 8:
                             if nOAMEntry == 0:
                                 self.bSpriteZeroHitPossible = True
@@ -731,8 +731,8 @@ cdef class PPU2C02:
                         if i == 0:
                             self.bSpriteZeroBeingRendered = True
                         break
-        pixel: uint8 = 0x00
-        palette: uint8 = 0x00
+        pixel = 0x00
+        palette = 0x00
         
         if background_pixel == 0 and foreground_pixel == 0:
             pixel = 0x00

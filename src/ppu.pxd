@@ -153,16 +153,16 @@ cdef class PPU2C02:
     cdef int screenWidth
     cdef int screenHeight
 
-    cpdef void connectCartridge(self, Cartridge)
+    cdef void connectCartridge(self, Cartridge)
     cpdef uint8_t[:,:,:] getScreen(self)
 
     @cython.locals(data=uint8_t)
-    cpdef uint8_t readByCPU(self, uint16_t, bint)
-    cpdef void writeByCPU(self, uint16_t, uint8_t)
+    cdef uint8_t readByCPU(self, uint16_t, bint)
+    cdef void writeByCPU(self, uint16_t, uint8_t)
     @cython.locals(success=bint, data=uint8_t)
-    cpdef uint8_t readByPPU(self, uint16_t)
+    cdef uint8_t readByPPU(self, uint16_t)
     @cython.locals(success=bint)
-    cpdef void writeByPPU(self, uint16_t, uint8_t)
+    cdef void writeByPPU(self, uint16_t, uint8_t)
 
     cdef void setPalettePanel(self)
     @cython.locals(color=uint8_t)
@@ -170,7 +170,7 @@ cdef class PPU2C02:
     @cython.locals(tileY=uint16_t,tileX=uint16_t,offset=uint16_t, \
     tile_lsb=uint8_t,tile_msb=uint8_t,pixel=uint8_t)
     cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t, uint8_t)
-    cpdef void reset(self)
+    cdef void reset(self)
 
     cdef void incrementScrollX(self)
     cdef void incrementScrollY(self)
@@ -189,4 +189,4 @@ cdef class PPU2C02:
     foreground_pixel=uint8_t, foreground_palette=uint8_t, foreground_priority=uint8_t, \
     foreground_pixel_lo=uint8_t, foreground_pixel_hi=uint8_t, \
     pixel=uint8_t, palette=uint8_t)
-    cpdef void clock(self) except *
+    cdef void clock(self) except *

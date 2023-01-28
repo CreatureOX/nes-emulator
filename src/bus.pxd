@@ -9,7 +9,7 @@ import cython
 
 cdef class CPUBus:
     cdef uint8_t[2048] ram
-    cdef public list controller
+    cdef public uint8_t[2] controller
     cdef uint8_t[2] controller_state
     cdef uint32_t nSystemClockCounter
 
