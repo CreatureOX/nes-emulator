@@ -64,14 +64,14 @@ cdef class CPU6502:
     cdef void set_addr_rel(self, uint16_t addr_rel):
         self.addr_rel = addr_rel & 0xFFFF
 
-    cdef uint8_t IMP(self):
+    cpdef uint8_t IMP(self):
         '''
         Address Mode: Implied
         '''
         self.set_fetched(self.a)
         return 0
 
-    cdef uint8_t IMM(self):
+    cpdef uint8_t IMM(self):
         '''
         Address Mode: Immediate
         '''
@@ -79,7 +79,7 @@ cdef class CPU6502:
         self.set_pc(self.pc + 1)
         return 0
 
-    cdef uint8_t ZP0(self):
+    cpdef uint8_t ZP0(self):
         '''
         Address Mode: Zero Page
         '''
@@ -88,7 +88,7 @@ cdef class CPU6502:
         self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
-    cdef uint8_t ZPX(self):
+    cpdef uint8_t ZPX(self):
         '''
         Address Mode: Zero Page with X Offset
         '''
@@ -97,7 +97,7 @@ cdef class CPU6502:
         self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
-    cdef uint8_t ZPY(self):
+    cpdef uint8_t ZPY(self):
         '''
         Address Mode: Zero Page with Y Offset
         '''
@@ -106,7 +106,7 @@ cdef class CPU6502:
         self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
-    cdef uint8_t REL(self):
+    cpdef uint8_t REL(self):
         '''
         Address Mode: Relative 
         '''
@@ -116,7 +116,7 @@ cdef class CPU6502:
             self.set_addr_rel(self.addr_rel | 0xFF00)
         return 0
 
-    cdef uint8_t ABS(self):
+    cpdef uint8_t ABS(self):
         '''
         Address Mode: Absolute 
         '''
@@ -128,7 +128,7 @@ cdef class CPU6502:
         self.set_addr_abs((hi << 8) | lo)
         return 0
 
-    cdef uint8_t ABX(self):
+    cpdef uint8_t ABX(self):
         '''
         Address Mode: Absolute with X Offset
         '''
@@ -142,7 +142,7 @@ cdef class CPU6502:
         
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
-    cdef uint8_t ABY(self):
+    cpdef uint8_t ABY(self):
         '''
         Address Mode: Absolute with Y Offset
         '''
@@ -156,7 +156,7 @@ cdef class CPU6502:
 
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
-    cdef uint8_t IND(self):
+    cpdef uint8_t IND(self):
         '''
         Address Mode: Indirect
         '''
@@ -173,7 +173,7 @@ cdef class CPU6502:
             self.set_addr_abs((self.read(ptr + 1) << 8) | (self.read(ptr + 0)))
         return 0
 
-    cdef uint8_t IZX(self):
+    cpdef uint8_t IZX(self):
         '''
         Address Mode: Indirect X
         '''
@@ -186,7 +186,7 @@ cdef class CPU6502:
         self.set_addr_abs((hi << 8) | lo)
         return 0
 
-    cdef uint8_t IZY(self):
+    cpdef uint8_t IZY(self):
         '''
         Address Mode: Indirect Y
         '''
@@ -212,7 +212,7 @@ cdef class CPU6502:
             self.fetched = self.read(self.addr_abs)
         return self.fetched
 
-    cdef uint8_t ADC(self):
+    cpdef uint8_t ADC(self):
         '''
         Instruction: Add with Carry In
         Function:    A = A + M + C
@@ -230,7 +230,7 @@ cdef class CPU6502:
         self.set_a(self.temp & 0x00FF)
         return 1
 
-    cdef uint8_t SBC(self):
+    cpdef uint8_t SBC(self):
         '''
         Instruction: Subtraction with Borrow In
         Function:    A = A - M - (1 - C)
@@ -249,7 +249,7 @@ cdef class CPU6502:
         self.set_a(self.temp & 0x00FF)
         return 1
 
-    cdef uint8_t AND(self):
+    cpdef uint8_t AND(self):
         '''
         Instruction: Bitwise Logic AND
         Function:    A = A & M
@@ -264,7 +264,7 @@ cdef class CPU6502:
         
         return 1
 
-    cdef uint8_t ASL(self):
+    cpdef uint8_t ASL(self):
         '''
         Instruction: Arithmetic Shift Left
         Function:    A = C <- (A << 1) <- 0
@@ -284,7 +284,7 @@ cdef class CPU6502:
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
-    cdef uint8_t BCC(self):
+    cpdef uint8_t BCC(self):
         '''
         Instruction: Branch if Carry Clear
         Function:    if(C == 0) pc = address 
@@ -300,7 +300,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BCS(self):
+    cpdef uint8_t BCS(self):
         '''
         Instruction: Branch if Carry Set
         Function:    if(C == 1) pc = address
@@ -316,7 +316,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BEQ(self):
+    cpdef uint8_t BEQ(self):
         '''
         Instruction: Branch if Equal
         Function:    if(Z == 1) pc = address
@@ -332,7 +332,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BIT(self):
+    cpdef uint8_t BIT(self):
         ''' 
         Return:      Require additional 0 clock cycle
         '''
@@ -345,7 +345,7 @@ cdef class CPU6502:
 
         return 0
 
-    cdef uint8_t BMI(self):
+    cpdef uint8_t BMI(self):
         '''
         Instruction: Branch if Negative
         Function:    if(N == 1) pc = address
@@ -360,7 +360,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BNE(self):
+    cpdef uint8_t BNE(self):
         '''
         Instruction: Branch if Not Equal
         Function:    if(Z == 0) pc = address
@@ -376,7 +376,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BPL(self):
+    cpdef uint8_t BPL(self):
         '''
         Instruction: Branch if Positive
         Function:    if(N == 0) pc = address
@@ -393,7 +393,7 @@ cdef class CPU6502:
     
         return 0
 
-    cdef uint8_t BRK(self):
+    cpdef uint8_t BRK(self):
         '''
         Instruction: Break
         Function:    Program Sourced Interrupt
@@ -415,7 +415,7 @@ cdef class CPU6502:
         self.set_pc(self.read(0xFFFE) | self.read(0xFFFF) << 8)
         return 0
 
-    cdef uint8_t BVC(self):
+    cpdef uint8_t BVC(self):
         '''
         Instruction: Branch if Overflow Clear
         Function:    if(V == 0) pc = address
@@ -431,7 +431,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t BVS(self):
+    cpdef uint8_t BVS(self):
         '''
         Instruction: Branch if Overflow Set
         Function:    if(V == 1) pc = address
@@ -447,7 +447,7 @@ cdef class CPU6502:
             self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t CLC(self):
+    cpdef uint8_t CLC(self):
         '''
         Instruction: Clear Carry Flag
         Function:    C = 0
@@ -456,7 +456,7 @@ cdef class CPU6502:
         self.setFlag(C, False)
         return 0
 
-    cdef uint8_t CLD(self):
+    cpdef uint8_t CLD(self):
         '''
         Instruction: Clear Decimal Flag
         Function:    D = 0
@@ -465,7 +465,7 @@ cdef class CPU6502:
         self.setFlag(D, False)
         return 0
 
-    cdef uint8_t CLI(self):
+    cpdef uint8_t CLI(self):
         '''
         Instruction: Disable Interrupts / Clear Interrupt Flag
         Function:    I = 0
@@ -474,7 +474,7 @@ cdef class CPU6502:
         self.setFlag(I, False)
         return 0
 
-    cdef uint8_t CLV(self):
+    cpdef uint8_t CLV(self):
         '''
         Instruction: Clear Overflow Flag
         Function:    V = 0
@@ -483,7 +483,7 @@ cdef class CPU6502:
         self.setFlag(V, False)
         return 0
 
-    cdef uint8_t CMP(self):
+    cpdef uint8_t CMP(self):
         '''
         Instruction: Compare Accumulator
         Function:    C <- A >= M      Z <- (A - M) == 0
@@ -497,7 +497,7 @@ cdef class CPU6502:
         self.setFlag(N, self.temp & 0x0080)
         return 1
 
-    cdef uint8_t CPX(self):
+    cpdef uint8_t CPX(self):
         '''
         Instruction: Compare X Register
         Function:    C <- X >= M      Z <- (X - M) == 0
@@ -511,7 +511,7 @@ cdef class CPU6502:
         self.setFlag(N, self.temp & 0x0080)
         return 0
 
-    cdef uint8_t CPY(self):
+    cpdef uint8_t CPY(self):
         '''
         Instruction: Compare Y Register
         Function:    C <- Y >= M      Z <- (Y - M) == 0
@@ -525,7 +525,7 @@ cdef class CPU6502:
         self.setFlag(N, self.temp & 0x0080)
         return 0
 
-    cdef uint8_t DEC(self):
+    cpdef uint8_t DEC(self):
         '''
         Instruction: Decrement Value at Memory Location
         Function:    M = M - 1
@@ -539,7 +539,7 @@ cdef class CPU6502:
         self.setFlag(N, self.temp & 0x0080)
         return 0
 
-    cdef uint8_t DEX(self):
+    cpdef uint8_t DEX(self):
         '''
         Instruction: Decrement X Register
         Function:    X = X - 1
@@ -551,7 +551,7 @@ cdef class CPU6502:
         self.setFlag(N, self.x & 0x80)
         return 0
 
-    cdef uint8_t DEY(self):
+    cpdef uint8_t DEY(self):
         '''
         Instruction: Decrement Y Register
         Function:    Y = Y - 1
@@ -563,7 +563,7 @@ cdef class CPU6502:
         self.setFlag(N, self.y & 0x80)
         return 0
 
-    cdef uint8_t EOR(self):
+    cpdef uint8_t EOR(self):
         '''
         Instruction: Bitwise Logic XOR
         Function:    A = A xor M
@@ -576,7 +576,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 1
 
-    cdef uint8_t INC(self):
+    cpdef uint8_t INC(self):
         '''
         Instruction: Increment Value at Memory Location
         Function:    M = M + 1
@@ -590,7 +590,7 @@ cdef class CPU6502:
         self.setFlag(N, self.temp & 0x0080)
         return 0
 
-    cdef uint8_t INX(self):
+    cpdef uint8_t INX(self):
         '''
         Instruction: Increment X Register
         Function:    X = X + 1
@@ -602,7 +602,7 @@ cdef class CPU6502:
         self.setFlag(N, self.x & 0x80)
         return 0
 
-    cdef uint8_t INY(self):
+    cpdef uint8_t INY(self):
         '''
         Instruction: Increment Y Register
         Function:    Y = Y + 1
@@ -614,7 +614,7 @@ cdef class CPU6502:
         self.setFlag(N, self.y & 0x80)
         return 0
 
-    cdef uint8_t JMP(self):
+    cpdef uint8_t JMP(self):
         '''
         Instruction: Jump To Location
         Function:    pc = address
@@ -623,7 +623,7 @@ cdef class CPU6502:
         self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t JSR(self):
+    cpdef uint8_t JSR(self):
         '''
         Instruction: Jump To Sub-Routine
         Function:    Push current pc to stack, pc = address
@@ -639,7 +639,7 @@ cdef class CPU6502:
         self.set_pc(self.addr_abs)
         return 0
 
-    cdef uint8_t LDA(self):
+    cpdef uint8_t LDA(self):
         '''
         Instruction: Load The Accumulator
         Function:    A = M
@@ -652,7 +652,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 1
 
-    cdef uint8_t LDX(self):
+    cpdef uint8_t LDX(self):
         '''
         Instruction: Load The X Register
         Function:    X = M
@@ -665,7 +665,7 @@ cdef class CPU6502:
         self.setFlag(N, self.x & 0x80)
         return 1
 
-    cdef uint8_t LDY(self):
+    cpdef uint8_t LDY(self):
         '''
         Instruction: Load The Y Register
         Function:    Y = M
@@ -678,7 +678,7 @@ cdef class CPU6502:
         self.setFlag(N, self.y & 0x80)
         return 1
 
-    cdef uint8_t LSR(self):
+    cpdef uint8_t LSR(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
@@ -693,7 +693,7 @@ cdef class CPU6502:
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
-    cdef uint8_t NOP(self):
+    cpdef uint8_t NOP(self):
         '''
         Instruction: Do nothing
         Return:      Require additional 0 or 1 clock cycle
@@ -706,7 +706,7 @@ cdef class CPU6502:
             or self.opcode == 0xFC \
             else 0
 
-    cdef uint8_t ORA(self):
+    cpdef uint8_t ORA(self):
         '''
         Instruction: Bitwise Logic OR
         Function:    A = A | M
@@ -719,7 +719,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 1
 
-    cdef uint8_t PHA(self):
+    cpdef uint8_t PHA(self):
         '''
         Instruction: Push Accumulator to Stack
         Function:    A -> stack
@@ -729,7 +729,7 @@ cdef class CPU6502:
         self.set_stkp(self.stkp - 1)
         return 0
 
-    cdef uint8_t PHP(self):
+    cpdef uint8_t PHP(self):
         '''
         Instruction: Push Status Register to Stack
         Function:    status -> stack
@@ -741,7 +741,7 @@ cdef class CPU6502:
         self.set_stkp(self.stkp - 1)
         return 0
 
-    cdef uint8_t PLA(self):
+    cpdef uint8_t PLA(self):
         '''
         Instruction: Pop Accumulator off Stack
         Function:    A <- stack
@@ -754,7 +754,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 0
 
-    cdef uint8_t PLP(self):
+    cpdef uint8_t PLP(self):
         '''
         Instruction: Pop Status Register off Stack
         Function:    Status <- stack
@@ -765,7 +765,7 @@ cdef class CPU6502:
         self.setFlag(U, 1)
         return 0
 
-    cdef uint8_t ROL(self):
+    cpdef uint8_t ROL(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
@@ -780,7 +780,7 @@ cdef class CPU6502:
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
-    cdef uint8_t ROR(self):
+    cpdef uint8_t ROR(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
@@ -795,7 +795,7 @@ cdef class CPU6502:
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
-    cdef uint8_t RTI(self):
+    cpdef uint8_t RTI(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
@@ -810,7 +810,7 @@ cdef class CPU6502:
         self.set_pc(self.pc | (self.read(0x0100 + self.stkp) << 8))
         return 0
 
-    cdef uint8_t RTS(self):
+    cpdef uint8_t RTS(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
@@ -822,7 +822,7 @@ cdef class CPU6502:
         self.set_pc(self.pc + 1)
         return 0
 
-    cdef uint8_t SEC(self):
+    cpdef uint8_t SEC(self):
         '''
         Instruction: Set Carry Flag
         Function:    C = 1 
@@ -831,7 +831,7 @@ cdef class CPU6502:
         self.setFlag(C, True)
         return 0
 
-    cdef uint8_t SED(self):
+    cpdef uint8_t SED(self):
         '''
         Instruction: Set Decimal Flag
         Function:    D = 1
@@ -840,7 +840,7 @@ cdef class CPU6502:
         self.setFlag(D, True)
         return 0
 
-    cdef uint8_t SEI(self):
+    cpdef uint8_t SEI(self):
         '''
         Instruction: Set Interrupt Flag / Enable Interrupts
         Function:    I = 1
@@ -849,7 +849,7 @@ cdef class CPU6502:
         self.setFlag(I, True)
         return 0
 
-    cdef uint8_t STA(self):
+    cpdef uint8_t STA(self):
         '''
         Instruction: Store Accumulator at Address
         Function:    M = A
@@ -858,7 +858,7 @@ cdef class CPU6502:
         self.write(self.addr_abs, self.a)
         return 0
 
-    cdef uint8_t STX(self):
+    cpdef uint8_t STX(self):
         '''
         Instruction: Store X Register at Address
         Function:    M = X
@@ -867,7 +867,7 @@ cdef class CPU6502:
         self.write(self.addr_abs, self.x)
         return 0
 
-    cdef uint8_t STY(self):
+    cpdef uint8_t STY(self):
         '''
         Instruction: Store Y Register at Address
         Function:    M = Y
@@ -876,7 +876,7 @@ cdef class CPU6502:
         self.write(self.addr_abs, self.y)
         return 0
 
-    cdef uint8_t TAX(self):
+    cpdef uint8_t TAX(self):
         '''
         Instruction: Transfer Accumulator to X Register
         Function:    X = A
@@ -888,7 +888,7 @@ cdef class CPU6502:
         self.setFlag(N, self.x & 0x80)
         return 0
 
-    cdef uint8_t TAY(self):
+    cpdef uint8_t TAY(self):
         '''
         Instruction: Transfer Accumulator to Y Register
         Function:    Y = A
@@ -900,7 +900,7 @@ cdef class CPU6502:
         self.setFlag(N, self.y & 0x80)
         return 0
 
-    cdef uint8_t TSX(self):
+    cpdef uint8_t TSX(self):
         '''
         Instruction: Transfer Stack Pointer to X Register
         Function:    X = stack pointer
@@ -912,7 +912,7 @@ cdef class CPU6502:
         self.setFlag(N, self.x & 0x80)
         return 0
 
-    cdef uint8_t TXA(self):
+    cpdef uint8_t TXA(self):
         '''
         Instruction: Transfer X Register to Accumulator
         Function:    A = X
@@ -924,7 +924,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 0
 
-    cdef uint8_t TXS(self):
+    cpdef uint8_t TXS(self):
         '''
         Instruction: Transfer X Register to Stack Pointer
         Function:    stack pointer = X
@@ -933,7 +933,7 @@ cdef class CPU6502:
         self.set_stkp(self.x)
         return 0
 
-    cdef uint8_t TYA(self):
+    cpdef uint8_t TYA(self):
         '''
         Instruction: Transfer Y Register to Accumulator
         Function:    A = Y
@@ -945,7 +945,7 @@ cdef class CPU6502:
         self.setFlag(N, self.a & 0x80)
         return 0
 
-    cdef uint8_t XXX(self):
+    cpdef uint8_t XXX(self):
         '''
         Instruction: captures illegal opcodes
         Return:      Require additional 0 clock cycle
