@@ -167,8 +167,6 @@ cdef class PPU2C02:
     cdef void setPalettePanel(self)
     @cython.locals(color=uint8_t)
     cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
-    @cython.locals(tileY=uint16_t,tileX=uint16_t,offset=uint16_t, \
-    tile_lsb=uint8_t,tile_msb=uint8_t,pixel=uint8_t)
     cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t, uint8_t)
     cdef void reset(self)
 
@@ -179,14 +177,4 @@ cdef class PPU2C02:
     cdef void loadBackgroundShifters(self)
     @cython.locals(i=int)
     cdef void updateShifters(self)
-    @cython.locals(i=int, v=uint16_t, nOAMEntry=uint8_t, \
-    diff=int16_t, diff_compare=int, \
-    sprite_pattern_bits_lo=uint8_t, sprite_pattern_bits_hi=uint8_t, \
-    sprite_pattern_addr_lo=uint16_t, sprite_pattern_addr_hi=uint16_t, \
-    background_pixel=uint8_t, background_palette=uint8_t, bit_mux=uint16_t, \
-    background_pixel_0=uint8_t, background_pixel_1=uint8_t, background_pixel=uint8_t, \
-    background_palette_0=uint8_t, background_palette_1=uint8_t, background_palette=uint8_t, \
-    foreground_pixel=uint8_t, foreground_palette=uint8_t, foreground_priority=uint8_t, \
-    foreground_pixel_lo=uint8_t, foreground_pixel_hi=uint8_t, \
-    pixel=uint8_t, palette=uint8_t)
     cdef void clock(self) except *

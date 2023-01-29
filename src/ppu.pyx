@@ -488,14 +488,17 @@ cdef class PPU2C02:
         return self.palettePanel[color]          
 
     cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t i, uint8_t palette):
+        cdef uint8_t tileY, tileX, tile_lsb, tile_msb, row, col, pixel
+        cdef uint16_t offset
+
         for tileY in range(0,16):
             for tileX in range(0,16):
-                offset: uint16 = tileY * 256 + tileX * 16
+                offset = tileY * 256 + tileX * 16
                 for row in range(0,8):
-                    tile_lsb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
-                    tile_msb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
+                    tile_lsb = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
+                    tile_msb = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
                     for col in range(0,8):
-                        pixel: uint8 = (tile_lsb & 0x01) << 1 | (tile_msb & 0x01)
+                        pixel = (tile_lsb & 0x01) << 1 | (tile_msb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
                         self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
         
@@ -573,6 +576,10 @@ cdef class PPU2C02:
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
     cdef void clock(self) except *:
+        cdef uint8_t nOAMEntry
+        cdef uint16_t v, sprite_pattern_addr_lo, sprite_pattern_addr_hi
+        cdef int16_t diff
+
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
@@ -585,7 +592,7 @@ cdef class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] = 0
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.updateShifters()
-                v: uint16 = (self.cycle - 1) % 8
+                v = (self.cycle - 1) % 8
                 if v == 0:
                     self.loadBackgroundShifters()
                     self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.get_reg() & 0x0FFF))
@@ -700,29 +707,29 @@ cdef class PPU2C02:
                 if self.control.get_enable_nmi() == 1:
                     self.nmi = True
 
-        background_pixel: uint8 = 0x00
-        background_palette: uint8 = 0x00
-        if self.mask.get_render_background() == 1:
-            bit_mux: uint16 = 0x8000 >> self.fine_x
+        cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
+        cdef uint8_t background_palette = 0x00, background_palette_0, background_palette_1
+        cdef uint16_t bit_mux
 
-            background_pixel_0: uint8 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
-            background_pixel_1: uint8 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
+        if self.mask.get_render_background() == 1:
+            bit_mux = 0x8000 >> self.fine_x
+
+            background_pixel_0 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
+            background_pixel_1 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
             background_pixel = (background_pixel_1 << 1) | background_pixel_0
 
-            background_palette_0: uint8 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
-            background_palette_1: uint8 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
+            background_palette_0 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
+            background_palette_1 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
             background_palette = (background_palette_1 << 1) | background_palette_0
 
-        foreground_pixel: uint8 = 0
-        foreground_palette: uint8 = 0x00
-        foreground_priority: uint8 = 0x00
+        cdef uint8_t foreground_pixel_lo, foreground_pixel_hi, foreground_pixel = 0, foreground_palette = 0x00, foreground_priority = 0x00,
 
         if self.mask.get_render_sprites() == 1:
             self.bSpriteZeroBeingRendered = False
             for i in range(0, self.sprite_count):
                 if self.pSpriteScanline[offset(i,X)] == 0:
-                    foreground_pixel_lo: uint8 = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
-                    foreground_pixel_hi: uint8 = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
+                    foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
+                    foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
                     foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
                     foreground_palette = (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x03) + 0x04
                     foreground_priority = 1 if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x20) == 0 else 0
@@ -731,8 +738,8 @@ cdef class PPU2C02:
                         if i == 0:
                             self.bSpriteZeroBeingRendered = True
                         break
-        pixel = 0x00
-        palette = 0x00
+
+        cdef uint8_t pixel = 0x00, palette = 0x00
         
         if background_pixel == 0 and foreground_pixel == 0:
             pixel = 0x00

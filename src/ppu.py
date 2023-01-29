@@ -1,5 +1,6 @@
 from typing import List, Tuple
 from numpy import ndarray, uint16, int16, uint8, zeros
+import cython
 
 from bus import CPUBus
 from cartridge import Cartridge
@@ -554,6 +555,8 @@ class PPU2C02:
         #     print("color: {color}".format(color=color))
         return self.palettePanel[color]
 
+    @cython.locals(tileY='uint16_t',tileX='uint16_t',offset='uint16_t', \
+    tile_lsb='uint8_t',tile_msb='uint8_t',pixel='uint8_t')
     def getPatternTable(self, i: uint8, palette: uint8) -> ndarray:
         for tileY in range(0,16):
             for tileX in range(0,16):
@@ -639,6 +642,16 @@ class PPU2C02:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
+    @cython.locals(i=int, v='uint16_t', nOAMEntry='uint8_t', \
+    diff='int16_t', diff_compare=int, \
+    sprite_pattern_bits_lo='uint8_t', sprite_pattern_bits_hi='uint8_t', \
+    sprite_pattern_addr_lo='uint16_t', sprite_pattern_addr_hi='uint16_t', \
+    background_pixel='uint8_t', background_palette='uint8_t', bit_mux='uint16_t', \
+    background_pixel_0='uint8_t', background_pixel_1='uint8_t', background_pixel='uint8_t', \
+    background_palette_0='uint8_t', background_palette_1='uint8_t', background_palette='uint8_t', \
+    foreground_pixel='uint8_t', foreground_palette='uint8_t', foreground_priority='uint8_t', \
+    foreground_pixel_lo='uint8_t', foreground_pixel_hi='uint8_t', \
+    pixel='uint8_t', palette='uint8_t')
     def clock(self) -> None:
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:
