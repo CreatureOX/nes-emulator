@@ -641,7 +641,7 @@ cdef class PPU2C02:
                 self.bSpriteZeroHitPossible = False
                 while nOAMEntry < 64 and self.sprite_count < 9:
                     # diff = self.scanline - int16(self.OAM(nOAMEntry).y)
-                    diff = self.scanline - np.int16(self.pOAM[offset(nOAMEntry, Y)])
+                    diff = self.scanline - <int16_t>(self.pOAM[offset(nOAMEntry, Y)])
                     diff_compare = 16 if self.control.get_sprite_size() == 1 else 8
                     if 0 <= diff < diff_compare:
                         if self.sprite_count < 8:
