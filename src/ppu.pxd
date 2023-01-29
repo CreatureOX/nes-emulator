@@ -3,7 +3,7 @@ from numpy cimport ndarray
 
 from bus cimport CPUBus
 from cartridge cimport Cartridge
-from mapper cimport Mirror
+from mirror cimport *
 
 import cython
 

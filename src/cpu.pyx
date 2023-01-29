@@ -1018,6 +1018,8 @@ cdef class CPU6502:
         '''
         Interrupt Request
         '''
+        cdef uint8_t lo, hi 
+
         if (self.getFlag(I) == 0):
             self.write(0x0100 + self.stkp, (self.pc >> 8) & 0x00FF)
             self.set_stkp(self.stkp - 1)
@@ -1041,6 +1043,8 @@ cdef class CPU6502:
         '''
         Non-Maskable Interrupt Request
         '''
+        cdef uint8_t lo, hi 
+
         self.write(0x0100 + self.stkp, (self.pc >> 8) & 0x00FF)
         self.set_stkp(self.stkp - 1)
         self.write(0x0100 + self.stkp, self.pc & 0x00FF)
@@ -1058,11 +1062,13 @@ cdef class CPU6502:
         self.set_pc(hi << 8 | lo)
 
         self.remaining_cycles = 8
-
+        
     cdef void clock(self):
         '''
         Perform one clock cycle
         '''
+        cdef Op op 
+
         if self.remaining_cycles == 0:
             self.opcode = self.read(self.pc)
             self.setFlag(U, True)

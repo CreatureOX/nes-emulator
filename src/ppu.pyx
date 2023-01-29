@@ -4,7 +4,7 @@ cimport numpy as np
 
 from bus cimport CPUBus
 from cartridge cimport Cartridge
-from mapper cimport Mirror
+from mirror cimport *
 
 
 cdef class Status:
@@ -406,7 +406,7 @@ cdef class PPU2C02:
             data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == Mirror.VERTICAL:
+            if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -415,7 +415,7 @@ cdef class PPU2C02:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
                     data = self.nameTable[1][addr & 0x03FF]                                 
-            elif self.cartridge.mirror == Mirror.HORIZONTAL:
+            elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self.nameTable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -447,7 +447,7 @@ cdef class PPU2C02:
             self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == Mirror.VERTICAL:
+            if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -456,7 +456,7 @@ cdef class PPU2C02:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
                     self.nameTable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror == Mirror.HORIZONTAL:
+            elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self.nameTable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:

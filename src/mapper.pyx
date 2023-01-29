@@ -1,13 +1,6 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
 
-cdef class Mirror:
-    HARDWARE = 0
-    HORIZONTAL = 1
-    VERTICAL = 2
-    ONESCREEN_LO = 3
-    ONESCREEN_HI = 4
-
 cdef class Mapper:
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         self.nPRGBanks = prgBanks
@@ -29,7 +22,7 @@ cdef class Mapper:
         pass
 
     cdef uint8_t mirror(self):
-        return Mirror.HARDWARE
+        return HARDWARE
 
     cdef bint irqState(self):
         pass

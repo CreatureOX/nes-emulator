@@ -2,7 +2,8 @@ from libc.stdint cimport uint8_t, uint16_t
 import numpy as np
 cimport numpy as np
 
-from mapper cimport Mirror, Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
+from mirror cimport *
+from mapper cimport Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
 from bus cimport CPUBus
 
 
@@ -32,6 +33,8 @@ cdef class Header:
 
 cdef class Cartridge:
     def __init__(self, filename: str) -> None:
+        cdef uint8_t PRGBanks, CHRBanks
+        
         with open(filename, 'rb') as nes:
             self.header = Header(nes.read(16))
 
@@ -39,7 +42,7 @@ cdef class Cartridge:
                 self.trainer = nes.read(512)
             
             mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
-            self.mirror = Mirror.VERTICAL if self.header.mapper1 & 0x01 else Mirror.HORIZONTAL
+            self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
             fileType: uint8 = 1
             if self.header.mapper2 & 0x0C == 0x08:
@@ -121,7 +124,7 @@ cdef class Cartridge:
 
     cdef uint8_t getMirror(self):
         m = self.mapper.mirror()
-        if m == Mirror.HARDWARE:
+        if m == HARDWARE:
             return self.mirror
         else:
             return m

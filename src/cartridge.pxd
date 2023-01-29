@@ -1,6 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t
 
-from mapper cimport Mirror, Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
+from mirror cimport *
+from mapper cimport Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
 from bus cimport CPUBus
 
 

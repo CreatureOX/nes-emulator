@@ -1,5 +1,6 @@
 from typing import List, Dict
 from numpy import uint16, uint8, int8
+import cython
 
 from bus import CPUBus
 
@@ -1038,6 +1039,7 @@ class CPU6502:
         
         self.remaining_cycles = 8
 
+    @cython.locals(lo='uint8_t',hi='uint8_t')
     def irq(self) -> None:
         '''
         Interrupt Request
@@ -1061,6 +1063,7 @@ class CPU6502:
 
             self.remaining_cycles = 7
     
+    @cython.locals(lo='uint8_t',hi='uint8_t')    
     def nmi(self) -> None:
         '''
         Non-Maskable Interrupt Request

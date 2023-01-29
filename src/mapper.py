@@ -1,13 +1,8 @@
 from typing import Tuple
 from numpy import uint16, uint32, uint8
 
+from mirror import *
 
-class Mirror:
-    HARDWARE = 0
-    HORIZONTAL = 1
-    VERTICAL = 2
-    ONESCREEN_LO = 3
-    ONESCREEN_HI = 4
 
 class Mapper:
     nPRGBanks: uint8
@@ -33,7 +28,7 @@ class Mapper:
         pass
 
     def mirror(self) -> uint8:
-        return Mirror.HARDWARE
+        return HARDWARE
 
     def irqState(self) -> bool:
         pass
@@ -73,7 +68,7 @@ class Mapper001(Mapper):
         self.nCHRBankSelect4Lo, self.nCHRBankSelect4Hi, self.nCHRBankSelect8 = 0x00, 0x00, 0x00
         self.nPRGBankSelect16Lo, self.nPRGBankSelect16Hi, self.nPRGBankSelect32 = 0x00, 0x00, 0x00
         self.nLoadRegister, self.nLoadRegisterCount, self.nControlRegister = 0x00, 0x00, 0x00  
-        self.mirrormode = Mirror.HORIZONTAL
+        self.mirrormode = HORIZONTAL
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x6000 <= addr <= 0x7FFF:
@@ -113,13 +108,13 @@ class Mapper001(Mapper):
                         self.nControlRegister = self.nLoadRegister & 0X1F
                         switch = self.nControlRegister & 0x03
                         if switch == 0:
-                            self.mirrormode = Mirror.ONESCREEN_LO
+                            self.mirrormode = ONESCREEN_LO
                         elif switch == 1:
-                            self.mirrormode = Mirror.ONESCREEN_HI
+                            self.mirrormode = ONESCREEN_HI
                         elif switch == 2:
-                            self.mirrormode = Mirror.VERTICAL
+                            self.mirrormode = VERTICAL
                         elif switch == 3:
-                            self.mirrormode = Mirror.HORIZONTAL
+                            self.mirrormode = HORIZONTAL
                     elif nTargetRegister == 1:
                         if self.nControlRegister & 0b10000 != 0:
                             self.nCHRBankSelect4Lo = self.nLoadRegister & 0x1F
@@ -245,7 +240,7 @@ class Mapper004(Mapper):
         self.targetRegister: uint8 = 0x00
         self.PRGBankMode = False
         self.CHRInversion = False
-        self.mirrormode = Mirror.HORIZONTAL
+        self.mirrormode = HORIZONTAL
 
         self.register, self.CHRBank, self.PRGBank = [0 for _ in range(8)], [0 for _ in range(8)], [0 for _ in range(4)]
         self.IRQActive, self.IRQEnable, self.IRQUpdate, self.IRQCounter, self.IRQReload = False, False, False, 0x0000, 0x0000
@@ -305,9 +300,9 @@ class Mapper004(Mapper):
         if 0xA000 <= addr <= 0xBFFF:
             if addr & 0x0001 == 0:
                 if data & 0x01 != 0:
-                    self.mirrormode = Mirror.HORIZONTAL
+                    self.mirrormode = HORIZONTAL
                 else:
-                    self.mirrormode = Mirror.VERTICAL
+                    self.mirrormode = VERTICAL
             else:
                 pass
             return (False, 0)
@@ -351,7 +346,7 @@ class Mapper004(Mapper):
         self.targetRegister = 0x00
         self.PRGBankMode = False
         self.CHRInversion = False
-        self.mirrormode = Mirror.HORIZONTAL
+        self.mirrormode = HORIZONTAL
 
         self.IRQActive = False
         self.IRQEnable = False

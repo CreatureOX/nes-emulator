@@ -1,14 +1,9 @@
 from typing import Tuple, List
 from numpy import uint16, uint8, frombuffer, array
 
-from mapper import Mirror, Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
+from mirror import *
+from mapper import Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
 
-
-# HARDWARE = 0
-# HORIZONTAL = 1
-# VERTICAL = 2
-# ONESCREEN_LO = 3
-# ONESCREEN_HI = 4
 
 class Header:
     name: str
@@ -63,7 +58,7 @@ class Cartridge:
                 self.trainer = nes.read(512)
             
             mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
-            self.mirror = Mirror.VERTICAL if self.header.mapper1 & 0x01 else Mirror.HORIZONTAL
+            self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
             fileType: uint8 = 1
             if self.header.mapper2 & 0x0C == 0x08:
@@ -153,7 +148,7 @@ class Cartridge:
 
     def getMirror(self) -> uint8:
         m = self.mapper.mirror()
-        if m == Mirror.HARDWARE:
+        if m == HARDWARE:
             return self.mirror
         else:
             return m

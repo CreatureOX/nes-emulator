@@ -1,8 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
+from mirror cimport *
 
-cdef class Mirror:
-    pass
 
 cdef class Mapper:
     cdef uint8_t nPRGBanks
