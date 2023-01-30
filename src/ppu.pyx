@@ -1,4 +1,5 @@
 from libc.stdint cimport uint8_t, uint16_t, int16_t
+from libc.string cimport memset
 import numpy as np
 cimport numpy as np
 
@@ -268,13 +269,15 @@ cdef class PPU2C02:
 
         # self.OAM = (sObjectAttributeEntry * 64)()
         # self.pOAM = cast(self.OAM, POINTER(c_uint8))
-        self.pOAM = np.zeros((64 * 32), dtype=np.uint8)
+        # self.pOAM = np.zeros((64 * 32), dtype=np.uint8)
+        memset(self.pOAM, 0, 64*32*sizeof(uint8_t))
 
         self.oam_addr = 0x00
 
         # self.spriteScanline = (sObjectAttributeEntry * 8)()
         # self.spriteScanline = array([sObjectAttributeEntry(0x00,0x00,0x00,0x00) for _ in range(8)])
         self.pSpriteScanline = np.zeros((8 * 32), dtype=np.uint8)
+        memset(self.pSpriteScanline, 0, 8*32*sizeof(uint8_t))
 
         self.sprite_shifter_pattern_lo = [0x00] * 8
         self.sprite_shifter_pattern_hi = [0x00] * 8

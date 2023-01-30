@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 cimport numpy as np
 
@@ -87,7 +87,7 @@ cdef class Cartridge:
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
         success, mapped_addr, data = self.mapper.mapReadByCPU(addr)
         if success:
-            if mapped_addr == 0xFFFFFFFF:
+            if mapped_addr == UINT32_MAX:
                 return (True, data)
             else:
                 return (True, self.PRGMemory[mapped_addr])
@@ -97,7 +97,7 @@ cdef class Cartridge:
     cdef bint writeByCPU(self, uint16_t addr, uint8_t data):
         success, mapped_addr = self.mapper.mapWriteByCPU(addr, data)
         if success:
-            if mapped_addr == 0xFFFFFFFF:
+            if mapped_addr == UINT32_MAX:
                 return True
             else:
                self.PRGMemory[mapped_addr] = data
