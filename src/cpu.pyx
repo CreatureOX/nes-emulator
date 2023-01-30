@@ -3,14 +3,14 @@ from libc.stdint cimport uint8_t, uint16_t
 from bus cimport CPUBus
 
 
-cdef uint8_t C = 1 << 0 # Carry Bit
-cdef uint8_t Z = 1 << 1 # Zero
-cdef uint8_t I = 1 << 2 # Disable Interrupts
-cdef uint8_t D = 1 << 3 # Decimal Mode
-cdef uint8_t B = 1 << 4 # Break
-cdef uint8_t U = 1 << 5 # Unused
-cdef uint8_t V = 1 << 6 # Overflow
-cdef uint8_t N = 1 << 7 # Negative
+C = 1 << 0 # Carry Bit
+Z = 1 << 1 # Zero
+I = 1 << 2 # Disable Interrupts
+D = 1 << 3 # Decimal Mode
+B = 1 << 4 # Break
+U = 1 << 5 # Unused
+V = 1 << 6 # Overflow
+N = 1 << 7 # Negative
 
 cdef class Op:
     def __init__(self, str name, object operate, object addrmode, int cycles):

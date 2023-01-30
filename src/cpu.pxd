@@ -3,6 +3,15 @@ from libc.stdint cimport uint8_t, uint16_t
 from bus cimport CPUBus
 
 
+cdef uint8_t C
+cdef uint8_t Z
+cdef uint8_t I
+cdef uint8_t D
+cdef uint8_t B
+cdef uint8_t U
+cdef uint8_t V
+cdef uint8_t N
+
 cdef class Op:
     cdef public str name
     cdef public object operate

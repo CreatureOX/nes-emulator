@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t
+from libc.stdint cimport uint8_t, uint16_t
 
 from cartridge cimport Cartridge
 from bus cimport CPUBus
@@ -21,4 +21,12 @@ cdef class Console:
     cpdef void frame(self)
     cpdef void run(self)
     cpdef void control(self, list)
+
+    cpdef dict cpu_status_info(self)
+    cpdef dict cpu_registers_info(self)
+    cpdef str cpu_ram(self,uint16_t,uint16_t)
+    cpdef dict cpu_code_readable(self,uint16_t,uint16_t)
+    cpdef uint16_t cpu_pc(self)
+
+    cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t)
     
