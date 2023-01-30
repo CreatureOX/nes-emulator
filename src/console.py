@@ -2,6 +2,15 @@ from cartridge import Cartridge
 from bus import CPUBus
 
 
+K_x = 0
+K_z = 1
+K_a = 2
+K_s = 3
+K_UP = 4
+K_DOWN = 5
+K_LEFT = 6
+K_RIGHT = 7
+
 class Console:
     bus: CPUBus
 
@@ -38,4 +47,23 @@ class Console:
             self.bus.clock()
             if self.bus.ppu.frame_complete:
                 break
-        self.bus.ppu.frame_complete = False                
+        self.bus.ppu.frame_complete = False         
+
+    def control(self, pressed):
+        self.bus.controller[0] = 0x00
+        if pressed[K_x]:
+            self.bus.controller[0] |= 0x80
+        elif pressed[K_z]:
+            self.bus.controller[0] |= 0x40
+        elif pressed[K_a]:
+            self.bus.controller[0] |= 0x20
+        elif pressed[K_s]:
+            self.bus.controller[0] |= 0x10
+        if pressed[K_UP]:
+            self.bus.controller[0] |= 0x08
+        elif pressed[K_DOWN]:
+            self.bus.controller[0] |= 0x04
+        elif pressed[K_LEFT]:
+            self.bus.controller[0] |= 0x02
+        elif pressed[K_RIGHT]:
+            self.bus.controller[0] |= 0x01       
