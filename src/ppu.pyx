@@ -276,7 +276,7 @@ cdef class PPU2C02:
 
         # self.spriteScanline = (sObjectAttributeEntry * 8)()
         # self.spriteScanline = array([sObjectAttributeEntry(0x00,0x00,0x00,0x00) for _ in range(8)])
-        self.pSpriteScanline = np.zeros((8 * 32), dtype=np.uint8)
+        # self.pSpriteScanline = np.zeros((8 * 32), dtype=np.uint8)
         memset(self.pSpriteScanline, 0, 8*32*sizeof(uint8_t))
 
         self.sprite_shifter_pattern_lo = [0x00] * 8
@@ -635,7 +635,8 @@ cdef class PPU2C02:
             if self.cycle == 257 and self.scanline >= 0:
                 # memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
                 # self.spriteScanline = array([sObjectAttributeEntry(0xFF,0xFF,0xFF,0xFF) for _ in range(8)])
-                self.pSpriteScanline = [0xFF for _ in range(8 * 32)]
+                # self.pSpriteScanline = [0xFF for _ in range(8 * 32)]
+                memset(self.pSpriteScanline, 0xFF, 8*32*sizeof(uint8_t))
                 self.sprite_count = 0
                 for i in range(0, 8):
                     self.sprite_shifter_pattern_lo[i] = 0

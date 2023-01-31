@@ -63,7 +63,7 @@ class Emulator:
     console: Console
 
     def __init__(self) -> None:
-        self.window = gui.Window('NES Emulator', self.layout, size = (256, 240), resizable = True).Finalize()
+        self.window = gui.Window('NES Emulator', self.layout, size = (256+20, 240+20), resizable = True).Finalize()
         os.environ['SDL_WINDOWID'] = str(self.window['SCREEN'].TKCanvas.winfo_id())
         os.environ['SDL_VIDEODRIVER'] = 'windib'
         self.gameScreen = pygame.display.set_mode((256, 240))
