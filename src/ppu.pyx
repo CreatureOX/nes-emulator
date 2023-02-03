@@ -771,7 +771,7 @@ cdef class PPU2C02:
                             self.status.set_sprite_zero_hit(1)
 
         if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
-            self.spriteScreen[self.scanline, self.cycle - 1] = self.getColorFromPaletteTable(palette, pixel)
+            self.spriteScreen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
         if self.cycle >= 341:
