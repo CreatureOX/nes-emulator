@@ -19,29 +19,32 @@ cdef class Status:
         return self.reg    
 
     cdef void set_unused(self,uint8_t val):
+        self.reg &= 0b11100000
         self.reg |= val & 0b11111
 
     cdef uint8_t get_unused(self):
         return self.reg & 0b11111
 
     cdef void set_sprite_overflow(self,uint8_t val):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
 
     cdef uint8_t get_sprite_overflow(self):
         return (self.reg & 0b100000) >> 5
 
     cdef void set_sprite_zero_hit(self,uint8_t val):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
 
     cdef uint8_t get_sprite_zero_hit(self):
         return (self.reg & 0b1000000) >> 6
 
     cdef void set_vertical_blank(self,uint8_t val):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
 
     cdef uint8_t get_vertical_blank(self):
         return (self.reg & 0b10000000) >> 7
-
 
 cdef class Mask:
     def __init__(self) -> None:
@@ -54,48 +57,56 @@ cdef class Mask:
         return self.reg
 
     cdef void set_grayscale(self,uint8_t val):
+        self.reg &= 0b11111110
         self.reg |= val & 0b1
 
     cdef uint8_t get_grayscale(self):
         return self.reg & 0b1
 
     cdef void set_render_background_left(self,uint8_t val):
+        self.reg &= 0b11111101
         self.reg |= (val << 1) & 0b10
 
     cdef uint8_t get_render_background_left(self):
         return (self.reg & 0b10) >> 1
 
     cdef void set_render_sprites_left(self,uint8_t val):
+        self.reg &= 0b11111011
         self.reg |= (val << 2) & 0b100
 
     cdef uint8_t get_render_sprites_left(self):
         return (self.reg & 0b100) >> 2
 
     cdef void set_render_background(self,uint8_t val):
+        self.reg &= 0b11110111
         self.reg |= (val << 3) & 0b1000
 
     cdef uint8_t get_render_background(self):
         return (self.reg & 0b1000) >> 3
 
     cdef void set_render_sprites(self,uint8_t val):
+        self.reg &= 0b11101111
         self.reg |= (val << 4) & 0b10000
 
     cdef uint8_t get_render_sprites(self):
         return (self.reg & 0b10000) >> 4
 
     cdef void set_enhance_red(self,uint8_t val):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
 
     cdef uint8_t get_enhance_red(self):
         return (self.reg & 0b100000) >> 5
 
     cdef void set_enhance_green(self,uint8_t val):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
 
     cdef uint8_t get_enhance_green(self):
         return (self.reg & 0b1000000) >> 6
 
     cdef void set_enhance_blue(self,uint8_t val):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
 
     cdef uint8_t get_enhance_blue(self):
@@ -112,48 +123,56 @@ cdef class PPUCTRL:
         return self.reg
 
     cdef void set_nametable_x(self,uint8_t val):
+        self.reg &= 0b11111110
         self.reg |= val & 0b1
 
     cdef uint8_t get_nametable_x(self):
         return self.reg & 0b1
 
     cdef void set_nametable_y(self,uint8_t val):
+        self.reg &= 0b11111101
         self.reg |= (val << 1) & 0b10
 
     cdef uint8_t get_nametable_y(self):
         return (self.reg & 0b10) >> 1
 
     cdef void set_increment_mode(self,uint8_t val):
+        self.reg &= 0b11111011
         self.reg |= (val << 2) & 0b100
 
     cdef uint8_t get_increment_mode(self):
         return (self.reg & 0b100) >> 2
 
     cdef void set_pattern_sprite(self,uint8_t val):
+        self.reg &= 0b11110111
         self.reg |= (val << 3) & 0b1000
 
     cdef uint8_t get_pattern_sprite(self):
         return (self.reg & 0b1000) >> 3
 
     cdef void set_pattern_background(self,uint8_t val):
+        self.reg &= 0b11101111
         self.reg |= (val << 4) & 0b10000
 
     cdef uint8_t get_pattern_background(self):
         return (self.reg & 0b10000) >> 4
 
     cdef void set_sprite_size(self,uint8_t val):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
 
     cdef uint8_t get_sprite_size(self):
         return (self.reg & 0b100000) >> 5
 
     cdef void set_slave_mode(self,uint8_t val):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
 
     cdef uint8_t get_slave_mode(self):
         return (self.reg & 0b1000000) >> 6
 
     cdef void set_enable_nmi(self,uint8_t val):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
 
     cdef uint8_t get_enable_nmi(self):
@@ -170,15 +189,15 @@ cdef class LoopRegister:
         return self.reg
 
     cdef void set_coarse_x(self,uint16_t val):
-        self.reg &= ~(0b11111 << 0)
+        self.reg &= 0b1_111_1_1_11111_00000
         val &= 0xFFFF
-        self.reg |= val & 0b11111   
+        self.reg |= val & 0b11111  
 
     cdef uint16_t get_coarse_x(self):
         return self.reg & 0b11111  
 
     cdef void set_coarse_y(self,uint16_t val):
-        self.reg &= ~(0b11111 << 5)
+        self.reg &= 0b1_111_1_1_00000_11111
         val &= 0xFFFF
         self.reg |= (val << 5) & 0b1111100000 
 
@@ -186,7 +205,7 @@ cdef class LoopRegister:
         return (self.reg & 0b1111100000) >> 5
 
     cdef void set_nametable_x(self,uint16_t val):
-        self.reg &= ~(0b1 << 10)
+        self.reg &= 0b1_111_1_0_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 10) & 0b10000000000 
 
@@ -194,7 +213,7 @@ cdef class LoopRegister:
         return (self.reg & 0b10000000000) >> 10  
 
     cdef void set_nametable_y(self,uint16_t val):
-        self.reg &= ~(0b1 << 11)
+        self.reg &= 0b1_111_0_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 11) & 0b10_00000_00000 
 
@@ -202,7 +221,7 @@ cdef class LoopRegister:
         return (self.reg & 0b10_00000_00000) >> 11  
 
     cdef void set_fine_y(self,uint16_t val):
-        self.reg &= ~(0b111 << 12)
+        self.reg &= 0b1_000_1_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 12) & 0b11100_00000_00000 
     
@@ -210,7 +229,7 @@ cdef class LoopRegister:
         return (self.reg & 0b11100_00000_00000) >> 12
 
     cdef void set_unused(self,uint16_t val):
-        self.reg &= ~(0b1 << 15)
+        self.reg &= 0b0_111_1_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 15) & 0b100000_00000_00000 
 
@@ -501,11 +520,18 @@ cdef class PPU2C02:
                     tile_lsb = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
                     tile_msb = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
                     for col in range(0,8):
-                        pixel = (tile_lsb & 0x01) << 1 | (tile_msb & 0x01)
+                        pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
                         self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
         
         return self.spritePatternTable[i]
+
+    cpdef uint8_t[:,:,:] getPalette(self):
+        _palette = np.zeros((4,16,3)).astype(np.uint8)
+        for x in range(4):
+            for y in range(16):
+                _palette[x][y][:] = self.palettePanel[x*16+y]
+        return _palette
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -559,8 +585,8 @@ cdef class PPU2C02:
     cdef void loadBackgroundShifters(self):
         self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
         self.background_shifter_pattern_hi = ((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-        self.background_shifter_attribute_lo = 0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) > 0 else 0x00
-        self.background_shifter_attribute_hi = 0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) > 0 else 0x00
+        self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
+        self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
     cdef void updateShifters(self):
         if self.mask.get_render_background() == 1:
@@ -580,8 +606,9 @@ cdef class PPU2C02:
 
     cdef void clock(self) except *:
         cdef uint8_t nOAMEntry
-        cdef uint16_t v, sprite_pattern_addr_lo, sprite_pattern_addr_hi
+        cdef sprite_pattern_addr_lo, sprite_pattern_addr_hi
         cdef int16_t diff
+        cdef int v
 
         if -1 <= self.scanline < 240:
             if self.scanline == 0 and self.cycle == 0:

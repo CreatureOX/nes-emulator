@@ -4,19 +4,6 @@ from numpy import uint16, uint8, uint32
 from cartridge import Cartridge
 
 
-class Bus:
-    def __init__(self) -> None:
-        self.ram = [0x00] * 64 * 1024
-
-    def read(self, addr: uint16, readOnly: bool) -> uint8:
-        if 0x0000 <= addr <= 0xFFFF:
-            return self.ram[addr]
-        return 0x00
-
-    def write(self, addr: uint16, data: uint8) -> None:
-        if 0x0000 <= addr <= 0xFFFF:
-            self.ram[addr] = data
-
 class CPUBus:
     ram: List[uint8]
     controller: List[uint8]
@@ -32,8 +19,8 @@ class CPUBus:
 
     def __init__(self, cartridge: Cartridge) -> None:
         self.ram = [0x00] * 2 * 1024
-        self.controller = [0x00] * 2
-        self.controller_state = [0x00] * 2
+        self.controller = [0x00,0x00]
+        self.controller_state = [0x00,0x00]
         self.nSystemClockCounter = 0
 
         self.dma_page = 0x00

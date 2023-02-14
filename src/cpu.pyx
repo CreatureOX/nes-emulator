@@ -220,7 +220,7 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.a + self.fetched + self.getFlag(C))
+        self.set_temp(<uint16_t>self.a + <uint16_t>self.fetched + <uint16_t>self.getFlag(C))
 
         self.setFlag(C, self.temp > 255)
         self.setFlag(Z, (self.temp & 0x00FF) == 0)
@@ -238,12 +238,12 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        cdef uint8_t value = self.fetched ^ 0x00FF
-        self.set_temp(self.a + value + self.getFlag(C))
+        cdef uint16_t value = self.fetched ^ 0x00FF
+        self.set_temp(<uint16_t>self.a + value + <uint16_t>self.getFlag(C))
 
         self.setFlag(C, self.temp & 0xFF00)
         self.setFlag(Z, (self.temp & 0x00FF) == 0)
-        self.setFlag(V, (self.temp ^ self.a) & (self.temp ^ value) & 0x0080)
+        self.setFlag(V, (self.temp ^ <uint16_t>self.a) & (self.temp ^ value) & 0x0080)
         self.setFlag(N, self.temp & 0x0080)
 
         self.set_a(self.temp & 0x00FF)
@@ -272,7 +272,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.fetched << 1)
+        self.set_temp(<uint16_t>self.fetched << 1)
         
         self.setFlag(C, (self.temp & 0xFF00) > 0)
         self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
@@ -491,7 +491,7 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.a - self.fetched)
+        self.set_temp(<uint16_t>self.a - <uint16_t>self.fetched)
         self.setFlag(C, self.a >= self.fetched)
         self.setFlag(Z, self.temp & 0x00FF == 0x0000)
         self.setFlag(N, self.temp & 0x0080)
@@ -505,7 +505,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.x - self.fetched)
+        self.set_temp(<uint16_t>self.x - <uint16_t>self.fetched)
         self.setFlag(C, self.x >= self.fetched)
         self.setFlag(Z, self.temp & 0x00FF == 0x0000)
         self.setFlag(N, self.temp & 0x0080)
@@ -519,7 +519,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.y - self.fetched)
+        self.set_temp(<uint16_t>self.y - <uint16_t>self.fetched)
         self.setFlag(C, self.y >= self.fetched)
         self.setFlag(Z, (self.temp & 0x00FF) == 0x0000)
         self.setFlag(N, self.temp & 0x0080)
@@ -770,7 +770,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp((self.fetched << 1) | self.getFlag(C))
+        self.set_temp(<uint16_t>(self.fetched << 1) | self.getFlag(C))
         self.setFlag(C, self.temp & 0xFF00)
         self.setFlag(Z, self.temp & 0x00FF == 0x0000)
         self.setFlag(N, self.temp & 0x0080)
@@ -785,7 +785,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(self.getFlag(C) << 7 | (self.fetched >> 1))
+        self.set_temp(<uint16_t>(self.getFlag(C) << 7) | (self.fetched >> 1))
         self.setFlag(C, self.fetched & 0x01)
         self.setFlag(Z, self.temp & 0x00FF == 0x00)
         self.setFlag(N, self.temp & 0x0080)

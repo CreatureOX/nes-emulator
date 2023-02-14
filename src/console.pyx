@@ -58,7 +58,7 @@ cdef class Console:
             self.bus.controller[0] |= 0x20
         elif pressed[K_s]:
             self.bus.controller[0] |= 0x10
-        if pressed[K_UP]:
+        elif pressed[K_UP]:
             self.bus.controller[0] |= 0x08
         elif pressed[K_DOWN]:
             self.bus.controller[0] |= 0x04
@@ -92,7 +92,7 @@ cdef class Console:
         for addr in range(start_addr, end_addr, 16):
             hex_code += "${addr:04X}: {codes}\n".format(\
                 addr=addr,\
-                codes=" ".join(["{hex:02X}".format(hex=self.bus.cpu.read(addr)) for addr in range(addr, min(addr+16, end_addr))])\
+                codes=" ".join(["{hex:02X}".format(hex=self.bus.cpu.read(_addr)) for _addr in range(addr, min(addr+16, end_addr))])\
             )
         return hex_code
 
@@ -104,7 +104,7 @@ cdef class Console:
             opcode = self.bus.read(addr, True)
             opaddr = addr
             addr += 1
-            op = self.lookup[opcode]
+            op = self.bus.cpu.lookup[opcode]
             if op.addrmode == self.IMP:
                 value = "    "
             if op.addrmode == self.IMM:
@@ -168,6 +168,7 @@ cdef class Console:
     cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t i):
         return self.bus.ppu.getPatternTable(i,0)
         
-
+    cpdef uint8_t[:,:,:] ppu_palette(self):
+        return self.bus.ppu.getPalette()
 
         

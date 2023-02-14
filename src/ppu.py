@@ -10,92 +10,104 @@ class Status:
     def __init__(self) -> None:
         self.reg = 0b00000000
 
-    def set_reg(self,val):
+    def set_reg(self, val: uint8):
         self.reg = val
 
-    def get_reg(self):
+    def get_reg(self) -> uint8:
         return self.reg
     
-    def set_unused(self,val):
+    def set_unused(self, val: uint8):
+        self.reg &= 0b11100000
         self.reg |= val & 0b11111
     
-    def get_unused(self):
+    def get_unused(self) -> uint8:
         return self.reg & 0b11111
     
-    def set_sprite_overflow(self,val):
+    def set_sprite_overflow(self, val: uint8):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
     
-    def get_sprite_overflow(self):
+    def get_sprite_overflow(self) -> uint8:
         return (self.reg & 0b100000) >> 5
     
-    def set_sprite_zero_hit(self,val):
+    def set_sprite_zero_hit(self, val: uint8):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
     
-    def get_sprite_zero_hit(self):
+    def get_sprite_zero_hit(self) -> uint8:
         return (self.reg & 0b1000000) >> 6
     
-    def set_vertical_blank(self,val):
+    def set_vertical_blank(self, val: uint8):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
     
-    def get_vertical_blank(self):
+    def get_vertical_blank(self) -> uint8:
         return (self.reg & 0b10000000) >> 7
 
 class Mask:
     def __init__(self) -> None:
         self.reg = 0b00000000
 
-    def set_reg(self,val):
+    def set_reg(self, val: uint8):
         self.reg = val
 
-    def get_reg(self):
+    def get_reg(self) -> uint8:
         return self.reg
 
-    def set_grayscale(self,val):
+    def set_grayscale(self, val: uint8):
+        self.reg &= 0b11111110
         self.reg |= val & 0b1
 
-    def get_grayscale(self):
+    def get_grayscale(self) -> uint8:
         return self.reg & 0b1
 
-    def set_render_background_left(self,val):
+    def set_render_background_left(self, val: uint8):
+        self.reg &= 0b11111101
         self.reg |= (val << 1) & 0b10
 
-    def get_render_background_left(self):
+    def get_render_background_left(self) -> uint8:
         return (self.reg & 0b10) >> 1
 
-    def set_render_sprites_left(self,val):
+    def set_render_sprites_left(self, val: uint8):
+        self.reg &= 0b11111011
         self.reg |= (val << 2) & 0b100
     
-    def get_render_sprites_left(self):
+    def get_render_sprites_left(self) -> uint8:
         return (self.reg & 0b100) >> 2
 
-    def set_render_background(self,val):
+    def set_render_background(self,val: uint8):
+        self.reg &= 0b11110111
         self.reg |= (val << 3) & 0b1000
     
-    def get_render_background(self):
+    def get_render_background(self) -> uint8:
         return (self.reg & 0b1000) >> 3
 
-    def set_render_sprites(self,val):
+    def set_render_sprites(self, val: uint8):
+        self.reg &= 0b11101111
         self.reg |= (val << 4) & 0b10000
     
-    def get_render_sprites(self):
+    def get_render_sprites(self) -> uint8:
         return (self.reg & 0b10000) >> 4
 
-    def set_enhance_red(self,val):
+    def set_enhance_red(self, val: uint8):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
     
-    def get_enhance_red(self):
+    def get_enhance_red(self) -> uint8:
         return (self.reg & 0b100000) >> 5
 
-    def set_enhance_green(self,val):
+    def set_enhance_green(self, val: uint8):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
     
-    def get_enhance_green(self):
+    def get_enhance_green(self) -> uint8:
         return (self.reg & 0b1000000) >> 6
 
-    def set_enhance_blue(self,val):
+    def set_enhance_blue(self, val: uint8):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
     
-    def get_enhance_blue(self):
+    def get_enhance_blue(self) -> uint8:
         return (self.reg & 0b10000000) >> 7
 
 class PPUCTRL:
@@ -105,136 +117,129 @@ class PPUCTRL:
     def set_reg(self,val):
         self.reg = val
 
-    def get_reg(self):
+    def get_reg(self) -> uint8:
         return self.reg
 
-    def set_nametable_x(self,val):
+    def set_nametable_x(self, val: uint8):
+        self.reg &= 0b11111110
         self.reg |= val & 0b1
 
-    def get_nametable_x(self):
+    def get_nametable_x(self) -> uint8:
         return self.reg & 0b1
 
-    def set_nametable_y(self,val):
+    def set_nametable_y(self, val: uint8):
+        self.reg &= 0b11111101
         self.reg |= (val << 1) & 0b10
 
-    def get_nametable_y(self):
+    def get_nametable_y(self) -> uint8:
         return (self.reg & 0b10) >> 1
 
-    def set_increment_mode(self,val):
+    def set_increment_mode(self, val: uint8):
+        self.reg &= 0b11111011
         self.reg |= (val << 2) & 0b100
     
-    def get_increment_mode(self):
+    def get_increment_mode(self) -> uint8:
         return (self.reg & 0b100) >> 2
 
-    def set_pattern_sprite(self,val):
+    def set_pattern_sprite(self, val: uint8):
+        self.reg &= 0b11110111
         self.reg |= (val << 3) & 0b1000
     
-    def get_pattern_sprite(self):
+    def get_pattern_sprite(self) -> uint8:
         return (self.reg & 0b1000) >> 3
 
-    def set_pattern_background(self,val):
+    def set_pattern_background(self, val: uint8):
+        self.reg &= 0b11101111
         self.reg |= (val << 4) & 0b10000
     
-    def get_pattern_background(self):
+    def get_pattern_background(self) -> uint8:
         return (self.reg & 0b10000) >> 4
 
-    def set_sprite_size(self,val):
+    def set_sprite_size(self, val: uint8):
+        self.reg &= 0b11011111
         self.reg |= (val << 5) & 0b100000
     
-    def get_sprite_size(self):
+    def get_sprite_size(self) -> uint8:
         return (self.reg & 0b100000) >> 5
 
-    def set_slave_mode(self,val):
+    def set_slave_mode(self, val: uint8):
+        self.reg &= 0b10111111
         self.reg |= (val << 6) & 0b1000000
     
-    def get_slave_mode(self):
+    def get_slave_mode(self) -> uint8:
         return (self.reg & 0b1000000) >> 6
 
-    def set_enable_nmi(self,val):
+    def set_enable_nmi(self, val: uint8):
+        self.reg &= 0b01111111
         self.reg |= (val << 7) & 0b10000000
     
-    def get_enable_nmi(self):
+    def get_enable_nmi(self) -> uint8:
         return (self.reg & 0b10000000) >> 7
 
 class LoopRegister:
     def __init__(self) -> None:
         self.reg = 0b0000_0000_0000_0000
 
-    def set_reg(self,val):
+    def set_reg(self, val: uint16):
         self.reg = val
 
-    def get_reg(self):
+    def get_reg(self) -> uint16:
         return self.reg
 
-    def set_coarse_x(self,val):
-        self.reg &= ~(0b11111 << 0)
+    def set_coarse_x(self, val: uint16):
+        self.reg &= 0b1_111_1_1_11111_00000
         val &= 0xFFFF
         self.reg |= val & 0b11111    
 
-    def get_coarse_x(self):
+    def get_coarse_x(self) -> uint16:
         return self.reg & 0b11111  
 
-    def set_coarse_y(self,val):
-        self.reg &= ~(0b11111 << 5)
+    def set_coarse_y(self, val: uint16):
+        self.reg &= 0b1_111_1_1_00000_11111
         val &= 0xFFFF
         self.reg |= (val << 5) & 0b1111100000    
 
-    def get_coarse_y(self):
+    def get_coarse_y(self) -> uint16:
         return (self.reg & 0b1111100000) >> 5
 
-    def set_nametable_x(self,val):
-        self.reg &= ~(0b1 << 10)
+    def set_nametable_x(self, val: uint16):
+        self.reg &= 0b1_111_1_0_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 10) & 0b10000000000 
 
-    def get_nametable_x(self):
+    def get_nametable_x(self) -> uint16:
         return (self.reg & 0b10000000000) >> 10  
 
-    def set_nametable_y(self,val):
-        self.reg &= ~(0b1 << 11)
+    def set_nametable_y(self, val: uint16):
+        self.reg &= 0b1_111_0_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 11) & 0b10_00000_00000 
 
-    def get_nametable_y(self):
+    def get_nametable_y(self) -> uint16:
         return (self.reg & 0b10_00000_00000) >> 11  
 
-    def set_fine_y(self,val):
-        self.reg &= ~(0b111 << 12)
+    def set_fine_y(self, val: uint16):
+        self.reg &= 0b1_000_1_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 12) & 0b11100_00000_00000 
 
-    def get_fine_y(self):
+    def get_fine_y(self) -> uint16:
         return (self.reg & 0b11100_00000_00000) >> 12
 
-    def set_unused(self,val):
-        self.reg &= ~(0b1 << 15)
+    def set_unused(self, val: uint16):
+        self.reg &= 0b0_111_1_1_11111_11111
         val &= 0xFFFF
         self.reg |= (val << 15) & 0b100000_00000_00000 
 
-    def get_unused(self):
+    def get_unused(self) -> uint16:
         return (self.reg & 0b100000_00000_00000) >> 15
-
-# class sObjectAttributeEntry(LittleEndianStructure):
-#     _fields_ = [
-#         ("y", c_uint8),
-#         ("id", c_uint8),
-#         ("attribute", c_uint8),
-#         ("x", c_uint8),
-#     ]
-
-# class sObjectAttributeEntry:
-#     def __init__(self,y,id,attribute,x) -> None:
-#         self.y = y
-#         self.id = id
-#         self.attribute = attribute 
-#         self.x = x
 
 Y = 0
 ID = 1
 ATTRIBUTE = 2
 X = 3
 
-def offset(i: uint8, offset: uint8):
+def offset(i: uint8, offset: uint8) -> uint8:
     return i*4+offset
 
 def flipbyte(b: uint8) -> uint8:
@@ -549,7 +554,7 @@ class PPU2C02:
         self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
         self.palettePanel[0x30],self.palettePanel[0x31],self.palettePanel[0x32],self.palettePanel[0x33],self.palettePanel[0x34],self.palettePanel[0x35],self.palettePanel[0x36],self.palettePanel[0x37],self.palettePanel[0x38],self.palettePanel[0x39],self.palettePanel[0x3a],self.palettePanel[0x3b],self.palettePanel[0x3c],self.palettePanel[0x3d],self.palettePanel[0x3e],self.palettePanel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
    
-    def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> Tuple[uint8,uint8,uint8]:
+    def getColorFromPaletteTable(self, palette: uint8, pixel: uint8) -> tuple:
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
         # if color > 0:
         #     print("color: {color}".format(color=color))
@@ -565,11 +570,18 @@ class PPU2C02:
                     tile_lsb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
                     tile_msb: uint8 = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
                     for col in range(0,8):
-                        pixel: uint8 = (tile_lsb & 0x01) << 1 | (tile_msb & 0x01)
+                        pixel: uint8 = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
                         self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
         
         return self.spritePatternTable[i]
+
+    def getPalette(self) -> ndarray:
+        _palette = zeros((4,16,3)).astype(uint8)
+        for x in range(4):
+            for y in range(16):
+                _palette[x][y][:] = self.palettePanel[x*16+y]
+        return _palette
 
     def reset(self) -> None:
         self.fine_x = 0x00
@@ -623,8 +635,8 @@ class PPU2C02:
     def loadBackgroundShifters(self) -> None:
         self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
         self.background_shifter_pattern_hi = ((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-        self.background_shifter_attribute_lo = 0xFF if ((self.background_shifter_attribute_lo & 0xFF00) | (self.background_next_tile_attribute & 0b01)) > 0 else 0x00
-        self.background_shifter_attribute_hi = 0xFF if ((self.background_shifter_attribute_hi & 0xFF00) | (self.background_next_tile_attribute & 0b10)) > 0 else 0x00
+        self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
+        self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
     def updateShifters(self) -> None:
         if self.mask.get_render_background() == 1:
@@ -647,8 +659,8 @@ class PPU2C02:
     sprite_pattern_bits_lo='uint8_t', sprite_pattern_bits_hi='uint8_t', \
     sprite_pattern_addr_lo='uint16_t', sprite_pattern_addr_hi='uint16_t', \
     background_pixel='uint8_t', background_palette='uint8_t', bit_mux='uint16_t', \
-    background_pixel_0='uint8_t', background_pixel_1='uint8_t', background_pixel='uint8_t', \
-    background_palette_0='uint8_t', background_palette_1='uint8_t', background_palette='uint8_t', \
+    background_pixel_0='uint8_t', background_pixel_1='uint8_t', \
+    background_palette_0='uint8_t', background_palette_1='uint8_t', \
     foreground_pixel='uint8_t', foreground_palette='uint8_t', foreground_priority='uint8_t', \
     foreground_pixel_lo='uint8_t', foreground_pixel_hi='uint8_t', \
     pixel='uint8_t', palette='uint8_t')
@@ -840,7 +852,7 @@ class PPU2C02:
                             self.status.set_sprite_zero_hit(1)
 
         if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
-            self.spriteScreen[self.scanline, self.cycle - 1] = self.getColorFromPaletteTable(palette, pixel)
+            self.spriteScreen[self.scanline][int(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
         if self.cycle >= 341:

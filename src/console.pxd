@@ -29,4 +29,5 @@ cdef class Console:
     cpdef uint16_t cpu_pc(self)
 
     cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t)
+    cpdef uint8_t[:,:,:] ppu_palette(self)
     
