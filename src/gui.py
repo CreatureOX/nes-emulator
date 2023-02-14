@@ -56,7 +56,7 @@ class Emulator:
                     gui.Text("Y: $0x00",key="Y",size=(8,1)),
                     gui.Text("SP: $0x0000",key="SP",size=(10,1)),
                 ],
-                # [gui.Multiline(key="READABLE", size=(50,10), background_color='BLUE', disabled=True)],
+                [gui.Multiline(key="READABLE", size=(50,10), background_color='BLUE', disabled=True)],
             ]
         cpu_debug_window = gui.Window('CPU DEBUG', cpu_debug_layout())
         while True:
@@ -66,7 +66,7 @@ class Emulator:
             else:
                 self.drawCPUStatus(cpu_debug_window)
                 self.drawCPURegisters(cpu_debug_window)
-                # self.drawCode(cpu_debug_window)
+                self.drawCode(cpu_debug_window)
         cpu_debug_window.close()
         return True
 
@@ -131,7 +131,7 @@ class Emulator:
     def drawCode(self, window, delta: int = 10) -> None:
         if not self.console:
             return
-        start, end = max(self.console.bus.cpu.pc - delta, 0x0000), self.console.bus.cpu.pc + delta
+        start, end = max(self.console.cpu_pc() - delta, 0x0000), self.console.cpu_pc() + delta
         asm = self.console.cpu_code_readable(start, end)
         window['READABLE'].Update("")
         for addr, inst in asm.items():

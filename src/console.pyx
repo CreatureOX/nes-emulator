@@ -105,56 +105,56 @@ cdef class Console:
             opaddr = addr
             addr += 1
             op = self.bus.cpu.lookup[opcode]
-            if op.addrmode == self.IMP:
+            if op.addrmode.__name__ == "IMP":
                 value = "    "
-            if op.addrmode == self.IMM:
+            if op.addrmode.__name__ == "IMM":
                 value = "#${value:02X}".format(value=self.bus.read(addr, True))
                 addr += 1
-            elif op.addrmode == self.ZP0:
+            elif op.addrmode.__name__ == "ZP0":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=lo) 
-            elif op.addrmode ==self.ZPX:
+            elif op.addrmode.__name__ == "ZPX":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=lo) 
-            elif op.addrmode == self.ZPY:
+            elif op.addrmode.__name__ == "ZPY":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=lo)
-            elif op.addrmode == self.IZX:
+            elif op.addrmode.__name__ == "IZX":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X},X)".format(value=lo)
-            elif op.addrmode == self.IZY:
+            elif op.addrmode.__name__ == "IZY":
                 lo = self.bus.read(addr, True)
                 addr += 1  
                 value = "(${value:02X},Y)".format(value=lo)  
-            elif op.addrmode == self.ABS:
+            elif op.addrmode.__name__ == "ABS":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X}".format(value=hi<<8|lo)
-            elif op.addrmode == self.ABX:
+            elif op.addrmode.__name__ == "ABX":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},X".format(value=hi<<8|lo)
-            elif op.addrmode == self.ABY:
+            elif op.addrmode.__name__ == "ABY":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "${value:02X},Y".format(value=hi<<8|lo)
-            elif op.addrmode == self.IND:
+            elif op.addrmode.__name__ == "IND":
                 lo = self.bus.read(addr, True)
                 addr += 1
                 hi = self.bus.read(addr, True)
                 addr += 1
                 value = "(${value:02X})".format(value=hi<<8|lo)
-            elif op.addrmode == self.REL:
+            elif op.addrmode.__name__ == "REL":
                 inst = self.bus.read(addr, True)
                 addr += 1
                 offset = addr + <int8_t>inst
