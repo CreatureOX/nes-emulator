@@ -34,6 +34,7 @@ cdef class Header:
 cdef class Cartridge:
     def __init__(self, filename: str) -> None:
         cdef uint8_t PRGBanks, CHRBanks
+        cdef int INES = 1, NES2 = 2
         
         with open(filename, 'rb') as nes:
             self.header = Header(nes.read(16))
@@ -44,13 +45,13 @@ cdef class Cartridge:
             mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
-            fileType: uint8 = 1
+            fileType = INES
             if self.header.mapper2 & 0x0C == 0x08:
-                fileType = 2
+                fileType = NES2
             
             if fileType == 0:
                 pass
-            if fileType == 1:
+            if fileType == INES:
                 PRGBanks = self.header.prg_rom_chunks
                 self.PRGMemory = np.frombuffer(nes.read(16384 * PRGBanks), dtype=np.uint8).copy()
                 
@@ -64,7 +65,7 @@ cdef class Cartridge:
                 if self.header.mapper2 & 0b10 != 0:
                     self.playChoiceINSTMemory = nes.read(8192)
                     self.playChoicePMemory = nes.read(16)
-            if fileType == 2:
+            if fileType == NES2:
                 PRGBanks = (self.header.prg_ram_size & 0x07) << 8 | self.header.prg_rom_chunks
                 self.PRGMemory = np.frombuffer(nes.read(16384 * PRGBanks), dtype=np.uint8).copy()
 
@@ -123,7 +124,7 @@ cdef class Cartridge:
             self.mapper.reset()
 
     cdef uint8_t getMirror(self):
-        m = self.mapper.mirror()
+        cdef uint8_t m = self.mapper.mirror()
         if m == HARDWARE:
             return self.mirror
         else:

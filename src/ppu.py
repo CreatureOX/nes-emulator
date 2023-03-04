@@ -844,7 +844,7 @@ class PPU2C02:
                 palette = background_palette
             if self.bSpriteZeroHitPossible and self.bSpriteZeroBeingRendered:
                 if self.mask.get_render_background() & self.mask.get_render_sprites() != 0:
-                    if (~(self.mask.get_render_background_left() | self.mask.get_render_sprites_left()) != 0):
+                    if ((self.mask.get_render_background_left() | self.mask.get_render_sprites_left()) == 0):
                         if 9 <= self.cycle < 258:
                             self.status.set_sprite_zero_hit(1)
                     else:
@@ -855,6 +855,11 @@ class PPU2C02:
             self.spriteScreen[self.scanline][int(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
+
+        if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
+            if self.cycle == 260 and self.scanline < 240:
+                self.cartridge.getMapper().scanline()
+                
         if self.cycle >= 341:
             self.cycle = 0
             self.scanline += 1

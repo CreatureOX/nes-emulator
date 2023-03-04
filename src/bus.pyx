@@ -35,7 +35,6 @@ cdef class CPUBus:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
             pass
-            # data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -51,7 +50,6 @@ cdef class CPUBus:
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
             pass
-            # self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
             self.dma_page = data
             self.dma_addr = 0x00
@@ -91,4 +89,9 @@ cdef class CPUBus:
         if self.ppu.nmi:
             self.ppu.nmi = False
             self.cpu.nmi()
+
+        if self.cartridge.getMapper().irqState():
+            self.cartridge.getMapper().irqClear()
+            self.cpu.irq()
+
         self.nSystemClockCounter += 1

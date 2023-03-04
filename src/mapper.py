@@ -1,16 +1,17 @@
 from typing import Tuple
 from numpy import uint16, uint32, uint8
+import numpy as np
 
 from mirror import *
 
 
 class Mapper:
-    nPRGBanks: uint8
-    nCHRBanks: uint8
+    PRGBanks: uint8
+    CHRBanks: uint8
 
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
-        self.nPRGBanks = prgBanks
-        self.nCHRBanks = chrBanks
+        self.PRGBanks = prgBanks
+        self.CHRBanks = chrBanks
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         pass
@@ -31,7 +32,7 @@ class Mapper:
         return HARDWARE
 
     def irqState(self) -> bool:
-        pass
+        return False
 
     def irqClear(self):
         pass
@@ -42,12 +43,12 @@ class Mapper:
 class Mapper000(Mapper):
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x8000 <= addr <= 0xFFFF:
-            return (True, addr & (0x7FFF if self.nPRGBanks > 1 else 0x3FFF), 0)
+            return (True, addr & (0x7FFF if self.PRGBanks > 1 else 0x3FFF), 0)
         return (False, addr, 0)
 
     def mapWriteByCPU(self, addr: uint16, data: uint8) -> Tuple[bool, uint32]:
         if 0x8000 <= addr <= 0xFFFF:
-            return (True, addr & (0x7FFF if self.nPRGBanks > 1 else 0x3FFF))
+            return (True, addr & (0x7FFF if self.PRGBanks > 1 else 0x3FFF))
         return (False, addr)
 
     def mapReadByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
@@ -57,56 +58,56 @@ class Mapper000(Mapper):
 
     def mapWriteByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if 0x0000 <= addr <= 0x1FFF:
-            if self.nCHRBanks == 0:
+            if self.CHRBanks == 0:
                 return (True, addr)
         return (False, addr)
     
 class Mapper001(Mapper):
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
         super().__init__(prgBanks, chrBanks)
-        self.vRAMStatic = [0x00 for _ in range(32 * 1024)] 
-        self.nCHRBankSelect4Lo, self.nCHRBankSelect4Hi, self.nCHRBankSelect8 = 0x00, 0x00, 0x00
-        self.nPRGBankSelect16Lo, self.nPRGBankSelect16Hi, self.nPRGBankSelect32 = 0x00, 0x00, 0x00
-        self.nLoadRegister, self.nLoadRegisterCount, self.nControlRegister = 0x00, 0x00, 0x00  
+        self.RAMStatic = np.zeros(32768).astype(np.uint8)
+        self.CHRBankSelect4Lo, self.CHRBankSelect4Hi, self.CHRBankSelect8 = 0x00, 0x00, 0x00
+        self.PRGBankSelect16Lo, self.PRGBankSelect16Hi, self.PRGBankSelect32 = 0x00, 0x00, 0x00
+        self.loadRegister, self.loadRegisterCount, self.controlRegister = 0x00, 0x00, 0x00  
         self.mirrormode = HORIZONTAL
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x6000 <= addr <= 0x7FFF:
             mapped_addr = 0xFFFFFFFF
-            data = self.vRAMStatic[addr & 0x1FFF]
+            data = self.RAMStatic[addr & 0x1FFF]
             return (True, mapped_addr, data)
         if addr >= 0x8000:
-            if self.nControlRegister & 0b01000 != 0:
+            if self.controlRegister & 0b01000 != 0:
                 if 0x8000 <= addr <= 0xBFFF:
-                    mapped_addr = self.nPRGBankSelect16Lo * 0x4000 + addr & 0x3FFF
+                    mapped_addr = self.PRGBankSelect16Lo * 0x4000 + (addr & 0x3FFF)
                     return (True, mapped_addr, 0)
                 if 0xC000 <= addr <= 0xFFFF:
-                    mapped_addr = self.nPRGBankSelect16Hi * 0x4000 + addr & 0x3FFF
+                    mapped_addr = self.PRGBankSelect16Hi * 0x4000 + (addr & 0x3FFF)
                     return (True, mapped_addr, 0)
             else:
-                mapped_addr = self.nPRGBankSelect32 * 0x8000 + addr & 0x7FFF
+                mapped_addr = self.PRGBankSelect32 * 0x8000 + (addr & 0x7FFF)
                 return (True, mapped_addr, 0)
         return (False, 0, 0)
     
     def mapWriteByCPU(self, addr: uint16, data: uint8) -> Tuple[bool, uint32]:
         if 0x6000 <= addr <= 0x7FFF:
             mapped_addr = 0xFFFFFFFF
-            self.vRAMStatic[addr & 0x1FFF] = data 
+            self.RAMStatic[addr & 0x1FFF] = data 
             return (True, mapped_addr)
         if addr >= 0x8000:
             if data & 0x80 != 0:
-                self.nLoadRegister = 0x00
-                self.nLoadRegisterCount = 0
-                self.nControlRegister = self.nControlRegister | 0x0C
+                self.loadRegister = 0x00
+                self.loadRegisterCount = 0
+                self.controlRegister = self.controlRegister | 0x0C
             else:
-                self.nLoadRegister >>= 1
-                self.nLoadRegister |= (data & 0x01) << 4
-                self.nLoadRegisterCount += 1
-                if self.nLoadRegisterCount == 5:
-                    nTargetRegister: uint8 = (addr >> 13) & 0x03
-                    if nTargetRegister == 0:
-                        self.nControlRegister = self.nLoadRegister & 0X1F
-                        switch = self.nControlRegister & 0x03
+                self.loadRegister >>= 1
+                self.loadRegister |= (data & 0x01) << 4
+                self.loadRegisterCount += 1
+                if self.loadRegisterCount == 5:
+                    targetRegister: uint8 = (addr >> 13) & 0x03
+                    if targetRegister == 0:
+                        self.controlRegister = self.loadRegister & 0X1F
+                        switch = self.controlRegister & 0x03
                         if switch == 0:
                             self.mirrormode = ONESCREEN_LO
                         elif switch == 1:
@@ -115,55 +116,55 @@ class Mapper001(Mapper):
                             self.mirrormode = VERTICAL
                         elif switch == 3:
                             self.mirrormode = HORIZONTAL
-                    elif nTargetRegister == 1:
-                        if self.nControlRegister & 0b10000 != 0:
-                            self.nCHRBankSelect4Lo = self.nLoadRegister & 0x1F
+                    elif targetRegister == 1:
+                        if self.controlRegister & 0b10000 != 0:
+                            self.CHRBankSelect4Lo = self.loadRegister & 0x1F
                         else:
-                            self.nCHRBankSelect8 = self.nLoadRegister & 0x1E
-                    elif nTargetRegister == 2:
-                        if self.nControlRegister & 0b10000 != 0:
-                            self.nCHRBankSelect4Hi = self.nLoadRegister & 0x1F
-                    elif nTargetRegister == 3:
-                        nPRGMode: uint8 = (self.nControlRegister >> 2) & 0x03
-                        if nPRGMode == 0 or nPRGMode == 1:
-                            self.nPRGBankSelect32 = (self.nLoadRegister & 0x0E) >> 1
-                        elif nPRGMode == 2:
-                            self.nPRGBankSelect16Lo = 0
-                            self.nPRGBankSelect16Hi = self.nLoadRegister & 0x0F
-                        elif nPRGMode == 3:
-                            self.nPRGBankSelect16Lo = self.nLoadRegister & 0x0F
-                            self.nPRGBankSelect16Hi = self.nPRGBanks - 1
-                    self.nLoadRegister = 0x00
-                    self.nLoadRegisterCount = 0
+                            self.CHRBankSelect8 = self.loadRegister & 0x1E
+                    elif targetRegister == 2:
+                        if self.controlRegister & 0b10000 != 0:
+                            self.CHRBankSelect4Hi = self.loadRegister & 0x1F
+                    elif targetRegister == 3:
+                        PRGMode: uint8 = (self.controlRegister >> 2) & 0x03
+                        if PRGMode == 0 or PRGMode == 1:
+                            self.PRGBankSelect32 = (self.loadRegister & 0x0E) >> 1
+                        elif PRGMode == 2:
+                            self.PRGBankSelect16Lo = 0
+                            self.PRGBankSelect16Hi = self.loadRegister & 0x0F
+                        elif PRGMode == 3:
+                            self.PRGBankSelect16Lo = self.loadRegister & 0x0F
+                            self.PRGBankSelect16Hi = self.PRGBanks - 1
+                    self.loadRegister = 0x00
+                    self.loadRegisterCount = 0
         return (False, 0)                       
 
     def mapReadByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if addr < 0x2000:
-            if self.nCHRBanks == 0:
+            if self.CHRBanks == 0:
                 return (True, addr)
             else:
-                if self.nControlRegister & 0b10000 > 0:
+                if self.controlRegister & 0b10000 > 0:
                     if 0x0000 <= addr <= 0x0FFF:
-                        return (True, self.nCHRBankSelect4Lo * 0x1000 + addr & 0x0FFF)
+                        return (True, self.CHRBankSelect4Lo * 0x1000 + addr & 0x0FFF)
                     if 0x1000 <= addr <= 0x1FFF:
-                        return (True, self.nCHRBankSelect4Hi * 0x1000 + addr & 0x0FFF)
+                        return (True, self.CHRBankSelect4Hi * 0x1000 + addr & 0x0FFF)
                 else:
-                    return (True, self.nCHRBankSelect8 * 0x2000 + addr & 0x1FFF)
+                    return (True, self.CHRBankSelect8 * 0x2000 + addr & 0x1FFF)
         else:
             return (False, 0x00)
         
     def mapWriteByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if addr < 0x2000:
-            if self.nCHRBanks == 0:
+            if self.CHRBanks == 0:
                 return (True, addr)
             return (True, 0)
         else:
             return (False, 0)
         
     def reset(self):
-        self.nControlRegister, self.nLoadRegister, self.nLoadRegisterCount = 0x1C, 0x00, 0x00 
-        self.nCHRBankSelect8, self.nCHRBankSelect4Lo, self.nCHRBankSelect4Hi = 0x00, 0x00, 0x00
-        self.nCHRBankSelect32, self.nCHRBankSelect16Lo, self.nCHRBankSelect16Hi = 0x00, 0x00, self.nCHRBanks - 1
+        self.ControlRegister, self.loadRegister, self.loadRegisterCount = 0x1C, 0x00, 0x00 
+        self.CHRBankSelect8, self.CHRBankSelect4Lo, self.CHRBankSelect4Hi = 0x00, 0x00, 0x00
+        self.PRGBankSelect32, self.PRGBankSelect16Lo, self.PRGBankSelect16Hi = 0x00, 0x00, self.PRGBanks - 1
 
     def mirror(self) -> uint8:
         return self.mirrormode
@@ -171,45 +172,46 @@ class Mapper001(Mapper):
 class Mapper002(Mapper):
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
         super().__init__(prgBanks, chrBanks)
-        self.nPRGBankSelectLo, self.nPRGBankSelectHi = 0x00, 0x00
+        self.PRGBankSelectLo, self.PRGBankSelectHi = 0x00, 0x00
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x8000 <= addr <= 0xBFFF:
-            return (True, self.nPRGBankSelectLo * 0x4000 + addr & 0x3FFF, 0)
+            mapped_addr = self.PRGBankSelectLo * 0x4000 + (addr & 0x3FFF)
+            return (True, mapped_addr, 0)
         if 0xC000 <= addr <= 0xFFFF:
-            return (True, self.nPRGBankSelectHi * 0x4000 + addr & 0x3FFF, 0)
-        return (False, addr, 0)
+            mapped_addr = self.PRGBankSelectHi * 0x4000 + (addr & 0x3FFF)
+            return (True, mapped_addr, 0)
+        return (False, 0, 0)
 
     def mapWriteByCPU(self, addr: uint16, data: uint8) -> Tuple[bool, uint32]:
         if 0x8000 <= addr <= 0xFFFF:
-            self.nPRGBankSelectLo = data & 0x0F
-        return (False, addr)
+            self.PRGBankSelectLo = data & 0x0F
+        return (False, 0)
 
     def mapReadByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if addr < 0x2000:
             return (True, addr)
-        else:
-            return (False, addr)
+        return (False, addr)
 
     def mapWriteByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if addr < 0x2000:
-            if self.nCHRBanks == 0:
+            if self.CHRBanks == 0:
                 return (True, addr)
         return (False, addr)
 
     def reset(self):
-        self.nPRGBankSelectLo, self.nPRGBankSelectHi = 0, self.nPRGBanks - 1
+        self.PRGBankSelectLo, self.PRGBankSelectHi = 0, self.PRGBanks - 1
 
 class Mapper003(Mapper):
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
         super().__init__(prgBanks, chrBanks)
-        self.nCHRBankSelect = 0x00
+        self.CHRBankSelect = 0x00
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x8000 <= addr <= 0xFFFF:
-            if self.nPRGBanks == 1:
+            if self.PRGBanks == 1:
                 mapped_addr = addr & 0x3FFF
-            if self.nPRGBanks == 2:
+            if self.PRGBanks == 2:
                 mapped_addr = addr & 0x7FFF
             return (True, mapped_addr, 0)
         else:
@@ -217,14 +219,15 @@ class Mapper003(Mapper):
         
     def mapWriteByCPU(self, addr: uint16, data: uint8) -> Tuple[bool, uint32]:
         mapped_addr = 0
+        
         if 0x8000 <= addr <= 0xFFFF:
-            self.nCHRBankSelect = data & 0x03
+            self.CHRBankSelect = data & 0x03
             mapped_addr = addr 
         return (False, mapped_addr)
     
     def mapReadByPPU(self, addr: uint16) -> Tuple[bool, uint32]:
         if addr < 0x2000:
-            return (True, self.nCHRBankSelect * 0x2000 + addr)
+            return (True, self.CHRBankSelect * 0x2000 + addr)
         else:
             return (False, 0)
         
@@ -232,7 +235,7 @@ class Mapper003(Mapper):
         return (False, 0)
     
     def reset(self):
-        self.nCHRBankSelect = 0
+        self.CHRBankSelect = 0
 
 class Mapper004(Mapper):
     def __init__(self, prgBanks: uint8, chrBanks: uint8) -> None:
@@ -290,12 +293,12 @@ class Mapper004(Mapper):
                     self.CHRBank[7] = self.register[5] * 0x4000
                 if self.PRGBankMode:
                     self.PRGBank[2] = (self.register[6] & 0x3F) * 0x2000
-                    self.PRGBank[0] = (self.nPRGBanks * 2 - 2) * 0x2000
+                    self.PRGBank[0] = (self.PRGBanks * 2 - 2) * 0x2000
                 else:
                     self.PRGBank[0] = (self.register[6] & 0x3F) * 0x2000
-                    self.PRGBank[2] = (self.nPRGBanks * 2 - 2) * 0x2000   
+                    self.PRGBank[2] = (self.PRGBanks * 2 - 2) * 0x2000   
                 self.PRGBank[1] = (self.register[7] & 0x3F) * 0x2000
-                self.PRGBank[3] = (self.nPRGBanks * 2 - 1) * 0x2000    
+                self.PRGBank[3] = (self.PRGBanks * 2 - 1) * 0x2000    
             return (False, 0)                      
         if 0xA000 <= addr <= 0xBFFF:
             if addr & 0x0001 == 0:
@@ -361,8 +364,8 @@ class Mapper004(Mapper):
             self.register[i] = 0
         self.PRGBank[0] = 0 * 0x2000
         self.PRGBank[1] = 1 * 0x2000
-        self.PRGBank[2] = (self.nPRGBanks * 2 - 2) * 0x2000
-        self.PRGBank[3] = (self.nPRGBanks * 2 - 1) * 0x2000
+        self.PRGBank[2] = (self.PRGBanks * 2 - 2) * 0x2000
+        self.PRGBank[3] = (self.PRGBanks * 2 - 1) * 0x2000
 
     def irqState(self) -> bool:
         return self.IRQActive
@@ -388,7 +391,7 @@ class Mapper066(Mapper):
 
     def mapReadByCPU(self, addr: uint16) -> Tuple[bool, uint32, uint8]:
         if 0x8000 <= addr <= 0xFFFF:
-            return (True, self.PRGBankSelect * 0x8000 + addr & 0x7FFF, 0)
+            return (True, self.PRGBankSelect * 0x8000 + (addr & 0x7FFF), 0)
         else:
             return (False, 0, 0)
         

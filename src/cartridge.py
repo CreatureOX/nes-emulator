@@ -51,6 +51,8 @@ class Cartridge:
     mirror: int
 
     def __init__(self, filename: str) -> None:
+        INES, NES2 = 1, 2
+
         with open(filename, 'rb') as nes:
             self.header = Header(nes.read(16))
 
@@ -60,13 +62,13 @@ class Cartridge:
             mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
-            fileType: uint8 = 1
+            fileType: uint8 = INES
             if self.header.mapper2 & 0x0C == 0x08:
-                fileType = 2
+                fileType = NES2
             
             if fileType == 0:
                 pass
-            if fileType == 1:
+            if fileType == INES:
                 PRGBanks = self.header.prg_rom_chunks
                 self.PRGMemory = frombuffer(nes.read(16384 * PRGBanks), dtype=uint8).copy()
                 
@@ -80,7 +82,7 @@ class Cartridge:
                 if self.header.mapper2 & 0b10 != 0:
                     self.playChoiceINSTMemory = nes.read(8192)
                     self.playChoicePMemory = nes.read(16)
-            if fileType == 2:
+            if fileType == NES2:
                 PRGBanks = (self.header.prg_ram_size & 0x07) << 8 | self.header.prg_rom_chunks
                 self.PRGMemory = frombuffer(nes.read(16384 * PRGBanks), dtype=uint8).copy()
 
