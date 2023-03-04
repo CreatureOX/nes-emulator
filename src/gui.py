@@ -2,9 +2,9 @@ import PySimpleGUI as gui
 import pygame
 import os
 import numpy as np
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from PIL import Image, ImageTk
-import matplotlib.pyplot as plt
+import cv2
 import pyximport; pyximport.install()
 
 from console import Console
@@ -18,24 +18,25 @@ class Emulator:
     ]
     
     screen_layout = [
-        [gui.Graph(key="SCREEN", canvas_size=(256,240), graph_bottom_left=(0,0), graph_top_right=(256,240), background_color='BLACK')]
+        [gui.Graph(key="SCREEN", canvas_size=(256,240), graph_bottom_left=(0,0), graph_top_right=(256,240), background_color='BLACK', expand_x=True, expand_y=True)]
     ]
 
     layout = [
         [gui.Menu(menu_def)],
-        [gui.Column(screen_layout)],
+        [gui.Column(screen_layout, expand_x=True, expand_y=True)],
     ]
 
     console: Console = None
 
     def __init__(self) -> None:
-        self.window = gui.Window('NES Emulator', self.layout, size = (256+20, 240+20), resizable = True).Finalize()
+        self.window = gui.Window('NES Emulator', self.layout, size = (256+20, 240+20), resizable = True, finalize=True)
         os.environ['SDL_WINDOWID'] = str(self.window['SCREEN'].TKCanvas.winfo_id())
         os.environ['SDL_VIDEODRIVER'] = 'windib'
-        self.gameScreen = pygame.display.set_mode((256, 240))
+        self.gameScreen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
         self.gameClock = pygame.time.Clock()
         self.fps = 60
         pygame.display.init()
+        self.lock = Lock()
 
     def openCPUDebug(self) -> bool:
         def cpu_debug_layout():
@@ -166,9 +167,18 @@ class Emulator:
         self.console.reset()
         self.window.TKroot.title('NES Emulator ' + filename)
         return True
+    
+    def resize(self, originalImage: np.ndarray) -> np.ndarray:
+        with self.lock:
+            for event in pygame.event.get():
+                if event.type == pygame.VIDEORESIZE:
+                    self.cur_w, self.cur_h = event.w, event.h
+                    self.gameScreen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
+            resizedImage = cv2.resize(originalImage, (self.cur_h, self.cur_w))
+        return resizedImage        
 
     def run(self, stop: Event) -> bool:
-        while not stop.is_set():
+        while not stop.is_set():              
             pressed = pygame.key.get_pressed()
             self.console.control([
                 pressed[pygame.K_x],pressed[pygame.K_z],pressed[pygame.K_a],pressed[pygame.K_s],
@@ -176,15 +186,16 @@ class Emulator:
             ]) 
             self.gameClock.tick(self.fps)
             self.console.run()
-            n = np.swapaxes(self.console.bus.ppu.getScreen(), 0, 1)
-            surf = pygame.surfarray.make_surface(n)
+            originalImage = np.swapaxes(self.console.bus.ppu.getScreen(), 0, 1)
+            resizedImage = self.resize(originalImage)
+            surf = pygame.surfarray.make_surface(resizedImage)
             self.gameScreen.blit(surf, (0,0))
             pygame.display.flip()
         return True
 
     def emulate(self) -> None:
         stop = Event()
-        while True:
+        while True:   
             event, values = self.window.read()
             success = True
             if event in (None, 'Exit'):
@@ -201,7 +212,7 @@ class Emulator:
             elif event == 'Hex Viewer':
                 success = self.openHexViewer()
             elif event == 'About':
-                gui.popup('Nes Emulator\nVersion: 0\nAuthor: CreatureOX\n')  
+                gui.popup('Nes Emulator\nVersion: 0\nAuthor: CreatureOX\n')           
             if not success:
                 continue      
         self.window.close()
