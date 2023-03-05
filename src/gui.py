@@ -5,6 +5,7 @@ import numpy as np
 from threading import Thread, Event, Lock
 from PIL import Image, ImageTk
 import cv2
+import json
 import pyximport; pyximport.install()
 
 from console import Console
@@ -13,6 +14,7 @@ from console import Console
 class Emulator:
     menu_def = [
         ['File', ['Open File','Exit']],
+        ['Config', ['Keyboard']],
         ['Debug', ['CPU','PPU','Hex Viewer']],
         ['Help', ['About',]],
     ]
@@ -26,10 +28,19 @@ class Emulator:
         [gui.Column(screen_layout, expand_x=True, expand_y=True)],
     ]
 
+    keyboard_mapping = {
+        '1':pygame.K_1,'2':pygame.K_2,'3':pygame.K_3,'4':pygame.K_4,'5':pygame.K_5,'6':pygame.K_6,'7':pygame.K_7,'8':pygame.K_8,'9':pygame.K_9,'0':pygame.K_0,
+        'Q':pygame.K_q,'W':pygame.K_w,'E':pygame.K_e,'R':pygame.K_r,'T':pygame.K_t,'Y':pygame.K_y,'U':pygame.K_u,'I':pygame.K_i,'O':pygame.K_o,'P':pygame.K_p,
+        'A':pygame.K_a,'S':pygame.K_s,'D':pygame.K_d,'F':pygame.K_f,'G':pygame.K_g,'H':pygame.K_h,'J':pygame.K_j,'K':pygame.K_k,'L':pygame.K_l,
+        'Z':pygame.K_z,'X':pygame.K_x,'C':pygame.K_c,'V':pygame.K_v,'B':pygame.K_b,'N':pygame.K_n,'M':pygame.K_m,
+        'UP':pygame.K_UP,'DOWN':pygame.K_DOWN,'LEFT':pygame.K_LEFT,'RIGHT':pygame.K_RIGHT,
+    }
+
     console: Console = None
 
     def __init__(self) -> None:
         self.window = gui.Window('NES Emulator', self.layout, size = (256+20, 240+20), resizable = True, finalize=True)
+        self.loadKeyboardSetting(filename = 'keyboard.json')
         os.environ['SDL_WINDOWID'] = str(self.window['SCREEN'].TKCanvas.winfo_id())
         os.environ['SDL_VIDEODRIVER'] = 'windib'
         self.gameScreen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
@@ -38,27 +49,108 @@ class Emulator:
         pygame.display.init()
         self.lock = Lock()
 
+    def saveKeyboardSetting(self, values, filename = None) -> bool:
+        def validate_keyboard_setting(values) -> bool:
+            setting = [
+                values['UP'], values['DOWN'], values['LEFT'], values['RIGHT'],
+                values['SELECT'], values['START'], values['B'], values['A'],
+            ]
+            if len(setting) != len(set(setting)):
+                gui.popup('keyboard setting conflict!')
+                return False
+            for key in setting:
+                if key not in self.keyboard_mapping.keys():
+                    gui.popup('not support {}!'.format(key))
+                    return False
+            return True
+        
+        if not validate_keyboard_setting(values):
+            return False
+        self.keyboard = {
+            'UP': self.keyboard_mapping[values['UP']],
+            'DOWN': self.keyboard_mapping[values['DOWN']],
+            'LEFT': self.keyboard_mapping[values['LEFT']],
+            'RIGHT': self.keyboard_mapping[values['RIGHT']],
+            'SELECT': self.keyboard_mapping[values['SELECT']],
+            'START': self.keyboard_mapping[values['START']],
+            'B': self.keyboard_mapping[values['B']],
+            'A': self.keyboard_mapping[values['A']],
+        }
+        if filename:
+            with open(filename, 'w') as keyboard_setting:
+                json.dump(self.keyboard, keyboard_setting)
+        return True
+
+    def loadKeyboardSetting(self, filename = None):
+        default_keyboard = {
+            'UP': pygame.K_UP,
+            'DOWN': pygame.K_DOWN,
+            'LEFT': pygame.K_LEFT,
+            'RIGHT': pygame.K_RIGHT,
+            'SELECT': pygame.K_c,
+            'START': pygame.K_v,
+            'B': pygame.K_x,
+            'A': pygame.K_z,
+        } 
+        if not filename or not os.path.exists(filename):
+            self.keyboard = default_keyboard
+            return
+        with open(filename, 'r') as keyboard_setting:
+            try:
+                self.keyboard = json.load(keyboard_setting)
+            except:
+                self.keyboard = default_keyboard
+
+    def openKeyboardSetting(self) -> bool:
+        def getKey(name):
+            return [k for k, v in self.keyboard_mapping.items() if v == self.keyboard[name]][0]
+        
+        def keyboard_setting_layout():
+            return [
+                [gui.Text("↑", size=(2,1)), gui.InputText(default_text=getKey("UP"), key="UP", size=(6,1)), gui.Text("SELECT", size=(7,1)), gui.InputText(default_text=getKey("SELECT"), key="SELECT", size=(6,1)),],
+                [gui.Text("↓", size=(2,1)), gui.InputText(default_text=getKey("DOWN"), key="DOWN", size=(6,1)), gui.Text("  START", size=(7,1)), gui.InputText(default_text=getKey("START"), key="START", size=(6,1)),],
+                [gui.Text("←", size=(2,1)), gui.InputText(default_text=getKey("LEFT"), key="LEFT", size=(6,1)), gui.Text("      B", size=(7,1)), gui.InputText(default_text=getKey("B"), key="B", size=(6,1)),],
+                [gui.Text("→", size=(2,1)), gui.InputText(default_text=getKey("RIGHT"), key="RIGHT", size=(6,1)), gui.Text("      A", size=(7,1)), gui.InputText(default_text=getKey("A"), key="A", size=(6,1)),],
+                [gui.Button("Apply", key="APPLY")],
+            ]
+        
+        keyboard_setting_window = gui.Window('KEYBOARD', keyboard_setting_layout(), return_keyboard_events = True)
+        while True:
+            event, values = keyboard_setting_window.read()
+            if event in (None, 'Exit'):
+                break
+            if event == 'APPLY':
+                success = self.saveKeyboardSetting(values, filename='keyboard.json')
+                if not success:
+                    continue
+            else:
+                focus_element = keyboard_setting_window.find_element_with_focus()
+                keyboard_setting_window[focus_element.key].Update(event.split(":")[0].upper())
+        keyboard_setting_window.close()
+        return True
+
     def openCPUDebug(self) -> bool:
         def cpu_debug_layout():
             return [
                 [
-                    gui.Text("STATUS: ",size=(8,1),text_color='WHITE'),
-                    gui.Text("N",key="N",size=(1,1),text_color='WHITE'),
-                    gui.Text("V",key="V",size=(1,1),text_color='WHITE'),
-                    gui.Text("B",key="B",size=(1,1),text_color='WHITE'),
-                    gui.Text("D",key="D",size=(1,1),text_color='WHITE'),
-                    gui.Text("I",key="I",size=(1,1),text_color='WHITE'),
-                    gui.Text("Z",key="Z",size=(1,1),text_color='WHITE'),
+                    gui.Text("STATUS: ", size=(8,1), text_color='WHITE'),
+                    gui.Text("N", key="N", size=(1,1), text_color='WHITE'),
+                    gui.Text("V", key="V", size=(1,1), text_color='WHITE'),
+                    gui.Text("B", key="B", size=(1,1), text_color='WHITE'),
+                    gui.Text("D", key="D", size=(1,1), text_color='WHITE'),
+                    gui.Text("I", key="I", size=(1,1), text_color='WHITE'),
+                    gui.Text("Z", key="Z", size=(1,1), text_color='WHITE'),
                 ],
                 [
-                    gui.Text("PC: $0x0000",key="PC",size=(11,1)),
-                    gui.Text("A: $0x00",key="A",size=(8,1)),
-                    gui.Text("X: $0x00",key="X",size=(8,1)),
-                    gui.Text("Y: $0x00",key="Y",size=(8,1)),
-                    gui.Text("SP: $0x0000",key="SP",size=(10,1)),
+                    gui.Text("PC: $0x0000", key="PC", size=(11,1)),
+                    gui.Text("A: $0x00", key="A", size=(8,1)),
+                    gui.Text("X: $0x00", key="X", size=(8,1)),
+                    gui.Text("Y: $0x00", key="Y", size=(8,1)),
+                    gui.Text("SP: $0x0000", key="SP", size=(10,1)),
                 ],
                 [gui.Multiline(key="READABLE", size=(50,10), background_color='BLUE', disabled=True)],
             ]
+        
         cpu_debug_window = gui.Window('CPU DEBUG', cpu_debug_layout())
         while True:
             event, values = cpu_debug_window.read(timeout=0)
@@ -76,7 +168,8 @@ class Emulator:
             return [
                 [gui.Image(key="PATTERN_0", size=(128,128)), gui.Image(key="PATTERN_1", size=(128,128))],
                 [gui.Image(key="PALETTE", size=(4*10,16*10))],
-            ]            
+            ]     
+               
         ppu_debug_window = gui.Window('PPU DEBUG', ppu_debug_layout())
         while True:
             event, values = ppu_debug_window.read(timeout=0)
@@ -98,6 +191,7 @@ class Emulator:
                 ],
                 [gui.Multiline(key="HEX", size=(55,10), background_color='BLUE', text_color='WHITE', disabled=True)]
             ]
+        
         hex_viewer_window = gui.Window("Hex Viewer", hex_viewer_layout())
         while True:
             event, values = hex_viewer_window.read(timeout=1000)
@@ -181,8 +275,8 @@ class Emulator:
         while not stop.is_set():              
             pressed = pygame.key.get_pressed()
             self.console.control([
-                pressed[pygame.K_x],pressed[pygame.K_z],pressed[pygame.K_a],pressed[pygame.K_s],
-                pressed[pygame.K_UP],pressed[pygame.K_DOWN],pressed[pygame.K_LEFT],pressed[pygame.K_RIGHT]
+                pressed[self.keyboard['SELECT']],pressed[self.keyboard['START']],pressed[self.keyboard['B']],pressed[self.keyboard['A']],
+                pressed[self.keyboard['UP']],pressed[self.keyboard['DOWN']],pressed[self.keyboard['LEFT']],pressed[self.keyboard['RIGHT']]
             ]) 
             self.gameClock.tick(self.fps)
             self.console.run()
@@ -205,6 +299,8 @@ class Emulator:
                 success = self.openFile()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
+            elif event == 'Keyboard':
+                success = self.openKeyboardSetting()
             elif event == 'CPU':
                 success = self.openCPUDebug()
             elif event == 'PPU':
