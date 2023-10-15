@@ -36,6 +36,7 @@ setup(
         Extension("bus", sources=["./bus.pyx"]),
         Extension("cpu", sources=["./cpu.pyx"]),
         Extension("ppu", sources=["./ppu.pyx"]),
+        Extension("apu", sources=["./apu.pyx"]),
         Extension("console", sources=["./console.pyx"]),
     ], compiler_directives={'language_level' : "3"}, 
     annotate=True),

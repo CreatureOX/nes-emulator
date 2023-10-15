@@ -1088,7 +1088,7 @@ class CPU6502:
 
     clock_count: int
 
-    def clock(self) -> None:
+    def clock(self) -> uint8:
         '''
         Perform one clock cycle
         '''
@@ -1110,6 +1110,7 @@ class CPU6502:
 
         self.clock_count += 1
         self.remaining_cycles -= 1
+        return additional_cycle1 + additional_cycle2
 
     def complete(self) -> bool:
         return self.remaining_cycles == 0

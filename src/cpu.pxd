@@ -135,5 +135,5 @@ cdef class CPU6502:
 
     cdef int clock_count
     
-    cdef void clock(self)
+    cdef uint8_t clock(self)
     cpdef bint complete(self)

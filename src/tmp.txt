@@ -1,0 +1,26 @@
+APUUnit.enable = length_counter.enable
+APUUnit.length_ctr = length_counter.counter 
+APUUnit.ctr_halt = length_counter.halt
+
+APUEnvelope.start_flag = EnvelopeGenerator.start
+APUEnvelope.loop_flag = EnvelopeGenerator.loop
+APUEnvelope.decay_level = EnvelopeGenerator.counter
+APUEnvelope.divider = EnvelopeGenerator.Divider
+APUEnvelope.volume = EnvelopeGenerator.constantVolume
+APUPulse.constant_volume = EnvelopeGenerator.constantVolumeMode
+
+APUTriangle.period = TriangleChannel.Timer.period
+APUTriangle.linear_reload_flag = LinearCounter.reload
+APUTriangle.linear_reload_value = LinearCounter.Divider.period
+APUTriangle.linear_ctr = LinearCounter.Divider
+APUUnit.ctr_halt = LinearCounter.control
+
+APUPulse.sweep_enable = SweepUnit.enabled
+APUPulse.sweep_negate = SweepUnit.negate
+APUPulse.sweep_reload = SweepUnit.reload
+APUPulse.sweep_period = SweepUnit.Divider.period
+APUPulse.sweep_shift = SweepUnit.shiftCount
+APUPulse.sweep_divider = SweepUnit.Divider
+APUPulse.adjusted_period  ?
+APUPulse.phase = PulseWaveGenerator.step
+APUPulse.period = PulseChannel.Timer.period
