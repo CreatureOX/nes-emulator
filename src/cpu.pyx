@@ -1063,11 +1063,14 @@ cdef class CPU6502:
 
         self.remaining_cycles = 8
         
-    cdef void clock(self):
+    cdef uint8_t clock(self):
         '''
         Perform one clock cycle
         '''
         cdef Op op 
+        cdef uint8_t op_cycles = 0
+        cdef uint8_t additional_cycle1 = 0
+        cdef uint8_t additional_cycle2 = 0
 
         if self.remaining_cycles == 0:
             self.opcode = self.read(self.pc)
@@ -1075,8 +1078,9 @@ cdef class CPU6502:
             self.set_pc(self.pc + 1)
             op = self.lookup[self.opcode]
             self.remaining_cycles = op.cycles
-            additional_cycle1: uint8 = op.addrmode()
-            additional_cycle2: uint8 = op.operate()
+            op_cycles = op.cycles
+            additional_cycle1 = op.addrmode()
+            additional_cycle2 = op.operate()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.setFlag(U, True)
             # if debug:
@@ -1087,6 +1091,7 @@ cdef class CPU6502:
 
         self.clock_count += 1
         self.remaining_cycles -= 1
+        return op_cycles + additional_cycle1 + additional_cycle2
 
     cpdef bint complete(self):
         return self.remaining_cycles == 0

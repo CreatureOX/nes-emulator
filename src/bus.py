@@ -32,11 +32,11 @@ class CPUBus:
 
         from cpu import CPU6502
         from ppu import PPU2C02
-        # from apu import APU2A03
+        from apu import APU2A03
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
-        # self.apu = APU2A03()
+        self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connectBus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -50,7 +50,7 @@ class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
-            pass
+            data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -65,7 +65,7 @@ class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
-            pass
+            self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
             self.dma_page = data
             self.dma_addr = 0x00
@@ -77,14 +77,18 @@ class CPUBus:
         self.cartridge.reset()
         self.cpu.reset()
         self.ppu.reset()
+        self.apu.reset()
         self.nSystemClockCounter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+        self.cycles = 0
 
-    def clock(self) -> None:
+    def clock(self) -> float:
+        cycles = 0
+
         self.ppu.clock()
         if self.nSystemClockCounter % 3 == 0:
             if self.dma_transfer:
@@ -101,7 +105,7 @@ class CPUBus:
                             self.dma_transfer = False
                             self.dma_dummy = True
             else:
-                self.cpu.clock()
+                cycles = self.cpu.clock()
         if self.ppu.nmi:
             self.ppu.nmi = False
             self.cpu.nmi()
@@ -111,3 +115,5 @@ class CPUBus:
             self.cpu.irq()
             
         self.nSystemClockCounter += 1
+        sample: float = self.apu.clock(cycles)
+        return sample

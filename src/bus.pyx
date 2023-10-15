@@ -3,6 +3,7 @@ from libc.stdint cimport uint8_t, uint16_t, uint32_t
 from cartridge cimport Cartridge
 from cpu cimport CPU6502
 from ppu cimport PPU2C02
+from apu cimport APU2A03
 
 
 cdef class CPUBus:
@@ -21,6 +22,7 @@ cdef class CPUBus:
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
+        self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connectBus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -34,7 +36,7 @@ cdef class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
-            pass
+            data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
@@ -49,7 +51,7 @@ cdef class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
-            pass
+            self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
             self.dma_page = data
             self.dma_addr = 0x00
@@ -61,6 +63,7 @@ cdef class CPUBus:
         self.cartridge.reset()
         self.cpu.reset()
         self.ppu.reset()
+        # self.apu.reset()
         self.nSystemClockCounter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
@@ -69,6 +72,8 @@ cdef class CPUBus:
         self.dma_transfer = False
 
     cpdef void clock(self) except *:
+        cdef uint8_t cycles = 0
+
         self.ppu.clock()
         if self.nSystemClockCounter % 3 == 0:
             if self.dma_transfer:
@@ -85,7 +90,7 @@ cdef class CPUBus:
                             self.dma_transfer = False
                             self.dma_dummy = True
             else:
-                self.cpu.clock()
+                cycles = self.cpu.clock()
         if self.ppu.nmi:
             self.ppu.nmi = False
             self.cpu.nmi()
@@ -95,3 +100,6 @@ cdef class CPUBus:
             self.cpu.irq()
 
         self.nSystemClockCounter += 1
+        self.apu.clock(cycles)
+        # if sample > 0.0:
+        #     print(sample)

@@ -1,7 +1,8 @@
 from libc.stdint cimport uint8_t, int8_t
 
 from cpu cimport C, Z, I, D, B, U, V, N
-
+import pyaudio
+import pygame
 
 K_x = 0
 K_z = 1
@@ -42,8 +43,20 @@ cdef class Console:
         self.bus.ppu.frame_complete = False
 
     cpdef void run(self):
+        clock = pygame.time.Clock()
+        audio = pyaudio.PyAudio()
+        player = audio.open(format=pyaudio.paInt16,
+                        channels=1,
+                        rate=48000,
+                        output=True,
+                        frames_per_buffer=400,
+                        stream_callback=self.bus.apu.pyaudio_callback,
+                        )
+        player.start_stream()                
         while True:
             self.bus.clock()
+            while self.bus.apu.buffer_remaining() > 2400 and player.is_active():
+                clock.tick(240)  # wait for about 2ms (~= 96 samples)
             if self.bus.ppu.frame_complete:
                 break
         self.bus.ppu.frame_complete = False 
