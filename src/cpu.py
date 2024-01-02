@@ -1,5 +1,5 @@
-from typing import List, Dict
-from numpy import uint16, uint8, int8
+from typing import List
+from numpy import uint16, uint8
 import cython
 
 from bus import CPUBus
