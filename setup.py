@@ -23,7 +23,7 @@ class Clean(Command):
                     or filename.endswith(".html"):
                     os.remove(dirpath + "\\" + filename)
 
-os.chdir("./src") 
+os.chdir("./nes") 
 
 setup(
     cmdclass={
