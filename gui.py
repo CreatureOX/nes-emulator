@@ -312,6 +312,3 @@ class Emulator:
             if not success:
                 continue      
         self.window.close()
-
-emu = Emulator()
-emu.emulate()

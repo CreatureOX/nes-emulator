@@ -23,21 +23,19 @@ class Clean(Command):
                     or filename.endswith(".html"):
                     os.remove(dirpath + "\\" + filename)
 
-os.chdir("./nes") 
-
 setup(
     cmdclass={
         "clean": Clean
     },
     ext_modules=cythonize([
-        Extension("mirror", sources=["./mirror.pyx"]),
-        Extension("mapper", sources=["./mapper.pyx"]),
-        Extension("cartridge", sources=["./cartridge.pyx"]),
-        Extension("bus", sources=["./bus.pyx"]),
-        Extension("cpu", sources=["./cpu.pyx"]),
-        Extension("ppu", sources=["./ppu.pyx"]),
-        Extension("apu", sources=["./apu.pyx"]),
-        Extension("console", sources=["./console.pyx"]),
+        Extension("mirror", sources=["./nes/mirror.pyx"]),
+        Extension("mapper", sources=["./nes/mapper.pyx"]),
+        Extension("cartridge", sources=["./nes/cartridge.pyx"]),
+        Extension("bus", sources=["./nes/bus.pyx"]),
+        Extension("cpu", sources=["./nes/cpu.pyx"]),
+        Extension("ppu", sources=["./nes/ppu.pyx"]),
+        Extension("apu", sources=["./nes/apu.pyx"]),
+        Extension("console", sources=["./nes/console.pyx"]),
     ], compiler_directives={'language_level' : "3"}, 
     annotate=True),
     include_dirs=[np.get_include()]
