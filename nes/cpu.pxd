@@ -41,6 +41,11 @@ cdef class CPU6502:
     cdef void set_addr_abs(self, long)
     cdef void set_addr_rel(self, long)
 
+    cdef void push(self, uint8_t)
+    cdef uint8_t pull(self)
+    cdef void push_2_bytes(self, uint16_t)
+    cdef uint16_t pull_2_bytes(self)
+
     cpdef uint8_t IMP(self)
     cpdef uint8_t IMM(self)
     cpdef uint8_t ZP0(self)

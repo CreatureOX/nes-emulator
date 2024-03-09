@@ -172,6 +172,37 @@ cdef class CPU6502:
     cdef void set_addr_rel(self, long addr_rel):
         self.addr_rel = <uint16_t> addr_rel & 0xFFFF
 
+    cdef void push(self, uint8_t data):
+        '''
+        push 1 byte (8 bits) to the stack
+        '''
+        self.write(0x0100 + self.registers.SP, data)
+        self.registers.SP -= 1
+
+    cdef uint8_t pull(self):
+        '''
+        pop 1 byte (8 bits) from the stack
+        '''
+        self.registers.SP += 1
+        return self.read(0x0100 + self.registers.SP)
+
+    cdef void push_2_bytes(self, uint16_t data):
+        '''
+        push 2 bytes (16 bits) to the stack
+        '''
+        cdef uint8_t hi = <uint8_t> (data >> 8)
+        cdef uint8_t lo = <uint8_t> (data & 0xFF)
+        self.push(hi)
+        self.push(lo)
+
+    cdef uint16_t pull_2_bytes(self):
+        '''
+        pop 2 bytes (16 bits) from the stack
+        '''
+        cdef uint16_t lo = <uint16_t> self.pull()
+        cdef uint16_t hi = <uint16_t> self.pull()
+        return hi << 8 | lo
+
     cpdef uint8_t IMP(self):
         '''
         Address Mode: Implied
@@ -510,14 +541,10 @@ cdef class CPU6502:
         self.registers.PC += 1
     
         self.registers.status.I = True
-        self.write(0x0100 + self.registers.SP, (self.registers.PC >> 8) & 0x00FF)
-        self.registers.SP -= 1
-        self.write(0x0100 + self.registers.SP, self.registers.PC & 0x00FF)
-        self.registers.SP -= 1
+        self.push_2_bytes(self.registers.PC)
 
         self.registers.status.B = True
-        self.write(0x0100 + self.registers.SP, self.registers.status.value)
-        self.registers.SP -= 1
+        self.push(self.registers.status.value)
         self.registers.status.B = False
         
         self.registers.PC = self.read(0xFFFE) | self.read(0xFFFF) << 8
@@ -738,12 +765,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.PC -= 1
-
-        self.write(0x0100 + self.registers.SP, (self.registers.PC >> 8) & 0x00FF)
-        self.registers.SP -= 1
-        self.write(0x0100 + self.registers.SP, self.registers.PC & 0x00FF)
-        self.registers.SP -= 1
-
+        self.push_2_bytes(self.registers.PC)
         self.registers.PC = self.addr_abs
         return 0
 
@@ -833,8 +855,7 @@ cdef class CPU6502:
         Function:    A -> stack
         Return:      Require additional 0 clock cycle
         '''
-        self.write(0x0100 + self.registers.SP, self.registers.A)
-        self.registers.SP -= 1
+        self.push(self.registers.A)
         return 0
 
     cpdef uint8_t PHP(self):
@@ -843,10 +864,9 @@ cdef class CPU6502:
         Function:    status -> stack
         Return:      Require additional 0 clock cycle
         '''
-        self.write(0x0100 + self.registers.SP, self.registers.status.value | self.registers.status.status_mask["B"] | self.registers.status.status_mask["U"])
+        self.push(self.registers.status.value | self.registers.status.status_mask["B"] | self.registers.status.status_mask["U"])
         self.registers.status.B = False
         self.registers.status.U = False
-        self.registers.SP -= 1
         return 0
 
     cpdef uint8_t PLA(self):
@@ -856,8 +876,7 @@ cdef class CPU6502:
         Flags Out:   N, Z
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.SP += 1
-        self.registers.A = self.read(0x0100 + self.registers.SP)
+        self.registers.A = self.pull()
         self.registers.status.Z = self.registers.A == 0x00
         self.registers.status.N = self.registers.A & 0x80 > 0
         return 0
@@ -868,8 +887,7 @@ cdef class CPU6502:
         Function:    Status <- stack
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.SP += 1
-        self.registers.status.value = self.read(0x0100 + self.registers.SP)
+        self.registers.status.value = self.pull()
         self.registers.status.U = True
         return 0
 
@@ -907,25 +925,18 @@ cdef class CPU6502:
         '''
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.SP += 1
-        self.registers.status.value = self.read(0x0100 + self.registers.SP)
+        self.registers.status.value = self.pull()
         self.registers.status.value &= ~self.registers.status.status_mask["B"]
         self.registers.status.value &= ~self.registers.status.status_mask["U"]
 
-        self.registers.SP += 1
-        self.registers.PC = self.read(0x0100 + self.registers.SP)
-        self.registers.SP += 1
-        self.registers.PC |= self.read(0x0100 + self.registers.SP) << 8
+        self.registers.PC = self.pull_2_bytes()
         return 0
 
     cpdef uint8_t RTS(self):
         '''
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.SP += 1
-        self.registers.PC = self.read(0x0100 + self.registers.SP)
-        self.registers.SP += 1
-        self.registers.PC |= self.read(0x0100 + self.registers.SP) << 8
+        self.registers.PC = self.pull_2_bytes()
     
         self.registers.PC += 1
         return 0
@@ -1124,16 +1135,12 @@ cdef class CPU6502:
         cdef uint8_t lo, hi 
 
         if (self.registers.status.I == 0):
-            self.write(0x0100 + self.registers.SP, (self.registers.PC >> 8) & 0x00FF)
-            self.registers.SP -= 1
-            self.write(0x0100 + self.registers.SP, self.registers.PC & 0x00FF)
-            self.registers.SP -= 1
+            self.push_2_bytes(self.registers.PC)
             
             self.registers.status.B = False
             self.registers.status.U = True
             self.registers.status.I = True
-            self.write(0x0100 + self.registers.SP, self.registers.status.value)
-            self.registers.SP -= 1
+            self.push(self.registers.status.value)
 
             self.addr_abs = 0xFFFE
             lo = self.read(self.addr_abs + 0)
@@ -1148,16 +1155,12 @@ cdef class CPU6502:
         '''
         cdef uint8_t lo, hi 
 
-        self.write(0x0100 + self.registers.SP, (self.registers.PC >> 8) & 0x00FF)
-        self.registers.SP -= 1
-        self.write(0x0100 + self.registers.SP, self.registers.PC & 0x00FF)
-        self.registers.SP -= 1
+        self.push_2_bytes(self.registers.PC)
 
         self.registers.status.B = False
         self.registers.status.U = True
         self.registers.status.I = True
-        self.write(0x0100 + self.registers.SP, self.registers.status.value)
-        self.registers.SP -= 1
+        self.push(self.registers.status.value)
 
         self.addr_abs = 0xFFFA
         lo = self.read(self.addr_abs + 0)
