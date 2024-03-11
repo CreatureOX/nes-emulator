@@ -314,20 +314,20 @@ cdef class CPU6502:
 
     cpdef uint8_t IZX(self):
         '''
-        Address Mode: Indirect X
+        Address Mode: Indirect X / Indexed Indirect
         '''
         cdef uint8_t t = self.read(self.registers.PC)
         self.registers.PC += 1
 
         cdef uint8_t lo = self.read((t + self.registers.X) & 0x00FF)
-        cdef uint8_t hi = self.read((t + self.registers.X + 1) & 0x00FF)
-        
+        cdef uint8_t hi = self.read((t + self.registers.X + 1) & 0x00FF)     
         self.set_addr_abs((hi << 8) | lo)
+
         return 0
 
     cpdef uint8_t IZY(self):
         '''
-        Address Mode: Indirect Y
+        Address Mode: Indirect Y / Indirect Indexed
         '''
         cdef uint8_t t = self.read(self.registers.PC)
         self.registers.PC += 1
