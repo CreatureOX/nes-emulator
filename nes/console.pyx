@@ -1,6 +1,6 @@
 from libc.stdint cimport uint8_t, int8_t
 
-from cpu cimport C, Z, I, D, B, U, V, N
+from cpu cimport StatusRegister
 import pyaudio
 import pygame
 
@@ -82,13 +82,13 @@ cdef class Console:
 
     cpdef dict cpu_status_info(self):
         return {
-            "N": True if self.bus.cpu.status & N > 0 else False,
-            "V": True if self.bus.cpu.status & V > 0 else False,
-            "U": True if self.bus.cpu.status & U > 0 else False,
-            "B": True if self.bus.cpu.status & B > 0 else False,
-            "D": True if self.bus.cpu.status & D > 0 else False,
-            "I": True if self.bus.cpu.status & I > 0 else False,
-            "Z": True if self.bus.cpu.status & Z > 0 else False,
+            "N": True if self.bus.cpu.status & StatusRegister.status_mask["N"] > 0 else False,
+            "V": True if self.bus.cpu.status & StatusRegister.status_mask["V"] > 0 else False,
+            "U": True if self.bus.cpu.status & StatusRegister.status_mask["U"] > 0 else False,
+            "B": True if self.bus.cpu.status & StatusRegister.status_mask["B"] > 0 else False,
+            "D": True if self.bus.cpu.status & StatusRegister.status_mask["D"] > 0 else False,
+            "I": True if self.bus.cpu.status & StatusRegister.status_mask["I"] > 0 else False,
+            "Z": True if self.bus.cpu.status & StatusRegister.status_mask["Z"] > 0 else False,
         }
 
     cpdef dict cpu_registers_info(self):

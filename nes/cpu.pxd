@@ -3,15 +3,13 @@ from libc.stdint cimport uint8_t, uint16_t
 from bus cimport CPUBus
 
 
-cdef uint8_t C
-cdef uint8_t Z
-cdef uint8_t I
-cdef uint8_t D
-cdef uint8_t B
-cdef uint8_t U
-cdef uint8_t V
-cdef uint8_t N
+cdef class StatusRegister:
+    cdef uint8_t value
+    cdef dict status_mask
 
+    cdef void _set_status(self, uint8_t, bint)
+    cdef bint _get_status(self, uint8_t)
+    
 cdef class Op:
     cdef public str name
     cdef public object operate
@@ -24,16 +22,13 @@ cdef class CPU6502:
     cdef public uint8_t y
     cdef public uint8_t stkp
     cdef public uint16_t pc
-    cdef public uint8_t status
+    cdef public StatusRegister status
 
     cdef void set_a(self, uint8_t)
     cdef void set_x(self, uint8_t)
     cdef void set_y(self, uint8_t)
     cdef void set_stkp(self, uint8_t)
     cdef void set_pc(self, uint16_t)
-    cdef void set_status(self, uint8_t)
-    cdef uint8_t getFlag(self, uint8_t)
-    cdef void setFlag(self, uint8_t, bint)
 
     cdef uint8_t[2048] ram
     cdef CPUBus bus
