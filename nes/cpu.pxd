@@ -9,28 +9,25 @@ cdef class StatusRegister:
 
     cdef void _set_status(self, uint8_t, bint)
     cdef bint _get_status(self, uint8_t)
-    
+
+cdef class Registers:
+    cdef public uint16_t program_counter    
+    cdef public uint8_t stack_pointer
+    cdef public uint8_t accumulator
+    cdef public uint8_t index_X
+    cdef public uint8_t index_Y
+    cdef public StatusRegister status
+
 cdef class Op:
     cdef public str name
     cdef public object operate
     cdef public object addrmode
     cdef public int cycles
-
+    
 cdef class CPU6502:
-    cdef public uint8_t a 
-    cdef public uint8_t x
-    cdef public uint8_t y
-    cdef public uint8_t stkp
-    cdef public uint16_t pc
-    cdef public StatusRegister status
-
-    cdef void set_a(self, uint8_t)
-    cdef void set_x(self, uint8_t)
-    cdef void set_y(self, uint8_t)
-    cdef void set_stkp(self, uint8_t)
-    cdef void set_pc(self, uint16_t)
-
+    cdef Registers registers
     cdef uint8_t[2048] ram
+    
     cdef CPUBus bus
 
     cdef uint8_t read(self, uint16_t)
@@ -41,8 +38,8 @@ cdef class CPU6502:
     cdef uint16_t addr_rel
 
     cdef void set_fetched(self, uint8_t)
-    cdef void set_addr_abs(self, uint16_t)
-    cdef void set_addr_rel(self, uint16_t)
+    cdef void set_addr_abs(self, long)
+    cdef void set_addr_rel(self, long)
 
     cpdef uint8_t IMP(self)
     cpdef uint8_t IMM(self)
