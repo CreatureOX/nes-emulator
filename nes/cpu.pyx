@@ -222,27 +222,24 @@ cdef class CPU6502:
         '''
         Address Mode: Zero Page
         '''
-        self.set_addr_abs(self.read(self.registers.PC)) 
+        self.set_addr_abs(self.read(self.registers.PC) & 0x00FF)
         self.registers.PC += 1
-        self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
     cpdef uint8_t ZPX(self):
         '''
         Address Mode: Zero Page with X Offset
         '''
-        self.set_addr_abs(self.read(self.registers.PC) + self.registers.X)
+        self.set_addr_abs((self.read(self.registers.PC) + self.registers.X) & 0x00FF)
         self.registers.PC += 1
-        self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
     cpdef uint8_t ZPY(self):
         '''
         Address Mode: Zero Page with Y Offset
         '''
-        self.set_addr_abs(self.read(self.registers.PC) + self.registers.Y)
+        self.set_addr_abs((self.read(self.registers.PC) + self.registers.Y) & 0x00FF)
         self.registers.PC += 1
-        self.set_addr_abs(self.addr_abs & 0x00FF)
         return 0
 
     cpdef uint8_t REL(self):
@@ -276,9 +273,8 @@ cdef class CPU6502:
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC += 1
         
-        self.set_addr_abs((hi << 8) | lo)
-        self.set_addr_abs(self.addr_abs + self.registers.X)
-        
+        self.set_addr_abs(<uint16_t>(hi << 8 | lo) + self.registers.X)
+                
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
     cpdef uint8_t ABY(self):
@@ -290,9 +286,8 @@ cdef class CPU6502:
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC += 1
         
-        self.set_addr_abs((hi << 8) | lo)
-        self.set_addr_abs(self.addr_abs + self.registers.Y)
-
+        self.set_addr_abs(<uint16_t>(hi << 8 | lo) + self.registers.Y)
+        
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
     cpdef uint8_t IND(self):
@@ -334,7 +329,7 @@ cdef class CPU6502:
         
         cdef uint8_t lo = self.read(t & 0x00FF)
         cdef uint8_t hi = self.read((t + 1) & 0x00FF)
-
+        
         self.set_addr_abs((hi << 8) | lo)
         self.set_addr_abs(self.addr_abs + self.registers.Y)
 
@@ -1073,6 +1068,9 @@ cdef class CPU6502:
 
     def __init__(self, CPUBus bus):
         self.registers = Registers()
+        self.registers.status.value = 0x34
+        self.registers.SP = 0xFD
+        
         self.ram = [0x00] * 2 * 1024
 
         self.bus = bus
@@ -1113,15 +1111,14 @@ cdef class CPU6502:
         self.addr_abs = 0xFFFC
         cdef uint8_t lo = self.read(self.addr_abs + 0)
         cdef uint8_t hi = self.read(self.addr_abs + 1)
-        
         self.registers.PC = hi << 8 | lo
 
         self.registers.A = 0x00
         self.registers.X = 0x00
         self.registers.Y = 0x00
-        self.registers.SP = 0xFD
-        self.registers.status.value = 0x00 | self.registers.status.status_mask["U"]
-        
+        self.registers.SP -= 3
+        self.registers.status.I = True
+
         self.addr_rel = 0x0000
         self.addr_abs = 0x0000
         self.fetched = 0x00
