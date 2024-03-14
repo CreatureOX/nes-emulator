@@ -13,7 +13,7 @@ from console import Console
 
 class Emulator:
     menu_def = [
-        ['File', ['Open File','Exit']],
+        ['File', ['Open File','Reset','Exit']],
         ['Config', ['Keyboard']],
         ['Debug', ['CPU','PPU','Hex Viewer']],
         ['Help', ['About',]],
@@ -299,6 +299,8 @@ class Emulator:
                 success = self.openFile()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
+            elif event == 'Reset':
+                self.console.reset()
             elif event == 'Keyboard':
                 success = self.openKeyboardSetting()
             elif event == 'CPU':
