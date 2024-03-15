@@ -3,39 +3,31 @@ from libc.stdint cimport uint8_t, uint16_t
 from bus cimport CPUBus
 
 
-cdef uint8_t C
-cdef uint8_t Z
-cdef uint8_t I
-cdef uint8_t D
-cdef uint8_t B
-cdef uint8_t U
-cdef uint8_t V
-cdef uint8_t N
+cdef class StatusRegister:
+    cdef uint8_t value
+    cdef dict status_mask
+
+    cdef void _set_status(self, uint8_t, bint)
+    cdef bint _get_status(self, uint8_t)
+
+cdef class Registers:
+    cdef public uint16_t program_counter    
+    cdef public uint8_t stack_pointer
+    cdef public uint8_t accumulator
+    cdef public uint8_t index_X
+    cdef public uint8_t index_Y
+    cdef public StatusRegister status
 
 cdef class Op:
     cdef public str name
     cdef public object operate
     cdef public object addrmode
     cdef public int cycles
-
+    
 cdef class CPU6502:
-    cdef public uint8_t a 
-    cdef public uint8_t x
-    cdef public uint8_t y
-    cdef public uint8_t stkp
-    cdef public uint16_t pc
-    cdef public uint8_t status
-
-    cdef void set_a(self, uint8_t)
-    cdef void set_x(self, uint8_t)
-    cdef void set_y(self, uint8_t)
-    cdef void set_stkp(self, uint8_t)
-    cdef void set_pc(self, uint16_t)
-    cdef void set_status(self, uint8_t)
-    cdef uint8_t getFlag(self, uint8_t)
-    cdef void setFlag(self, uint8_t, bint)
-
+    cdef Registers registers
     cdef uint8_t[2048] ram
+    
     cdef CPUBus bus
 
     cdef uint8_t read(self, uint16_t)
@@ -46,8 +38,13 @@ cdef class CPU6502:
     cdef uint16_t addr_rel
 
     cdef void set_fetched(self, uint8_t)
-    cdef void set_addr_abs(self, uint16_t)
-    cdef void set_addr_rel(self, uint16_t)
+    cdef void set_addr_abs(self, long)
+    cdef void set_addr_rel(self, long)
+
+    cdef void push(self, uint8_t)
+    cdef uint8_t pull(self)
+    cdef void push_2_bytes(self, uint16_t)
+    cdef uint16_t pull_2_bytes(self)
 
     cpdef uint8_t IMP(self)
     cpdef uint8_t IMM(self)
@@ -129,6 +126,7 @@ cdef class CPU6502:
     
     cdef list lookup
     
+    cdef void power_up(self)
     cdef void reset(self)
     cdef void irq(self)
     cdef void nmi(self)

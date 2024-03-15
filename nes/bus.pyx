@@ -30,14 +30,22 @@ cdef class CPUBus:
     cpdef uint8_t read(self, uint16_t addr, bint readOnly):
         success, data = self.cartridge.readByCPU(addr)
         if success:
+            # $4020–$FFFF: Cartridge space: PRG ROM, PRG RAM, and mapper registers
             pass
         elif 0x0000 <= addr <= 0x1FFF:
+            # $0000–$07FF: 2KB internal RAM
+            # $0800–$0FFF, $1000–$17FF, $1800–$1FFF are Mirrors of $0000–$07FF
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
+            # $2000–$2007: NES PPU registers
+            # $2008–$3FFF are Mirrors of $2000–$2007 (repeats every 8 bytes)
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
+            # $4015: APU Status
             data = self.apu.readByCPU(addr)
-        elif 0x4016 <= addr <= 0x4017:       
+        elif 0x4016 <= addr <= 0x4017:
+            # $4016:  I/O registers Joystick 1 data
+            # $4017:  I/O registers Joystick 2 data       
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
             self.controller_state[addr & 0x0001] <<= 1
         return data
@@ -45,18 +53,32 @@ cdef class CPUBus:
     cpdef void write(self, uint16_t addr, uint8_t data):
         success = self.cartridge.writeByCPU(addr, data)
         if success:
+            # $4020–$FFFF: Cartridge space: PRG ROM, PRG RAM, and mapper registers
             pass
         elif 0x0000 <= addr <= 0x1FFF:
+            # $0000–$07FF: 2KB internal RAM
+            # $0800–$0FFF, $1000–$17FF, $1800–$1FFF are Mirrors of $0000–$07FF
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
+            # $2000–$2007: NES PPU registers
+            # $2008–$3FFF are Mirrors of $2000–$2007 (repeats every 8 bytes)
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
+            # $4000–$4007: Pulse
+            # $4008–$400B: Triangle
+            # $400C–$400F: Noise
+            # $4010–$4013: DMC
+            # $4015: Status
+            # $4017: Frame Counter
             self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
+            # $4014: Copy 256 bytes from $xx00-$xxFF into OAM via OAMDATA ($2004)
             self.dma_page = data
             self.dma_addr = 0x00
             self.dma_transfer = True
         elif 0x4016 <= addr <= 0x4017:
+            # $4016: Joystick strobe
+            # $4017: Frame counter control
             self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
 
     cpdef void reset(self):
@@ -70,6 +92,17 @@ cdef class CPUBus:
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+
+    cpdef void power_up(self):
+        self.cartridge.reset()
+        self.cpu.power_up()
+        self.ppu.reset()
+        self.nSystemClockCounter = 0
+        self.dma_page = 0x00
+        self.dma_addr = 0x00
+        self.dma_data = 0x00
+        self.dma_dummy = True
+        self.dma_transfer = False    
 
     cpdef void clock(self) except *:
         cdef uint8_t cycles = 0

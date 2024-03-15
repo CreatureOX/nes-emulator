@@ -13,7 +13,7 @@ from console import Console
 
 class Emulator:
     menu_def = [
-        ['File', ['Open File','Exit']],
+        ['File', ['Open File','Reset','Exit']],
         ['Config', ['Keyboard']],
         ['Debug', ['CPU','PPU','Hex Viewer']],
         ['Help', ['About',]],
@@ -258,7 +258,7 @@ class Emulator:
         if filename is None or filename == '':
             return False
         self.console = Console(filename)
-        self.console.reset()
+        self.console.power_up()
         self.window.TKroot.title('NES Emulator ' + filename)
         return True
     
@@ -299,6 +299,8 @@ class Emulator:
                 success = self.openFile()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
+            elif event == 'Reset':
+                self.console.reset()
             elif event == 'Keyboard':
                 success = self.openKeyboardSetting()
             elif event == 'CPU':
