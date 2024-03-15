@@ -273,7 +273,7 @@ cdef class CPU6502:
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC += 1
         
-        self.set_addr_abs(<uint16_t>(hi << 8 | lo) + self.registers.X)
+        self.set_addr_abs(<uint16_t> (hi << 8 | lo) + self.registers.X)
                 
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
@@ -286,7 +286,7 @@ cdef class CPU6502:
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC += 1
         
-        self.set_addr_abs(<uint16_t>(hi << 8 | lo) + self.registers.Y)
+        self.set_addr_abs(<uint16_t> (hi << 8 | lo) + self.registers.Y)
         
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
@@ -300,11 +300,11 @@ cdef class CPU6502:
         self.registers.PC += 1
         
         cdef uint16_t ptr = (ptr_hi << 8) | ptr_lo
-        
         if ptr_lo == 0x00FF:
             self.set_addr_abs((self.read(ptr & 0xFF00) << 8) | (self.read(ptr + 0)))
         else:
             self.set_addr_abs((self.read(ptr + 1) << 8) | (self.read(ptr + 0)))
+
         return 0
 
     cpdef uint8_t IZX(self):
@@ -329,9 +329,7 @@ cdef class CPU6502:
         
         cdef uint8_t lo = self.read(t & 0x00FF)
         cdef uint8_t hi = self.read((t + 1) & 0x00FF)
-        
-        self.set_addr_abs((hi << 8) | lo)
-        self.set_addr_abs(self.addr_abs + self.registers.Y)
+        self.set_addr_abs(((hi << 8) | lo) + self.registers.Y)
 
         return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
 
@@ -354,7 +352,7 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t>self.registers.A + <uint16_t>self.fetched + <uint16_t>self.registers.status.C)
+        self.set_temp(<uint16_t> self.registers.A + <uint16_t> self.fetched + <uint16_t> self.registers.status.C)
 
         self.registers.status.C = self.temp > 255
         self.registers.status.Z = self.temp & 0x00FF == 0
@@ -373,11 +371,11 @@ cdef class CPU6502:
         '''
         self.fetch()
         cdef uint16_t value = self.fetched ^ 0x00FF
-        self.set_temp(<uint16_t>self.registers.A + value + <uint16_t>self.registers.status.C)
+        self.set_temp(<uint16_t> self.registers.A + value + <uint16_t> self.registers.status.C)
 
         self.registers.status.C = self.temp & 0xFF00 > 0
         self.registers.status.Z = self.temp & 0x00FF == 0
-        self.registers.status.V = (self.temp ^ <uint16_t>self.registers.A) & (self.temp ^ value) & 0x0080 > 0
+        self.registers.status.V = (self.temp ^ <uint16_t> self.registers.A) & (self.temp ^ value) & 0x0080 > 0
         self.registers.status.N = self.temp & 0x0080 > 0
 
         self.registers.A = self.temp & 0x00FF
@@ -406,7 +404,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t>self.fetched << 1)
+        self.set_temp(<uint16_t> self.fetched << 1)
         
         self.registers.status.C = self.temp & 0xFF00 > 0
         self.registers.status.Z = self.temp & 0x00FF == 0x0000
@@ -621,7 +619,7 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t>self.registers.A - <uint16_t>self.fetched)
+        self.set_temp(<uint16_t> self.registers.A - <uint16_t> self.fetched)
         self.registers.status.C = self.registers.A >= self.fetched
         self.registers.status.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.N = self.temp & 0x0080 > 0
@@ -635,7 +633,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t>self.registers.X - <uint16_t>self.fetched)
+        self.set_temp(<uint16_t> self.registers.X - <uint16_t> self.fetched)
         self.registers.status.C = self.registers.X >= self.fetched
         self.registers.status.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.N = self.temp & 0x0080 > 0
@@ -649,7 +647,7 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t>self.registers.Y - <uint16_t>self.fetched)
+        self.set_temp(<uint16_t> self.registers.Y - <uint16_t> self.fetched)
         self.registers.status.C = self.registers.Y >= self.fetched
         self.registers.status.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.N = self.temp & 0x0080 > 0
