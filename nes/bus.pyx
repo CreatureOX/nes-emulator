@@ -93,6 +93,17 @@ cdef class CPUBus:
         self.dma_dummy = True
         self.dma_transfer = False
 
+    cpdef void power_up(self):
+        self.cartridge.reset()
+        self.cpu.power_up()
+        self.ppu.reset()
+        self.nSystemClockCounter = 0
+        self.dma_page = 0x00
+        self.dma_addr = 0x00
+        self.dma_data = 0x00
+        self.dma_dummy = True
+        self.dma_transfer = False    
+
     cpdef void clock(self) except *:
         cdef uint8_t cycles = 0
 

@@ -18,6 +18,9 @@ cdef class Console:
         cart = Cartridge(filename)
         self.bus = CPUBus(cart)
 
+    cpdef void power_up(self):
+        self.bus.power_up()
+
     cpdef void reset(self):
         self.bus.reset()
 

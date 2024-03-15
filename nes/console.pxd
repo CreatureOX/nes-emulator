@@ -16,6 +16,7 @@ cdef uint8_t K_RIGHT
 cdef class Console:
     cdef public CPUBus bus
 
+    cpdef void power_up(self)
     cpdef void reset(self)
     cpdef void clock(self)
     cpdef void frame(self)

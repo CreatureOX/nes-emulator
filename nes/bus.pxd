@@ -31,4 +31,5 @@ cdef class CPUBus:
     @cython.locals(success=bint)
     cpdef void write(self, uint16_t, uint8_t)
     cpdef void reset(self)
+    cpdef void power_up(self)
     cpdef void clock(self) except * 

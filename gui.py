@@ -258,7 +258,7 @@ class Emulator:
         if filename is None or filename == '':
             return False
         self.console = Console(filename)
-        self.console.reset()
+        self.console.power_up()
         self.window.TKroot.title('NES Emulator ' + filename)
         return True
     

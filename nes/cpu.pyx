@@ -1067,7 +1067,7 @@ cdef class CPU6502:
         return 0
 
     def __init__(self, CPUBus bus):
-        self.registers = Registers()
+        self.registers = Registers()        
         self.registers.status.value = 0x34
         self.registers.SP = 0xFD
         
@@ -1103,7 +1103,14 @@ cdef class CPU6502:
             Op( "CPX", self.CPX, self.IMM, 2 ),Op( "SBC", self.SBC, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "CPX", self.CPX, self.ZP0, 3 ),Op( "SBC", self.SBC, self.ZP0, 3 ),Op( "INC", self.INC, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "INX", self.INX, self.IMP, 2 ),Op( "SBC", self.SBC, self.IMM, 2 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.SBC, self.IMP, 2 ),Op( "CPX", self.CPX, self.ABS, 4 ),Op( "SBC", self.SBC, self.ABS, 4 ),Op( "INC", self.INC, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
             Op( "BEQ", self.BEQ, self.REL, 2 ),Op( "SBC", self.SBC, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "SBC", self.SBC, self.ZPX, 4 ),Op( "INC", self.INC, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SED", self.SED, self.IMP, 2 ),Op( "SBC", self.SBC, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 7 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "SBC", self.SBC, self.ABX, 4 ),Op( "INC", self.INC, self.ABX, 7 ),Op( "???", self.XXX, self.IMP, 7 ),
         ]
-    
+
+    cdef void power_up(self):
+        '''
+        Power Up
+        '''
+        self.reset()
+        self.registers.SP = 0xFD
+        
     cdef void reset(self):
         '''
         Reset Interrupt
@@ -1113,17 +1120,10 @@ cdef class CPU6502:
         cdef uint8_t hi = self.read(self.addr_abs + 1)
         self.registers.PC = hi << 8 | lo
 
-        self.registers.A = 0x00
-        self.registers.X = 0x00
-        self.registers.Y = 0x00
         self.registers.SP -= 3
         self.registers.status.I = True
-
-        self.addr_rel = 0x0000
-        self.addr_abs = 0x0000
-        self.fetched = 0x00
         
-        self.remaining_cycles = 8
+        self.remaining_cycles = 8    
 
     cdef void irq(self):
         '''
@@ -1186,12 +1186,6 @@ cdef class CPU6502:
             additional_cycle2 = op.operate()
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.registers.status.U = True
-            # if debug:
-            #     print(op)
-            #     print("A: {A} X:{X} Y:{Y} STKP:{STKP} PC: {PC} STATUS:{STATUS}".format(A=hex(self.registers.A), X=hex(self.registers.X), Y=hex(self.registers.Y), STKP=hex(self.registers.SP), PC=hex(self.registers.PC), STATUS=hex(self.registers.status.value)))
-            #     print("fetched: {fetched} addr_rel: {addr_rel} addr_abs: {addr_abs}".format(fetched=hex(self.fetched), addr_rel=hex(self.addr_rel), addr_abs=hex(self.addr_abs)))
-            #     print("temp: {temp}\n".format(temp=hex(self.temp)))
-
         self.clock_count += 1
         self.remaining_cycles -= 1
         return op_cycles + additional_cycle1 + additional_cycle2

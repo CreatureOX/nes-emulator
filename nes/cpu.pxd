@@ -126,6 +126,7 @@ cdef class CPU6502:
     
     cdef list lookup
     
+    cdef void power_up(self)
     cdef void reset(self)
     cdef void irq(self)
     cdef void nmi(self)
