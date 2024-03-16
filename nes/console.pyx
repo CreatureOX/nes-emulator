@@ -1,6 +1,5 @@
 from libc.stdint cimport uint8_t, int8_t
 
-from cpu cimport StatusRegister
 import pyaudio
 import pygame
 
@@ -85,22 +84,22 @@ cdef class Console:
 
     cpdef dict cpu_status_info(self):
         return {
-            "N": True if self.bus.cpu.status & StatusRegister.status_mask["N"] > 0 else False,
-            "V": True if self.bus.cpu.status & StatusRegister.status_mask["V"] > 0 else False,
-            "U": True if self.bus.cpu.status & StatusRegister.status_mask["U"] > 0 else False,
-            "B": True if self.bus.cpu.status & StatusRegister.status_mask["B"] > 0 else False,
-            "D": True if self.bus.cpu.status & StatusRegister.status_mask["D"] > 0 else False,
-            "I": True if self.bus.cpu.status & StatusRegister.status_mask["I"] > 0 else False,
-            "Z": True if self.bus.cpu.status & StatusRegister.status_mask["Z"] > 0 else False,
+            "N": True if self.bus.cpu.registers.status.status_mask["N"] > 0 else False,
+            "V": True if self.bus.cpu.registers.status.status_mask["V"] > 0 else False,
+            "U": True if self.bus.cpu.registers.status.status_mask["U"] > 0 else False,
+            "B": True if self.bus.cpu.registers.status.status_mask["B"] > 0 else False,
+            "D": True if self.bus.cpu.registers.status.status_mask["D"] > 0 else False,
+            "I": True if self.bus.cpu.registers.status.status_mask["I"] > 0 else False,
+            "Z": True if self.bus.cpu.registers.status.status_mask["Z"] > 0 else False,
         }
 
     cpdef dict cpu_registers_info(self):
         return {
-            "PC": self.bus.cpu.pc,
-            "A": self.bus.cpu.a,
-            "X": self.bus.cpu.x,
-            "Y": self.bus.cpu.y,
-            "SP": self.bus.cpu.stkp,
+            "PC": self.bus.cpu.registers.PC,
+            "A": self.bus.cpu.registers.A,
+            "X": self.bus.cpu.registers.X,
+            "Y": self.bus.cpu.registers.Y,
+            "SP": self.bus.cpu.registers.SP,
         }
 
     cpdef str cpu_ram(self, uint16_t start_addr, uint16_t end_addr):
@@ -179,7 +178,7 @@ cdef class Console:
         return asm 
 
     cpdef uint16_t cpu_pc(self):
-        return self.bus.cpu.pc   
+        return self.bus.cpu.registers.PC   
 
     cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t i):
         return self.bus.ppu.getPatternTable(i,0)
