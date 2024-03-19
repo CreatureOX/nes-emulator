@@ -11,84 +11,76 @@ import cython
 cdef uint8_t flipbyte(uint8_t b)
 
 cdef class Status:
-    cdef uint8_t reg
-
-    cdef void set_reg(self,uint8_t)
-    cdef uint8_t get_reg(self)
-
-    cdef void set_unused(self,uint8_t)
-    cdef uint8_t get_unused(self)
-    cdef void set_sprite_overflow(self,uint8_t)
-    cdef uint8_t get_sprite_overflow(self)
-    cdef void set_sprite_zero_hit(self,uint8_t)
-    cdef uint8_t get_sprite_zero_hit(self)
-    cdef void set_vertical_blank(self,uint8_t)
-    cdef uint8_t get_vertical_blank(self)
+    '''
+    7  bit  0
+    ---- ----
+    VSO. ....
+    |||| ||||
+    |||+-++++- PPU open bus. Returns stale PPU bus contents.
+    ||+------- Sprite overflow. The intent was for this flag to be set
+    ||         whenever more than eight sprites appear on a scanline, but a
+    ||         hardware bug causes the actual behavior to be more complicated
+    ||         and generate false positives as well as false negatives; see
+    ||         PPU sprite evaluation. This flag is set during sprite
+    ||         evaluation and cleared at dot 1 (the second dot) of the
+    ||         pre-render line.
+    |+-------- Sprite 0 Hit.  Set when a nonzero pixel of sprite 0 overlaps
+    |          a nonzero background pixel; cleared at dot 1 of the pre-render
+    |          line.  Used for raster timing.
+    +--------- Vertical blank has started (0: not in vblank; 1: in vblank).
+               Set at dot 1 of line 241 (the line *after* the post-render
+               line); cleared after reading $2002 and at dot 1 of the
+               pre-render line.    
+    '''
+    cdef uint8_t value
 
 cdef class Mask:
-    cdef uint8_t reg
+    '''
+    7  bit  0
+    ---- ----
+    BGRs bMmG
+    |||| ||||
+    |||| |||+- Greyscale (0: normal color, 1: produce a greyscale display)
+    |||| ||+-- 1: Show background in leftmost 8 pixels of screen, 0: Hide
+    |||| |+--- 1: Show sprites in leftmost 8 pixels of screen, 0: Hide
+    |||| +---- 1: Show background
+    |||+------ 1: Show sprites
+    ||+------- Emphasize red (green on PAL/Dendy)
+    |+-------- Emphasize green (red on PAL/Dendy)
+    +--------- Emphasize blue    
+    '''
+    cdef uint8_t value
 
-    cdef void set_reg(self,uint8_t)
-    cdef uint8_t get_reg(self)
-
-    cdef void set_grayscale(self,uint8_t)
-    cdef uint8_t get_grayscale(self)
-    cdef void set_render_background_left(self,uint8_t)
-    cdef uint8_t get_render_background_left(self)
-    cdef void set_render_sprites_left(self,uint8_t)
-    cdef uint8_t get_render_sprites_left(self)
-    cdef void set_render_background(self,uint8_t)
-    cdef uint8_t get_render_background(self)
-    cdef void set_render_sprites(self,uint8_t)
-    cdef uint8_t get_render_sprites(self)
-    cdef void set_enhance_red(self,uint8_t)
-    cdef uint8_t get_enhance_red(self)
-    cdef void set_enhance_green(self,uint8_t)
-    cdef uint8_t get_enhance_green(self)
-    cdef void set_enhance_blue(self,uint8_t)
-    cdef uint8_t get_enhance_blue(self)
-
-cdef class PPUCTRL:
-    cdef uint8_t reg
-    
-    cdef void set_reg(self,uint8_t)
-    cdef uint8_t get_reg(self)    
-
-    cdef void set_nametable_x(self,uint8_t)
-    cdef uint8_t get_nametable_x(self)
-    cdef void set_nametable_y(self,uint8_t)
-    cdef uint8_t get_nametable_y(self)
-    cdef void set_increment_mode(self,uint8_t)
-    cdef uint8_t get_increment_mode(self)
-    cdef void set_pattern_sprite(self,uint8_t)
-    cdef uint8_t get_pattern_sprite(self)
-    cdef void set_pattern_background(self,uint8_t)
-    cdef uint8_t get_pattern_background(self)
-    cdef void set_sprite_size(self,uint8_t)
-    cdef uint8_t get_sprite_size(self)
-    cdef void set_slave_mode(self,uint8_t)
-    cdef uint8_t get_slave_mode(self)
-    cdef void set_enable_nmi(self,uint8_t)
-    cdef uint8_t get_enable_nmi(self)
+cdef class Controller:
+    '''
+        7  bit  0
+    ---- ----
+    VPHB SINN
+    |||| ||||
+    |||| ||++- Base nametable address
+    |||| ||    (0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00)
+    |||| |+--- VRAM address increment per CPU read/write of PPUDATA
+    |||| |     (0: add 1, going across; 1: add 32, going down)
+    |||| +---- Sprite pattern table address for 8x8 sprites
+    ||||       (0: $0000; 1: $1000; ignored in 8x16 mode)
+    |||+------ Background pattern table address (0: $0000; 1: $1000)
+    ||+------- Sprite size (0: 8x8 pixels; 1: 8x16 pixels – see PPU OAM#Byte 1)
+    |+-------- PPU master/slave select
+    |          (0: read backdrop from EXT pins; 1: output color on EXT pins)
+    +--------- Generate an NMI at the start of the
+               vertical blanking interval (0: off; 1: on)
+    '''
+    cdef uint8_t value
 
 cdef class LoopRegister:
-    cdef uint16_t reg
-    
-    cdef void set_reg(self,uint16_t)
-    cdef uint16_t get_reg(self)  
-
-    cdef void set_coarse_x(self,uint16_t)
-    cdef uint16_t get_coarse_x(self)
-    cdef void set_coarse_y(self,uint16_t)
-    cdef uint16_t get_coarse_y(self)
-    cdef void set_nametable_x(self,uint16_t)
-    cdef uint16_t get_nametable_x(self)
-    cdef void set_nametable_y(self,uint16_t)
-    cdef uint16_t get_nametable_y(self)
-    cdef void set_fine_y(self,uint16_t)
-    cdef uint16_t get_fine_y(self)
-    cdef void set_unused(self,uint16_t)
-    cdef uint16_t get_unused(self)
+    '''
+    yyy NN YYYYY XXXXX
+    ||| || ||||| +++++-- coarse X scroll
+    ||| || +++++-------- coarse Y scroll
+    ||| ++-------------- nametable select
+    +++----------------- fine Y scroll
+    '''
+    cdef uint16_t value
 
 cdef uint8_t Y 
 cdef uint8_t ID
@@ -107,15 +99,25 @@ cdef class PPU2C02:
     cdef list spriteNameTable
     cdef list spritePatternTable
 
-    cdef Status status
-    cdef Mask mask
-    cdef PPUCTRL control
-    cdef LoopRegister vram_addr
-    cdef LoopRegister tram_addr
+    cdef Controller PPUCTRL
+    cdef Mask PPUMASK
+    cdef Status PPUSTATUS
+    cdef uint8_t OAM_ADDR
+    cdef public uint8_t[2048] OAM
 
-    cdef uint8_t fine_x
+    # Current VRAM address (15 bits)
+    cdef LoopRegister v
 
-    cdef uint8_t address_latch
+    # Temporary VRAM address (15 bits); 
+    # can also be thought of as the address of the top left onscreen tile.
+    cdef LoopRegister t
+
+    # Fine X scroll (3 bits)
+    cdef uint8_t x
+
+    # First or second write toggle (1 bit)
+    cdef uint8_t w
+
     cdef uint8_t ppu_data_buffer
 
     cdef int16_t scanline
@@ -129,10 +131,6 @@ cdef class PPU2C02:
     cdef uint16_t background_shifter_pattern_hi
     cdef uint16_t background_shifter_attribute_lo
     cdef uint16_t background_shifter_attribute_hi
-
-    cdef public uint8_t[2048] pOAM
-
-    cdef uint8_t oam_addr
 
     cdef uint8_t[256] pSpriteScanline
     cdef uint8_t sprite_count
