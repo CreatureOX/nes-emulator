@@ -32,6 +32,8 @@ setup(
         Extension("mapper", sources=["./nes/mapper.pyx"]),
         Extension("cartridge", sources=["./nes/cartridge.pyx"]),
         Extension("bus", sources=["./nes/bus.pyx"]),
+        Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
+        Extension("cpu_op", sources=["./nes/cpu_op.pyx"]),
         Extension("cpu", sources=["./nes/cpu.pyx"]),
         Extension("ppu", sources=["./nes/ppu.pyx"]),
         Extension("apu", sources=["./nes/apu.pyx"]),
