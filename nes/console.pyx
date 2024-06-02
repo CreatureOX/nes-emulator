@@ -45,23 +45,7 @@ cdef class Console:
         self.bus.ppu.frame_complete = False
 
     cpdef void run(self):
-        clock = pygame.time.Clock()
-        audio = pyaudio.PyAudio()
-        player = audio.open(format=pyaudio.paInt16,
-                        channels=1,
-                        rate=48000,
-                        output=True,
-                        frames_per_buffer=400,
-                        stream_callback=self.bus.apu.pyaudio_callback,
-                        )
-        player.start_stream()                
-        while True:
-            self.bus.clock()
-            while self.bus.apu.buffer_remaining() > 2400 and player.is_active():
-                clock.tick(240)  # wait for about 2ms (~= 96 samples)
-            if self.bus.ppu.frame_complete:
-                break
-        self.bus.ppu.frame_complete = False 
+        self.bus.run_frame()
 
     cpdef void control(self, list pressed):
         self.bus.controller[0] = 0x00
