@@ -6,6 +6,8 @@ from ppu cimport PPU2C02
 from apu cimport APU2A03
 
 import cython
+import pyaudio
+import pygame
 
 
 cdef class CPUBus:
@@ -33,3 +35,4 @@ cdef class CPUBus:
     cpdef void reset(self)
     cpdef void power_up(self)
     cpdef void clock(self) except * 
+    cpdef void run_frame(self)

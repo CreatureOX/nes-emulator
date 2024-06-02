@@ -5,6 +5,9 @@ from cpu cimport CPU6502
 from ppu cimport PPU2C02
 from apu cimport APU2A03
 
+import pyaudio
+import pygame
+
 
 cdef class CPUBus:
     def __init__(self, Cartridge cartridge) -> None:
@@ -136,3 +139,20 @@ cdef class CPUBus:
         self.apu.clock(cycles)
         # if sample > 0.0:
         #     print(sample)
+
+    cpdef void run_frame(self):
+        _clock = pygame.time.Clock()
+        audio = pyaudio.PyAudio()
+        player = audio.open(format=pyaudio.paInt16,
+                        channels=1,
+                        rate=48000,
+                        output=True,
+                        frames_per_buffer=400,
+                        stream_callback=self.apu.pyaudio_callback,
+                        )
+        player.start_stream() 
+        for _ in range(262):
+            for self.ppu.cycle in range(341):               
+                self.clock()
+                while self.apu.buffer_remaining() > 2400 and player.is_active():
+                    _clock.tick(240)  # wait for about 2ms (~= 96 samples)

@@ -118,8 +118,7 @@ cdef class PPU2C02:
     cdef uint8_t address_latch
     cdef uint8_t ppu_data_buffer
 
-    cdef int16_t scanline
-    cdef int16_t cycle
+    cdef public int16_t scanline, cycle
 
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
