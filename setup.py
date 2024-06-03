@@ -36,6 +36,7 @@ setup(
         Extension("cpu_op", sources=["./nes/cpu_op.pyx"]),
         Extension("cpu", sources=["./nes/cpu.pyx"]),
         Extension("ppu", sources=["./nes/ppu.pyx"]),
+        Extension("ppu_registers", sources=["./nes/ppu_registers.pyx"]),
         Extension("apu", sources=["./nes/apu.pyx"]),
         Extension("console", sources=["./nes/console.pyx"]),
     ], compiler_directives={'language_level' : "3"}, 
