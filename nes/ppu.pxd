@@ -40,24 +40,22 @@ cdef class PPU2C02:
 
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
-    cdef uint8_t background_next_tile_lsb
-    cdef uint8_t background_next_tile_msb
-    cdef uint16_t background_shifter_pattern_lo
-    cdef uint16_t background_shifter_pattern_hi
-    cdef uint16_t background_shifter_attribute_lo
-    cdef uint16_t background_shifter_attribute_hi
+    cdef uint8_t background_next_tile_lsb, background_next_tile_msb
+    cdef uint16_t background_shifter_pattern_lo, background_shifter_pattern_hi
+    cdef uint16_t background_shifter_attribute_lo, background_shifter_attribute_hi
 
-    cdef public uint8_t[2048] pOAM
+    cdef public uint8_t[256] OAM
 
-    cdef uint8_t oam_addr
+    cdef uint8_t OAMADDR
 
-    cdef uint8_t[256] pSpriteScanline
+    cdef uint8_t[32] secondary_OAM
     cdef uint8_t sprite_count
     cdef uint8_t[8] sprite_shifter_pattern_lo
     cdef uint8_t[8] sprite_shifter_pattern_hi
 
-    cdef bint bSpriteZeroHitPossible
-    cdef bint bSpriteZeroBeingRendered
+    cdef bint eval_sprite0
+    cdef bint render_sprite0
+    cdef bint foreground_priority
 
     cdef Cartridge cartridge
 
@@ -93,6 +91,18 @@ cdef class PPU2C02:
     cdef void transferAddressX(self)
     cdef void transferAddressY(self)
     cdef void loadBackgroundShifters(self)
+
+    cdef void update_background_shifters(self)
+    cdef void update_sprite_shifters(self)
     @cython.locals(i=int)
     cdef void updateShifters(self)
     cdef void clock(self) except *
+
+    cdef void eval_background(self)
+
+    cdef void eval_sprites(self)
+    cdef void fetch_sprites(self)
+    
+    cdef tuple draw_background(self)
+    cdef tuple draw_sprites(self)
+    cdef tuple draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t) 

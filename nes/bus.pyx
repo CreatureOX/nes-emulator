@@ -120,7 +120,7 @@ cdef class CPUBus:
                     if self.nSystemClockCounter % 2 == 0:
                         self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
-                        self.ppu.pOAM[self.dma_addr & 0xFF] = self.dma_data
+                        self.ppu.OAM[self.dma_addr & 0xFF] = self.dma_data
                         self.dma_addr += 1
                         if self.dma_addr == 0x00:
                             self.dma_transfer = False

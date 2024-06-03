@@ -58,22 +58,14 @@ cdef class PPU2C02:
         self.background_shifter_attribute_lo = 0x0000
         self.background_shifter_attribute_hi = 0x0000
 
-        # self.OAM = (sObjectAttributeEntry * 64)()
-        # self.pOAM = cast(self.OAM, POINTER(c_uint8))
-        # self.pOAM = np.zeros((64 * 32), dtype=np.uint8)
-        memset(self.pOAM, 0, 64*32*sizeof(uint8_t))
-
-        self.oam_addr = 0x00
-
-        # self.spriteScanline = (sObjectAttributeEntry * 8)()
-        # self.spriteScanline = array([sObjectAttributeEntry(0x00,0x00,0x00,0x00) for _ in range(8)])
-        # self.pSpriteScanline = np.zeros((8 * 32), dtype=np.uint8)
-        memset(self.pSpriteScanline, 0, 8*32*sizeof(uint8_t))
+        memset(self.OAM, 0, 64*4*sizeof(uint8_t))
+        self.OAMADDR = 0x00
+        memset(self.secondary_OAM, 0, 8*4*sizeof(uint8_t))
 
         self.sprite_shifter_pattern_lo = [0x00] * 8
         self.sprite_shifter_pattern_hi = [0x00] * 8
-        self.bSpriteZeroHitPossible = False
-        self.bSpriteZeroBeingRendered = False
+        self.eval_sprite0 = False
+        self.render_sprite0 = False
         self.nmi = False
         self.frame_complete = False
 
@@ -131,7 +123,7 @@ cdef class PPU2C02:
                 pass
             elif addr == 0x0004:
                 # OAM Data
-                data = self.pOAM[self.oam_addr]
+                data = self.OAM[self.OAMADDR]
             elif addr == 0x0005:
                 # Scroll
                 pass
@@ -161,10 +153,10 @@ cdef class PPU2C02:
             pass
         elif addr == 0x0003:
             # OAM Address
-            self.oam_addr = data
+            self.OAMADDR = data
         elif addr == 0x0004:
             # OAM Data
-            self.pOAM[self.oam_addr] = data
+            self.OAM[self.OAMADDR] = data
         elif addr == 0x0005:
             # Scroll
             if self.address_latch == 0:
@@ -359,190 +351,168 @@ cdef class PPU2C02:
         self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
         self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
-    cdef void updateShifters(self):
+    cdef void update_background_shifters(self):
         if self.PPUMASK.render_background == 1:
             self.background_shifter_pattern_lo <<= 1
             self.background_shifter_pattern_hi <<= 1
             self.background_shifter_attribute_lo <<= 1
             self.background_shifter_attribute_hi <<= 1
-        if self.PPUMASK.render_sprites == 1 and self.cycle >= 1 and self.cycle < 258:
+
+    cdef void update_sprite_shifters(self):
+        if self.PPUMASK.render_sprites == 1:
             for i in range(0, self.sprite_count):
-                if self.pSpriteScanline[offset(i,X)] > 0:
-                    # self.spriteScanline[i].x = self.spriteScanline[i].x - 1
-                    # self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
-                    self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
+                if self.secondary_OAM[offset(i,X)] > 0:
+                    self.secondary_OAM[offset(i,X)] -= 1
                 else:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
 
-    cdef void clock(self) except *:
-        cdef uint8_t nOAMEntry
-        cdef sprite_pattern_addr_lo, sprite_pattern_addr_hi
-        cdef int16_t diff
-        cdef int v
+    cdef void updateShifters(self):
+        self.update_background_shifters()
+        if 1 <= self.cycle < 258:
+            self.update_sprite_shifters()
 
-        if -1 <= self.scanline < 240:
-            if self.scanline == 0 and self.cycle == 0:
-                self.cycle = 1
-            if self.scanline == -1 and self.cycle == 1:
-                self.PPUSTATUS.vertical_blank = 0
-                self.PPUSTATUS.sprite_overflow = 0
-                self.PPUSTATUS.sprite_zero_hit = 0
-                for i in range(0, 8):
-                    self.sprite_shifter_pattern_hi[i] = 0
-                    self.sprite_shifter_pattern_lo[i] = 0
-            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
-                self.updateShifters()
-                v = (self.cycle - 1) % 8
-                if v == 0:
-                    self.loadBackgroundShifters()
-                    self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-                elif v == 2:
-                    self.background_next_tile_attribute = self.readByPPU(0x23C0 \
-                        | (self.vram_addr.nametable_y << 11) \
-                        | (self.vram_addr.nametable_x << 10) \
-                        | ((self.vram_addr.coarse_y >> 2) << 3) \
-                        | (self.vram_addr.coarse_x >> 2)    
-                    )
-                    if self.vram_addr.coarse_y & 0x02 > 0:
-                        self.background_next_tile_attribute >>= 4
-                    if self.vram_addr.coarse_x & 0x02 > 0:
-                        self.background_next_tile_attribute >>= 2
-                    self.background_next_tile_attribute &= 0x03
-                elif v == 4:
-                    self.background_next_tile_lsb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                        + (self.background_next_tile_id << 4) \
-                        + (self.vram_addr.fine_y) + 0
-                    )
-                elif v == 6:
-                    self.background_next_tile_msb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                        + (self.background_next_tile_id << 4) \
-                        + (self.vram_addr.fine_y) + 8
-                    )
-                elif v == 7:
-                    self.incrementScrollX()
-            if self.cycle == 256:
-                self.incrementScrollY()
-            if self.cycle == 257:                
-                self.loadBackgroundShifters()
-                self.transferAddressX()
-            if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-            if self.scanline == -1 and 280 <= self.cycle < 305:               
-                self.transferAddressY()
-            if self.cycle == 257 and self.scanline >= 0:
-                # memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
-                # self.spriteScanline = array([sObjectAttributeEntry(0xFF,0xFF,0xFF,0xFF) for _ in range(8)])
-                # self.pSpriteScanline = [0xFF for _ in range(8 * 32)]
-                memset(self.pSpriteScanline, 0xFF, 8*32*sizeof(uint8_t))
-                self.sprite_count = 0
-                for i in range(0, 8):
-                    self.sprite_shifter_pattern_lo[i] = 0
-                    self.sprite_shifter_pattern_hi[i] = 0
-                nOAMEntry = 0
-                self.bSpriteZeroHitPossible = False
-                while nOAMEntry < 64 and self.sprite_count < 9:
-                    # diff = self.scanline - int16(self.OAM(nOAMEntry).y)
-                    diff = self.scanline - <int16_t>(self.pOAM[offset(nOAMEntry, Y)])
-                    diff_compare = 16 if self.PPUCTRL.sprite_size == 1 else 8
-                    if 0 <= diff < diff_compare:
-                        if self.sprite_count < 8:
-                            if nOAMEntry == 0:
-                                self.bSpriteZeroHitPossible = True
-                            # self.spriteScanline[self.sprite_count] = self.OAM(nOAMEntry)
-                            self.pSpriteScanline[offset(self.sprite_count,Y)] = self.pOAM[offset(nOAMEntry,Y)]
-                            self.pSpriteScanline[offset(self.sprite_count,ID)] = self.pOAM[offset(nOAMEntry,ID)]
-                            self.pSpriteScanline[offset(self.sprite_count,ATTRIBUTE)] = self.pOAM[offset(nOAMEntry,ATTRIBUTE)]
-                            self.pSpriteScanline[offset(self.sprite_count,X)] = self.pOAM[offset(nOAMEntry,X)]
-                            self.sprite_count += 1
-                    nOAMEntry += 1
-                self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
-            if self.cycle == 340:
-                for i in range(0, self.sprite_count):
-                    sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
-                    sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
-                    if self.PPUCTRL.sprite_size == 0:
-                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                            sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
-                                | ((self.scanline - self.pSpriteScanline[offset(i,Y)]) & 0xFFFF)
-                        else:
-                            sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
-                                | ((7 - (self.scanline - self.pSpriteScanline[offset(i,Y)])) & 0xFFFF)
+    cdef void eval_background(self):
+        self.updateShifters()
+        cdef v = (self.cycle - 1) % 8
+        if v == 0:
+            self.loadBackgroundShifters()
+            self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+        elif v == 2:
+            self.background_next_tile_attribute = self.readByPPU(0x23C0 \
+                | (self.vram_addr.nametable_y << 11) \
+                | (self.vram_addr.nametable_x << 10) \
+                | ((self.vram_addr.coarse_y >> 2) << 3) \
+                | (self.vram_addr.coarse_x >> 2)    
+            )
+            if self.vram_addr.coarse_y & 0x02 > 0:
+                self.background_next_tile_attribute >>= 4
+            if self.vram_addr.coarse_x & 0x02 > 0:
+                self.background_next_tile_attribute >>= 2
+            self.background_next_tile_attribute &= 0x03
+        elif v == 4:
+            self.background_next_tile_lsb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
+                + (self.background_next_tile_id << 4) \
+                + (self.vram_addr.fine_y) + 0
+            )
+        elif v == 6:
+            self.background_next_tile_msb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
+                + (self.background_next_tile_id << 4) \
+                + (self.vram_addr.fine_y) + 8
+            )
+        elif v == 7:
+            self.incrementScrollX()
+
+    cdef void eval_sprites(self):
+        memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
+        self.sprite_count = 0
+        for i in range(0, 8):
+            self.sprite_shifter_pattern_lo[i] = 0
+            self.sprite_shifter_pattern_hi[i] = 0
+            
+        cdef uint8_t nOAMEntry = 0
+        cdef int16_t y_offset, sprite_height
+        self.eval_sprite0 = False
+        while nOAMEntry < 64 and self.sprite_count < 9:
+            y_offset = self.scanline - <int16_t> (self.OAM[offset(nOAMEntry, Y)])
+            sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
+            if 0 <= y_offset < sprite_height:
+                if self.sprite_count < 8:
+                    if nOAMEntry == 0:
+                        self.eval_sprite0 = True
+                    self.secondary_OAM[offset(self.sprite_count,Y)] = self.OAM[offset(nOAMEntry,Y)]
+                    self.secondary_OAM[offset(self.sprite_count,ID)] = self.OAM[offset(nOAMEntry,ID)]
+                    self.secondary_OAM[offset(self.sprite_count,ATTRIBUTE)] = self.OAM[offset(nOAMEntry,ATTRIBUTE)]
+                    self.secondary_OAM[offset(self.sprite_count,X)] = self.OAM[offset(nOAMEntry,X)]
+                    self.sprite_count += 1
+            nOAMEntry += 1
+        self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
+
+    cdef void fetch_sprites(self):
+        cdef uint16_t sprite_pattern_addr_lo, sprite_pattern_addr_hi
+
+        for i in range(0, self.sprite_count):
+            sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
+            sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
+            if self.PPUCTRL.sprite_size == 0:
+                if (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80) == 0:
+                    sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
+                        | (self.secondary_OAM[offset(i,ID)]<<4) \
+                        | ((self.scanline - self.secondary_OAM[offset(i,Y)]) & 0xFFFF)
+                else:
+                    sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
+                        | (self.secondary_OAM[offset(i,ID)]<<4) \
+                        | ((7 - (self.scanline - self.secondary_OAM[offset(i,Y)])) & 0xFFFF)
+            else:
+                if (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80) == 0:
+                    if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
+                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
+                            | ((self.secondary_OAM[offset(i,ID)] & 0xFE)<<4) \
+                            | ((self.scanline - self.secondary_OAM[offset(i,Y)])&0x07) 
                     else:
-                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
-                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
-                            else:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
-                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
-                        else:
-                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
-                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07) 
-                            else:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
-                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07)   
-                
-                    sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8
+                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
+                            | (((self.secondary_OAM[offset(i,ID)] & 0xFE)+1)<<4) \
+                            | ((self.scanline - self.secondary_OAM[offset(i,Y)])&0x07) 
+                else:
+                    if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
+                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
+                            | (((self.secondary_OAM[offset(i,ID)] & 0xFE)+1)<<4) \
+                            | ((7-(self.scanline - self.secondary_OAM[offset(i,Y)]))&0x07) 
+                    else:
+                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
+                            | ((self.secondary_OAM[offset(i,ID)] & 0xFE)<<4) \
+                            | ((7-(self.scanline - self.secondary_OAM[offset(i,Y)]))&0x07)   
+        
+            sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8
+            
+            sprite_pattern_bits_lo = self.readByPPU(sprite_pattern_addr_lo)
+            sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
                     
-                    sprite_pattern_bits_lo = self.readByPPU(sprite_pattern_addr_lo)
-                    sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
-                    
-                    if self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x40 != 0:
-                        sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
-                        sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
+            if self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x40 != 0:
+                sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
+                sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
 
-                    self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
-                    self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi
-        if self.scanline == 240:
-            pass
-        if 241 <= self.scanline < 261:            
-            if self.scanline == 241 and self.cycle == 1:
-                self.PPUSTATUS.vertical_blank = 1
-                if self.PPUCTRL.enable_nmi == 1:
-                    self.nmi = True
+            self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
+            self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi    
 
+    cdef tuple draw_background(self):
         cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
         cdef uint8_t background_palette = 0x00, background_palette_0, background_palette_1
-        cdef uint16_t bit_mux
+        cdef uint16_t bit_mux = 0x8000 >> self.fine_x
 
-        if self.PPUMASK.render_background == 1:
-            bit_mux = 0x8000 >> self.fine_x
+        background_pixel_0 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
+        background_pixel_1 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
+        background_pixel = (background_pixel_1 << 1) | background_pixel_0
 
-            background_pixel_0 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
-            background_pixel_1 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
-            background_pixel = (background_pixel_1 << 1) | background_pixel_0
+        background_palette_0 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
+        background_palette_1 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
+        background_palette = (background_palette_1 << 1) | background_palette_0
 
-            background_palette_0 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
-            background_palette_1 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
-            background_palette = (background_palette_1 << 1) | background_palette_0
+        return (background_palette, background_pixel)
 
-        cdef uint8_t foreground_pixel_lo, foreground_pixel_hi, foreground_pixel = 0, foreground_palette = 0x00, foreground_priority = 0x00,
+    cdef tuple draw_sprites(self):
+        cdef uint8_t foreground_pixel = 0x00, foreground_pixel_lo, foreground_pixel_hi
+        cdef uint8_t foreground_palette
 
-        if self.PPUMASK.render_sprites == 1:
-            self.bSpriteZeroBeingRendered = False
-            for i in range(0, self.sprite_count):
-                if self.pSpriteScanline[offset(i,X)] == 0:
-                    foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
-                    foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
-                    foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
-                    foreground_palette = (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x03) + 0x04
-                    foreground_priority = 1 if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x20) == 0 else 0
+        self.render_sprite0 = False
+        for i in range(0, self.sprite_count):
+            if self.secondary_OAM[offset(i,X)] == 0:
+                foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
+                foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
+                foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
+                foreground_palette = (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x03) + 0x04
+                self.foreground_priority = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x20 == 0
 
-                    if foreground_pixel != 0:
-                        if i == 0:
-                            self.bSpriteZeroBeingRendered = True
-                        break
+                if foreground_pixel != 0:
+                    if i == 0:
+                        self.render_sprite0 = True
+                    break
 
-        cdef uint8_t pixel = 0x00, palette = 0x00
-        
+        return (foreground_palette, foreground_pixel)
+
+    cdef tuple draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
+        cdef uint8_t palette, pixel
+
         if background_pixel == 0 and foreground_pixel == 0:
             pixel = 0x00
             palette = 0x00
@@ -553,13 +523,13 @@ cdef class PPU2C02:
             pixel = background_pixel
             palette = background_palette
         elif background_pixel > 0 and foreground_pixel > 0:
-            if foreground_priority:
+            if self.foreground_priority:
                 pixel = foreground_pixel
                 palette = foreground_palette
             else:
                 pixel = background_pixel
                 palette = background_palette
-            if self.bSpriteZeroHitPossible and self.bSpriteZeroBeingRendered:
+            if self.eval_sprite0 and self.render_sprite0:
                 if self.PPUMASK.render_background & self.PPUMASK.render_sprites != 0:
                     if ((self.PPUMASK.render_background_left | self.PPUMASK.render_sprites_left) == 0):
                         if 9 <= self.cycle < 258:
@@ -567,6 +537,71 @@ cdef class PPU2C02:
                     else:
                         if 1 <= self.cycle < 258:
                             self.PPUSTATUS.sprite_zero_hit = 1
+
+        return (palette, pixel)
+
+    cdef void clock(self) except *:
+        cdef bint pre_render_scanline = self.scanline == -1 or self.scanline == 261
+        cdef bint visible_scanlines = 0 <= self.scanline <= 239
+        cdef bint post_render_scanline = self.scanline == 240
+        cdef bint vertical_blanking_lines = 241 <= self.scanline <= 260
+
+        if pre_render_scanline:
+            if self.cycle == 1:
+                self.PPUSTATUS.vertical_blank = 0
+                self.PPUSTATUS.sprite_overflow = 0
+                self.PPUSTATUS.sprite_zero_hit = 0
+                for i in range(0, 8):
+                    self.sprite_shifter_pattern_hi[i] = 0
+                    self.sprite_shifter_pattern_lo[i] = 0
+            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
+                self.eval_background()
+            if self.cycle == 256:
+                self.incrementScrollY()
+            if self.cycle == 257:                
+                self.loadBackgroundShifters()
+                self.transferAddressX()
+            if self.cycle == 338 or self.cycle == 340:                
+                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+            if 280 <= self.cycle < 305:               
+                self.transferAddressY()
+            if self.cycle == 340:
+                self.fetch_sprites()
+        elif visible_scanlines:
+            if self.scanline == 0 and self.cycle == 0:
+                self.cycle = 1
+            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
+                self.eval_background()
+            if self.cycle == 256:
+                self.incrementScrollY()
+            if self.cycle == 257:                
+                self.loadBackgroundShifters()
+                self.transferAddressX()
+            if self.cycle == 338 or self.cycle == 340:                
+                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+            if self.cycle == 257:
+                self.eval_sprites()
+            if self.cycle == 340:
+                self.fetch_sprites()
+        elif post_render_scanline:
+            pass
+        elif vertical_blanking_lines:            
+            if self.scanline == 241 and self.cycle == 1:
+                self.PPUSTATUS.vertical_blank = 1
+                if self.PPUCTRL.enable_nmi == 1:
+                    self.nmi = True
+
+        cdef uint8_t background_palette = 0x00, background_pixel = 0x00
+        if self.PPUMASK.render_background == 1:
+            background_palette, background_pixel = self.draw_background()
+
+        cdef uint8_t foreground_palette = 0x00, foreground_pixel = 0x00
+        self.foreground_priority = False
+        if self.PPUMASK.render_sprites == 1:
+            foreground_palette, foreground_pixel = self.draw_sprites()
+
+        cdef uint8_t pixel = 0x00, palette = 0x00
+        palette, pixel = self.draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
 
         if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
             self.spriteScreen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
