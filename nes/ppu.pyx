@@ -313,37 +313,33 @@ cdef class PPU2C02:
         self.tram_addr.value = 0x0000
 
     cdef void incrementScrollX(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.vram_addr.coarse_x == 31:
-                self.vram_addr.coarse_x = 0
-                self.vram_addr.nametable_x = ~self.vram_addr.nametable_x
-            else:
-                self.vram_addr.coarse_x += 1
+        if self.vram_addr.coarse_x == 31:
+            self.vram_addr.coarse_x = 0
+            self.vram_addr.nametable_x = ~self.vram_addr.nametable_x
+        else:
+            self.vram_addr.coarse_x += 1
 
     cdef void incrementScrollY(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.vram_addr.fine_y < 7:
-                self.vram_addr.fine_y += 1
+        if self.vram_addr.fine_y < 7:
+            self.vram_addr.fine_y += 1
+        else:
+            self.vram_addr.fine_y = 0
+            if self.vram_addr.coarse_y == 29:
+                self.vram_addr.coarse_y = 0
+                self.vram_addr.nametable_y = ~self.vram_addr.nametable_y
+            elif self.vram_addr.coarse_y == 31:
+                self.vram_addr.coarse_y = 0
             else:
-                self.vram_addr.fine_y = 0
-                if self.vram_addr.coarse_y == 29:
-                    self.vram_addr.coarse_y = 0
-                    self.vram_addr.nametable_y = ~self.vram_addr.nametable_y
-                elif self.vram_addr.coarse_y == 31:
-                    self.vram_addr.coarse_y = 0
-                else:
-                    self.vram_addr.coarse_y += 1
+                self.vram_addr.coarse_y += 1
 
     cdef void transferAddressX(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            self.vram_addr.nametable_x = self.tram_addr.nametable_x
-            self.vram_addr.coarse_x = self.tram_addr.coarse_x
+        self.vram_addr.nametable_x = self.tram_addr.nametable_x
+        self.vram_addr.coarse_x = self.tram_addr.coarse_x
 
     cdef void transferAddressY(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            self.vram_addr.fine_y = self.tram_addr.fine_y
-            self.vram_addr.nametable_y = self.tram_addr.nametable_y
-            self.vram_addr.coarse_y = self.tram_addr.coarse_y
+        self.vram_addr.fine_y = self.tram_addr.fine_y
+        self.vram_addr.nametable_y = self.tram_addr.nametable_y
+        self.vram_addr.coarse_y = self.tram_addr.coarse_y
 
     cdef void loadBackgroundShifters(self):
         self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
@@ -401,7 +397,8 @@ cdef class PPU2C02:
                 + (self.vram_addr.fine_y) + 8
             )
         elif v == 7:
-            self.incrementScrollX()
+            if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                self.incrementScrollX()
 
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
@@ -557,14 +554,17 @@ cdef class PPU2C02:
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.eval_background()
             if self.cycle == 256:
-                self.incrementScrollY()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self.incrementScrollY()
             if self.cycle == 257:                
                 self.loadBackgroundShifters()
-                self.transferAddressX()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self.transferAddressX()
             if self.cycle == 338 or self.cycle == 340:                
                 self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-            if 280 <= self.cycle < 305:               
-                self.transferAddressY()
+            if 280 <= self.cycle < 305:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:               
+                    self.transferAddressY()
             if self.cycle == 340:
                 self.fetch_sprites()
         elif visible_scanlines:
@@ -573,10 +573,12 @@ cdef class PPU2C02:
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.eval_background()
             if self.cycle == 256:
-                self.incrementScrollY()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self.incrementScrollY()
             if self.cycle == 257:                
                 self.loadBackgroundShifters()
-                self.transferAddressX()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self.transferAddressX()
             if self.cycle == 338 or self.cycle == 340:                
                 self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
             if self.cycle == 257:
