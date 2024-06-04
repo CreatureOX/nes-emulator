@@ -428,10 +428,6 @@ cdef class PPU2C02:
         self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
 
     cdef void fetch_sprites(self):
-        cdef uint16_t sprite_pattern_addr_lo, sprite_pattern_addr_hi
-        cdef uint16_t which_pattern_table, which_tile, y_offset
-        cdef bint vertical_flip_sprite, horizontal_flip_sprite
-
         for i in range(0, self.sprite_count):
             self.fetch_sprite(i)    
 
