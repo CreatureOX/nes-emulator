@@ -432,42 +432,29 @@ cdef class PPU2C02:
 
     cdef void fetch_sprite(self, int i):
         cdef uint16_t which_pattern_table, which_tile, y_offset
-        cdef bint vertical_flip_sprite, horizontal_flip_sprite
+        cdef bint is_upper_tile
 
-        vertical_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x80 > 0
+        cdef bint vertical_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x80 > 0
         y_offset = self.scanline - self.secondary_OAM[i][Y]
         if self.PPUCTRL.sprite_size == 0:
             # 8x8 Sprite
             which_pattern_table = self.PPUCTRL.pattern_sprite
             which_tile = self.secondary_OAM[i][ID]
-            if not vertical_flip_sprite:                               
-                y_offset = y_offset & 0xFFFF
-            else:
-                y_offset = (7 - y_offset) & 0xFFFF
+            y_offset = (7 - y_offset if vertical_flip_sprite else y_offset) & 0xFFFF
         else:
             # 8x16 Sprite
             which_pattern_table = self.secondary_OAM[i][ID] & 0x01
-            if not vertical_flip_sprite:
-                y_offset = y_offset & 0x07
-                if self.scanline - self.secondary_OAM[i][Y] < 8:
-                    which_tile = self.secondary_OAM[i][ID] & 0xFE
-                else:
-                    which_tile = (self.secondary_OAM[i][ID] & 0xFE) + 1
-            else:
-                y_offset = (7 - y_offset) & 0x07
-                if self.scanline - self.secondary_OAM[i][Y] < 8:
-                    which_tile = (self.secondary_OAM[i][ID] & 0xFE) + 1
-                else:
-                    which_tile = self.secondary_OAM[i][ID] & 0xFE
+            which_tile = self.secondary_OAM[i][ID] & 0xFE
+            y_offset = (7 - y_offset if vertical_flip_sprite else y_offset) & 0x07
+            is_upper_tile = self.scanline - self.secondary_OAM[i][Y] < 8
+            which_tile += 0 if not vertical_flip_sprite and is_upper_tile else 1
+            which_tile += 1 if vertical_flip_sprite and is_upper_tile else 0
 
-
-        cdef uint16_t tile_addr = (which_pattern_table << 12) \
-            | (which_tile << 4) \
-            | (y_offset)
+        cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
         cdef uint8_t sprite_pattern_bits_lo = self.readByPPU(tile_addr + 0)
         cdef uint8_t sprite_pattern_bits_hi = self.readByPPU(tile_addr + 8)
         
-        horizontal_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x40 > 0
+        cdef bint horizontal_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x40 > 0
         if horizontal_flip_sprite:
             sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
             sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
