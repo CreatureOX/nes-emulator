@@ -14,9 +14,6 @@ ID = 1
 ATTRIBUTE = 2
 X = 3
 
-cdef uint8_t offset(uint8_t i,uint8_t offset):
-    return i*4+offset
-
 cdef uint8_t flipbyte(uint8_t b):
     b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
     b = (b & 0xCC) >> 2 | (b & 0x33) << 2
@@ -123,7 +120,7 @@ cdef class PPU2C02:
                 pass
             elif addr == 0x0004:
                 # OAM Data
-                data = self.OAM[self.OAMADDR]
+                data = self.OAM[self.OAMADDR // 4][self.OAMADDR % 4]
             elif addr == 0x0005:
                 # Scroll
                 pass
@@ -156,7 +153,7 @@ cdef class PPU2C02:
             self.OAMADDR = data
         elif addr == 0x0004:
             # OAM Data
-            self.OAM[self.OAMADDR] = data
+            self.OAM[self.OAMADDR // 4][self.OAMADDR % 4] = data
         elif addr == 0x0005:
             # Scroll
             if self.address_latch == 0:
@@ -357,8 +354,8 @@ cdef class PPU2C02:
     cdef void update_sprite_shifters(self):
         if self.PPUMASK.render_sprites == 1:
             for i in range(0, self.sprite_count):
-                if self.secondary_OAM[offset(i,X)] > 0:
-                    self.secondary_OAM[offset(i,X)] -= 1
+                if self.secondary_OAM[i][X] > 0:
+                    self.secondary_OAM[i][X] -= 1
                 else:
                     self.sprite_shifter_pattern_lo[i] <<= 1
                     self.sprite_shifter_pattern_hi[i] <<= 1
@@ -416,16 +413,16 @@ cdef class PPU2C02:
         cdef int16_t y_offset, sprite_height
         self.eval_sprite0 = False
         while nOAMEntry < 64 and self.sprite_count < 9:
-            y_offset = self.scanline - <int16_t> (self.OAM[offset(nOAMEntry, Y)])
+            y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][0])
             sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
             if 0 <= y_offset < sprite_height:
                 if self.sprite_count < 8:
                     if nOAMEntry == 0:
                         self.eval_sprite0 = True
-                    self.secondary_OAM[offset(self.sprite_count,Y)] = self.OAM[offset(nOAMEntry,Y)]
-                    self.secondary_OAM[offset(self.sprite_count,ID)] = self.OAM[offset(nOAMEntry,ID)]
-                    self.secondary_OAM[offset(self.sprite_count,ATTRIBUTE)] = self.OAM[offset(nOAMEntry,ATTRIBUTE)]
-                    self.secondary_OAM[offset(self.sprite_count,X)] = self.OAM[offset(nOAMEntry,X)]
+                    self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
+                    self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
+                    self.secondary_OAM[self.sprite_count][ATTRIBUTE] = self.OAM[nOAMEntry][ATTRIBUTE]
+                    self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
                     self.sprite_count += 1
             nOAMEntry += 1
         self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
@@ -442,31 +439,31 @@ cdef class PPU2C02:
         cdef uint16_t which_pattern_table, which_tile, y_offset
         cdef bint vertical_flip_sprite, horizontal_flip_sprite
 
-        vertical_flip_sprite = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80 > 0
-        y_offset = self.scanline - self.secondary_OAM[offset(i,Y)]
+        vertical_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x80 > 0
+        y_offset = self.scanline - self.secondary_OAM[i][Y]
         if self.PPUCTRL.sprite_size == 0:
             # 8x8 Sprite
             which_pattern_table = self.PPUCTRL.pattern_sprite
-            which_tile = self.secondary_OAM[offset(i,ID)]
+            which_tile = self.secondary_OAM[i][ID]
             if not vertical_flip_sprite:                               
                 y_offset = y_offset & 0xFFFF
             else:
                 y_offset = (7 - y_offset) & 0xFFFF
         else:
             # 8x16 Sprite
-            which_pattern_table = self.secondary_OAM[offset(i,ID)] & 0x01
+            which_pattern_table = self.secondary_OAM[i][ID] & 0x01
             if not vertical_flip_sprite:
                 y_offset = y_offset & 0x07
-                if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
-                    which_tile = self.secondary_OAM[offset(i,ID)] & 0xFE
+                if self.scanline - self.secondary_OAM[i][Y] < 8:
+                    which_tile = self.secondary_OAM[i][ID] & 0xFE
                 else:
-                    which_tile = (self.secondary_OAM[offset(i,ID)] & 0xFE) + 1
+                    which_tile = (self.secondary_OAM[i][ID] & 0xFE) + 1
             else:
                 y_offset = (7 - y_offset) & 0x07
-                if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
-                    which_tile = (self.secondary_OAM[offset(i,ID)] & 0xFE) + 1
+                if self.scanline - self.secondary_OAM[i][Y] < 8:
+                    which_tile = (self.secondary_OAM[i][ID] & 0xFE) + 1
                 else:
-                    which_tile = self.secondary_OAM[offset(i,ID)] & 0xFE
+                    which_tile = self.secondary_OAM[i][ID] & 0xFE
 
 
         cdef uint16_t tile_addr = (which_pattern_table << 12) \
@@ -475,7 +472,7 @@ cdef class PPU2C02:
         cdef uint8_t sprite_pattern_bits_lo = self.readByPPU(tile_addr + 0)
         cdef uint8_t sprite_pattern_bits_hi = self.readByPPU(tile_addr + 8)
         
-        horizontal_flip_sprite = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x40 > 0
+        horizontal_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x40 > 0
         if horizontal_flip_sprite:
             sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
             sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
@@ -504,12 +501,12 @@ cdef class PPU2C02:
 
         self.render_sprite0 = False
         for i in range(0, self.sprite_count):
-            if self.secondary_OAM[offset(i,X)] == 0:
+            if self.secondary_OAM[i][X] == 0:
                 foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
                 foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
                 foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
-                foreground_palette = (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x03) + 0x04
-                self.foreground_priority = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x20 == 0
+                foreground_palette = (self.secondary_OAM[i][ATTRIBUTE] & 0x03) + 0x04
+                self.foreground_priority = self.secondary_OAM[i][ATTRIBUTE] & 0x20 == 0
 
                 if foreground_pixel != 0:
                     if i == 0:

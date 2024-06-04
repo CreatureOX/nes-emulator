@@ -8,12 +8,7 @@ from ppu_registers cimport Controller, Mask, Status, LoopRegister
 
 import cython
 
-cdef uint8_t Y 
-cdef uint8_t ID
-cdef uint8_t ATTRIBUTE
-cdef uint8_t X 
-
-cdef uint8_t offset(uint8_t,uint8_t)
+cdef uint8_t Y, ID, ATTRIBUTE, X
 
 cdef class PPU2C02:
     cdef uint8_t[2][4096] patternTable
@@ -44,11 +39,11 @@ cdef class PPU2C02:
     cdef uint16_t background_shifter_pattern_lo, background_shifter_pattern_hi
     cdef uint16_t background_shifter_attribute_lo, background_shifter_attribute_hi
 
-    cdef public uint8_t[256] OAM
+    cdef public uint8_t[64][4] OAM
 
     cdef uint8_t OAMADDR
 
-    cdef uint8_t[32] secondary_OAM
+    cdef uint8_t[8][4] secondary_OAM
     cdef uint8_t sprite_count
     cdef uint8_t[8] sprite_shifter_pattern_lo
     cdef uint8_t[8] sprite_shifter_pattern_hi
