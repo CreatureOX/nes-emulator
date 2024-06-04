@@ -43,8 +43,7 @@ cdef class PPU2C02:
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
 
-        self.scanline = 0
-        self.cycle = 0
+        self.scanline, self.cycle = 0, 0
 
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
