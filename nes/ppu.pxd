@@ -103,6 +103,7 @@ cdef class PPU2C02:
 
     cdef void eval_sprites(self)
     cdef void fetch_sprites(self)
+    cdef void fetch_sprite(self, int)
     
     cdef tuple draw_background(self)
     cdef tuple draw_sprites(self)

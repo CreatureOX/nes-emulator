@@ -432,50 +432,56 @@ cdef class PPU2C02:
 
     cdef void fetch_sprites(self):
         cdef uint16_t sprite_pattern_addr_lo, sprite_pattern_addr_hi
+        cdef uint16_t which_pattern_table, which_tile, y_offset
+        cdef bint vertical_flip_sprite, horizontal_flip_sprite
 
         for i in range(0, self.sprite_count):
-            sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
-            sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
-            if self.PPUCTRL.sprite_size == 0:
-                if (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                    sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                        | (self.secondary_OAM[offset(i,ID)]<<4) \
-                        | ((self.scanline - self.secondary_OAM[offset(i,Y)]) & 0xFFFF)
-                else:
-                    sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                        | (self.secondary_OAM[offset(i,ID)]<<4) \
-                        | ((7 - (self.scanline - self.secondary_OAM[offset(i,Y)])) & 0xFFFF)
-            else:
-                if (self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                    if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
-                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
-                            | ((self.secondary_OAM[offset(i,ID)] & 0xFE)<<4) \
-                            | ((self.scanline - self.secondary_OAM[offset(i,Y)])&0x07) 
-                    else:
-                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
-                            | (((self.secondary_OAM[offset(i,ID)] & 0xFE)+1)<<4) \
-                            | ((self.scanline - self.secondary_OAM[offset(i,Y)])&0x07) 
-                else:
-                    if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
-                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
-                            | (((self.secondary_OAM[offset(i,ID)] & 0xFE)+1)<<4) \
-                            | ((7-(self.scanline - self.secondary_OAM[offset(i,Y)]))&0x07) 
-                    else:
-                        sprite_pattern_addr_lo = ((self.secondary_OAM[offset(i,ID)] & 0x01)<<12) \
-                            | ((self.secondary_OAM[offset(i,ID)] & 0xFE)<<4) \
-                            | ((7-(self.scanline - self.secondary_OAM[offset(i,Y)]))&0x07)   
-        
-            sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8
-            
-            sprite_pattern_bits_lo = self.readByPPU(sprite_pattern_addr_lo)
-            sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
-                    
-            if self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x40 != 0:
-                sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
-                sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
+            self.fetch_sprite(i)    
 
-            self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
-            self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi    
+    cdef void fetch_sprite(self, int i):
+        cdef uint16_t which_pattern_table, which_tile, y_offset
+        cdef bint vertical_flip_sprite, horizontal_flip_sprite
+
+        vertical_flip_sprite = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x80 > 0
+        y_offset = self.scanline - self.secondary_OAM[offset(i,Y)]
+        if self.PPUCTRL.sprite_size == 0:
+            # 8x8 Sprite
+            which_pattern_table = self.PPUCTRL.pattern_sprite
+            which_tile = self.secondary_OAM[offset(i,ID)]
+            if not vertical_flip_sprite:                               
+                y_offset = y_offset & 0xFFFF
+            else:
+                y_offset = (7 - y_offset) & 0xFFFF
+        else:
+            # 8x16 Sprite
+            which_pattern_table = self.secondary_OAM[offset(i,ID)] & 0x01
+            if not vertical_flip_sprite:
+                y_offset = y_offset & 0x07
+                if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
+                    which_tile = self.secondary_OAM[offset(i,ID)] & 0xFE
+                else:
+                    which_tile = (self.secondary_OAM[offset(i,ID)] & 0xFE) + 1
+            else:
+                y_offset = (7 - y_offset) & 0x07
+                if self.scanline - self.secondary_OAM[offset(i,Y)] < 8:
+                    which_tile = (self.secondary_OAM[offset(i,ID)] & 0xFE) + 1
+                else:
+                    which_tile = self.secondary_OAM[offset(i,ID)] & 0xFE
+
+
+        cdef uint16_t tile_addr = (which_pattern_table << 12) \
+            | (which_tile << 4) \
+            | (y_offset)
+        cdef uint8_t sprite_pattern_bits_lo = self.readByPPU(tile_addr + 0)
+        cdef uint8_t sprite_pattern_bits_hi = self.readByPPU(tile_addr + 8)
+        
+        horizontal_flip_sprite = self.secondary_OAM[offset(i,ATTRIBUTE)] & 0x40 > 0
+        if horizontal_flip_sprite:
+            sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
+            sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
+
+        self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
+        self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi 
 
     cdef tuple draw_background(self):
         cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
