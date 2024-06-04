@@ -99,6 +99,7 @@ cdef class PPU2C02:
     cdef void clock(self) except *
 
     cdef void eval_background(self)
+    cdef uint8_t fetch_background(self, uint16_t)
 
     cdef void eval_sprites(self)
     cdef void fetch_sprites(self)

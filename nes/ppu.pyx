@@ -387,18 +387,23 @@ cdef class PPU2C02:
                 self.background_next_tile_attribute >>= 2
             self.background_next_tile_attribute &= 0x03
         elif v == 4:
-            self.background_next_tile_lsb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                + (self.background_next_tile_id << 4) \
-                + (self.vram_addr.fine_y) + 0
-            )
+            self.background_next_tile_lsb = self.fetch_background(0)
         elif v == 6:
-            self.background_next_tile_msb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                + (self.background_next_tile_id << 4) \
-                + (self.vram_addr.fine_y) + 8
-            )
+            self.background_next_tile_msb = self.fetch_background(8)
         elif v == 7:
             if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                 self.incrementScrollX()
+
+    cdef uint8_t fetch_background(self, uint16_t offset):
+        cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
+        cdef uint16_t which_tile = self.background_next_tile_id
+        cdef uint16_t which_row = self.vram_addr.fine_y    
+
+        cdef uint16_t background_tile_addr = (which_pattern_table << 12) \
+            + (which_tile << 4) \
+            + (which_row) \
+            + offset
+        return self.readByPPU(background_tile_addr)
 
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
