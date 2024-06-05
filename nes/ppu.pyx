@@ -371,17 +371,7 @@ cdef class PPU2C02:
             self.loadBackgroundShifters()
             self.background_next_tile_id = self.fetch_background_tile()
         elif background_cycle == 2:
-            self.background_next_tile_attribute = self.readByPPU(0x23C0 \
-                | (self.vram_addr.nametable_y << 11) \
-                | (self.vram_addr.nametable_x << 10) \
-                | ((self.vram_addr.coarse_y >> 2) << 3) \
-                | (self.vram_addr.coarse_x >> 2)    
-            )
-            if self.vram_addr.coarse_y & 0x02 > 0:
-                self.background_next_tile_attribute >>= 4
-            if self.vram_addr.coarse_x & 0x02 > 0:
-                self.background_next_tile_attribute >>= 2
-            self.background_next_tile_attribute &= 0x03
+            self.background_next_tile_attribute = self.fetch_background_attribute()
         elif background_cycle == 4:
             self.background_next_tile_lsb = self.fetch_background(0)
         elif background_cycle == 6:
@@ -403,6 +393,20 @@ cdef class PPU2C02:
 
     cdef uint8_t fetch_background_tile(self):
         return self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+    
+    cdef uint8_t fetch_background_attribute(self):
+        cdef uint8_t attribute = self.readByPPU(0x23C0 \
+            | (self.vram_addr.nametable_y << 11) \
+            | (self.vram_addr.nametable_x << 10) \
+            | ((self.vram_addr.coarse_y >> 2) << 3) \
+            | (self.vram_addr.coarse_x >> 2))
+                
+        if self.vram_addr.coarse_y & 0x02 > 0:
+            attribute >>= 4
+        if self.vram_addr.coarse_x & 0x02 > 0:
+            attribute >>= 2
+        attribute &= 0x03
+        return attribute
 
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))

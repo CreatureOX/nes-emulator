@@ -96,6 +96,7 @@ cdef class PPU2C02:
     cdef void eval_background(self)
     cdef uint8_t fetch_background(self, uint16_t)
     cdef uint8_t fetch_background_tile(self)
+    cdef uint8_t fetch_background_attribute(self)
 
     cdef void eval_sprites(self)
     cdef void fetch_sprites(self)
