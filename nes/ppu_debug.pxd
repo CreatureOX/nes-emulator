@@ -7,6 +7,7 @@ from ppu cimport PPU2C02
 
 cdef class PPU_DEBUG:
     cdef PPU2C02 ppu
-
+    cdef list _pattern_table
+    
     cpdef uint8_t[:,:,:] palette(self)
     cpdef uint8_t[:,:,:] pattern_table(self, uint8_t, uint8_t)

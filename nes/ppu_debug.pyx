@@ -8,6 +8,7 @@ from ppu cimport PPU2C02
 cdef class PPU_DEBUG:
     def __init__(self, PPU2C02 ppu):
         self.ppu = ppu
+        self._pattern_table = [np.zeros((128,128,3)).astype(np.uint8),np.zeros((128,128,3)).astype(np.uint8)]
 
     cpdef uint8_t[:,:,:] palette(self):
         _palette = np.zeros((4, 16, 3)).astype(np.uint8)
@@ -17,8 +18,11 @@ cdef class PPU_DEBUG:
         return _palette
 
     cpdef uint8_t[:,:,:] pattern_table(self, uint8_t i, uint8_t palette):
-        cdef uint8_t tileY, tileX, tile_lsb, tile_msb, row, col, pixel
-        cdef uint16_t offset
+        cdef uint8_t tileY, tileX
+        cdef uint8_t tile_lsb, tile_msb
+        cdef uint8_t row, col
+        cdef uint8_t pixel
+        cdef uint16_t x, y, offset
 
         for tileY in range(0,16):
             for tileX in range(0,16):
@@ -29,6 +33,7 @@ cdef class PPU_DEBUG:
                     for col in range(0,8):
                         pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
-                        self.ppu.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.ppu.getColorFromPaletteTable(palette, pixel)
+                        y, x = tileY * 8 + row, tileX * 8 + (7 - col)
+                        self._pattern_table[i][y, x] = self.ppu.getColorFromPaletteTable(palette, pixel)
         
-        return self.ppu.spritePatternTable[i]
+        return self._pattern_table[i]

@@ -18,7 +18,6 @@ cdef class PPU2C02:
     cdef list palettePanel
     cdef uint8_t[240][256][3] spriteScreen
     cdef list spriteNameTable
-    cdef list spritePatternTable
 
     cdef Status PPUSTATUS
     cdef Mask PPUMASK

@@ -30,7 +30,6 @@ cdef class PPU2C02:
         self.screenWidth, self.screenHeight = 256, 240
         self.spriteScreen = np.zeros((self.screenHeight,self.screenWidth,3)).astype(np.uint8)
         self.spriteNameTable = [np.zeros((self.screenHeight,self.screenWidth,3)),np.zeros((self.screenHeight,self.screenWidth,3))]
-        self.spritePatternTable = [np.zeros((128,128,3)).astype(np.uint8),np.zeros((128,128,3)).astype(np.uint8)]
 
         self.PPUSTATUS = Status()
         self.PPUMASK = Mask()
