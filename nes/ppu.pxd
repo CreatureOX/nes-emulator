@@ -16,7 +16,7 @@ cdef class PPU2C02:
     cdef uint8_t[32] paletteTable
 
     cdef list palettePanel
-    cdef uint8_t[240][256][3] spriteScreen
+    cdef uint8_t[240][256][3] _screen
     cdef list spriteNameTable
 
     cdef Status PPUSTATUS
@@ -59,11 +59,10 @@ cdef class PPU2C02:
 
     cdef CPUBus bus
 
-    cdef int screenWidth
-    cdef int screenHeight
+    cdef int screen_width, screen_height
 
     cdef void connectCartridge(self, Cartridge)
-    cpdef uint8_t[:,:,:] getScreen(self)
+    cpdef uint8_t[:,:,:] screen(self)
 
     @cython.locals(data=uint8_t)
     cdef uint8_t readByCPU(self, uint16_t, bint)

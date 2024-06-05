@@ -27,9 +27,12 @@ cdef class PPU2C02:
         self.paletteTable = [0x00] * 32
         
         self.palettePanel = [None] * 4 * 16
-        self.screenWidth, self.screenHeight = 256, 240
-        self.spriteScreen = np.zeros((self.screenHeight,self.screenWidth,3)).astype(np.uint8)
-        self.spriteNameTable = [np.zeros((self.screenHeight,self.screenWidth,3)),np.zeros((self.screenHeight,self.screenWidth,3))]
+        self.screen_width, self.screen_height = 256, 240
+        self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
+        self.spriteNameTable = [
+            np.zeros((self.screen_height,self.screen_width,3)),
+            np.zeros((self.screen_height,self.screen_width,3))
+        ]
 
         self.PPUSTATUS = Status()
         self.PPUMASK = Mask()
@@ -70,8 +73,8 @@ cdef class PPU2C02:
     cdef void connectCartridge(self, Cartridge cartridge):
         self.cartridge = cartridge   
 
-    cpdef uint8_t[:,:,:] getScreen(self):
-        return self.spriteScreen               
+    cpdef uint8_t[:,:,:] screen(self):
+        return self._screen               
 
     cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
         data = 0x00
@@ -577,8 +580,8 @@ cdef class PPU2C02:
         cdef uint8_t pixel = 0x00, palette = 0x00
         palette, pixel = self.draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
 
-        if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
-            self.spriteScreen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
+        if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height: 
+            self._screen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
 
         self.cycle += 1
 
