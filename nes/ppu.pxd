@@ -78,7 +78,6 @@ cdef class PPU2C02:
     @cython.locals(color=uint8_t)
     cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
     cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t, uint8_t)
-    cpdef uint8_t[:,:,:] getPalette(self)
     cdef void reset(self)
 
     cdef void incrementScrollX(self)

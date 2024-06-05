@@ -285,13 +285,6 @@ cdef class PPU2C02:
         
         return self.spritePatternTable[i]
 
-    cpdef uint8_t[:,:,:] getPalette(self):
-        _palette = np.zeros((4,16,3)).astype(np.uint8)
-        for x in range(4):
-            for y in range(16):
-                _palette[x][y][:] = self.palettePanel[x*16+y]
-        return _palette
-
     cdef void reset(self):
         self.fine_x = 0x00
         self.address_latch = 0x00

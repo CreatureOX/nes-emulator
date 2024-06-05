@@ -16,6 +16,7 @@ cdef class Console:
     def __init__(self, filename: str) -> None:
         cart = Cartridge(filename)
         self.bus = CPUBus(cart)
+        self.ppu_debug = PPU_DEBUG(self.bus.ppu)
 
     cpdef void power_up(self):
         self.bus.power_up()
@@ -168,6 +169,6 @@ cdef class Console:
         return self.bus.ppu.getPatternTable(i,0)
         
     cpdef uint8_t[:,:,:] ppu_palette(self):
-        return self.bus.ppu.getPalette()
+        return self.ppu_debug.palette()
 
         
