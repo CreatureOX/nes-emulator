@@ -366,11 +366,11 @@ cdef class PPU2C02:
 
     cdef void eval_background(self):
         self.updateShifters()
-        cdef v = (self.cycle - 1) % 8
-        if v == 0:
+        cdef background_cycle = (self.cycle - 1) % 8
+        if background_cycle == 0:
             self.loadBackgroundShifters()
-            self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-        elif v == 2:
+            self.background_next_tile_id = self.fetch_background_tile()
+        elif background_cycle == 2:
             self.background_next_tile_attribute = self.readByPPU(0x23C0 \
                 | (self.vram_addr.nametable_y << 11) \
                 | (self.vram_addr.nametable_x << 10) \
@@ -382,11 +382,11 @@ cdef class PPU2C02:
             if self.vram_addr.coarse_x & 0x02 > 0:
                 self.background_next_tile_attribute >>= 2
             self.background_next_tile_attribute &= 0x03
-        elif v == 4:
+        elif background_cycle == 4:
             self.background_next_tile_lsb = self.fetch_background(0)
-        elif v == 6:
+        elif background_cycle == 6:
             self.background_next_tile_msb = self.fetch_background(8)
-        elif v == 7:
+        elif background_cycle == 7:
             if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                 self.incrementScrollX()
 
@@ -400,6 +400,9 @@ cdef class PPU2C02:
             + (which_row) \
             + offset
         return self.readByPPU(background_tile_addr)
+
+    cdef uint8_t fetch_background_tile(self):
+        return self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
 
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
@@ -551,7 +554,7 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self.transferAddressX()
             if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+                self.background_next_tile_id = self.fetch_background_tile()
             if 280 <= self.cycle < 305:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:               
                     self.transferAddressY()
