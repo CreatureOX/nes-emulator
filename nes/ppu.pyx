@@ -266,24 +266,7 @@ cdef class PPU2C02:
 
     cdef tuple getColorFromPaletteTable(self, uint8_t palette, uint8_t pixel):
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
-        return self.palettePanel[color]          
-
-    cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t i, uint8_t palette):
-        cdef uint8_t tileY, tileX, tile_lsb, tile_msb, row, col, pixel
-        cdef uint16_t offset
-
-        for tileY in range(0,16):
-            for tileX in range(0,16):
-                offset = tileY * 256 + tileX * 16
-                for row in range(0,8):
-                    tile_lsb = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
-                    tile_msb = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
-                    for col in range(0,8):
-                        pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
-                        tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
-                        self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
-        
-        return self.spritePatternTable[i]
+        return self.palettePanel[color]
 
     cdef void reset(self):
         self.fine_x = 0x00

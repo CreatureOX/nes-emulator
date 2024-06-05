@@ -166,7 +166,7 @@ cdef class Console:
         return self.bus.cpu.registers.PC   
 
     cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t i):
-        return self.bus.ppu.getPatternTable(i,0)
+        return self.ppu_debug.pattern_table(i,0)
         
     cpdef uint8_t[:,:,:] ppu_palette(self):
         return self.ppu_debug.palette()
