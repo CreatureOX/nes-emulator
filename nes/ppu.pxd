@@ -4,7 +4,7 @@ from numpy cimport ndarray
 from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
-from ppu_registers cimport Controller, Mask, Status, LoopRegister
+from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 
 import cython
 
@@ -35,8 +35,9 @@ cdef class PPU2C02:
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
     cdef uint8_t background_next_tile_lsb, background_next_tile_msb
-    cdef uint16_t background_shifter_pattern_lo, background_shifter_pattern_hi
-    cdef uint16_t background_shifter_attribute_lo, background_shifter_attribute_hi
+
+    cdef BackgroundShiftRegister background_pattern_shift_register
+    cdef BackgroundShiftRegister background_attribute_shift_register
 
     cdef public uint8_t[64][4] OAM
 

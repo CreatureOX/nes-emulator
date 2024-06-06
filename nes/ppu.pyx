@@ -6,7 +6,7 @@ cimport numpy as np
 from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
-from ppu_registers cimport Controller, Mask, Status, LoopRegister
+from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 
 
 Y = 0
@@ -51,10 +51,8 @@ cdef class PPU2C02:
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb = 0x00
         self.background_next_tile_msb = 0x00
-        self.background_shifter_pattern_lo = 0x0000
-        self.background_shifter_pattern_hi = 0x0000
-        self.background_shifter_attribute_lo = 0x0000
-        self.background_shifter_attribute_hi = 0x0000
+        self.background_pattern_shift_register = BackgroundShiftRegister()
+        self.background_attribute_shift_register = BackgroundShiftRegister()
 
         memset(self.OAM, 0, 64*4*sizeof(uint8_t))
         self.OAMADDR = 0x00
@@ -278,8 +276,9 @@ cdef class PPU2C02:
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
-        self.background_shifter_pattern_lo, self.background_shifter_pattern_hi = 0x0000, 0x0000
-        self.background_shifter_attribute_lo, self.background_shifter_attribute_hi = 0x0000, 0x0000
+        self.background_pattern_shift_register.reset()
+        self.background_attribute_shift_register.reset()
+
         self.PPUSTATUS.value = 0x00
         self.PPUMASK.value = 0x00
         self.PPUCTRL.value = 0x00
@@ -316,31 +315,32 @@ cdef class PPU2C02:
         self.vram_addr.coarse_y = self.tram_addr.coarse_y
 
     cdef void loadBackgroundShifters(self):
-        self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
-        self.background_shifter_pattern_hi = ((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-        self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
-        self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
+        self.background_pattern_shift_register.low_bits = ((self.background_pattern_shift_register.low_bits & 0xFF00) | self.background_next_tile_lsb)
+        self.background_pattern_shift_register.high_bits = ((self.background_pattern_shift_register.high_bits & 0xFF00) | self.background_next_tile_msb)
+
+        self.background_attribute_shift_register.low_bits = (self.background_attribute_shift_register.low_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
+        self.background_attribute_shift_register.high_bits =(self.background_attribute_shift_register.high_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
     cdef void update_background_shifters(self):
-        if self.PPUMASK.render_background == 1:
-            self.background_shifter_pattern_lo <<= 1
-            self.background_shifter_pattern_hi <<= 1
-            self.background_shifter_attribute_lo <<= 1
-            self.background_shifter_attribute_hi <<= 1
+        self.background_pattern_shift_register.low_bits <<= 1
+        self.background_pattern_shift_register.high_bits <<= 1
+        self.background_attribute_shift_register.low_bits <<= 1
+        self.background_attribute_shift_register.high_bits <<= 1
 
     cdef void update_sprite_shifters(self):
-        if self.PPUMASK.render_sprites == 1:
-            for i in range(0, self.sprite_count):
-                if self.secondary_OAM[i][X] > 0:
-                    self.secondary_OAM[i][X] -= 1
-                else:
-                    self.sprite_shifter_pattern_lo[i] <<= 1
-                    self.sprite_shifter_pattern_hi[i] <<= 1
+        for i in range(0, self.sprite_count):
+            if self.secondary_OAM[i][X] > 0:
+                self.secondary_OAM[i][X] -= 1
+            else:
+                self.sprite_shifter_pattern_lo[i] <<= 1
+                self.sprite_shifter_pattern_hi[i] <<= 1
 
     cdef void updateShifters(self):
-        self.update_background_shifters()
+        if self.PPUMASK.render_background == 1:
+            self.update_background_shifters()
         if 1 <= self.cycle < 258:
-            self.update_sprite_shifters()
+            if self.PPUMASK.render_sprites == 1:
+                self.update_sprite_shifters()
 
     cdef void eval_background(self):
         self.updateShifters()
@@ -452,12 +452,12 @@ cdef class PPU2C02:
         cdef uint8_t background_palette = 0x00, background_palette_0, background_palette_1
         cdef uint16_t bit_mux = 0x8000 >> self.fine_x
 
-        background_pixel_0 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
-        background_pixel_1 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
+        background_pixel_0 = 1 if (self.background_pattern_shift_register.low_bits & bit_mux) > 0 else 0
+        background_pixel_1 = 1 if (self.background_pattern_shift_register.high_bits & bit_mux) > 0 else 0
         background_pixel = (background_pixel_1 << 1) | background_pixel_0
 
-        background_palette_0 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
-        background_palette_1 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
+        background_palette_0 = 1 if (self.background_attribute_shift_register.low_bits & bit_mux) > 0 else 0
+        background_palette_1 = 1 if (self.background_attribute_shift_register.high_bits & bit_mux) > 0 else 0
         background_palette = (background_palette_1 << 1) | background_palette_0
 
         return (background_palette, background_pixel)
