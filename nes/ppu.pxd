@@ -9,6 +9,7 @@ from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShi
 import cython
 
 cdef uint8_t Y, ID, ATTRIBUTE, X
+cdef int LOW_BITS, HIGH_BITS
 
 cdef class PPU2C02:
     cdef uint8_t[2][4096] patternTable
@@ -38,6 +39,7 @@ cdef class PPU2C02:
 
     cdef BackgroundShiftRegister background_pattern_shift_register
     cdef BackgroundShiftRegister background_attribute_shift_register
+    cdef uint8_t[8][2] sprite_pattern_shift_registers
 
     cdef public uint8_t[64][4] OAM
 
@@ -45,8 +47,6 @@ cdef class PPU2C02:
 
     cdef uint8_t[8][4] secondary_OAM
     cdef uint8_t sprite_count
-    cdef uint8_t[8] sprite_shifter_pattern_lo
-    cdef uint8_t[8] sprite_shifter_pattern_hi
 
     cdef bint eval_sprite0
     cdef bint render_sprite0
@@ -83,6 +83,7 @@ cdef class PPU2C02:
     cdef void transferAddressX(self)
     cdef void transferAddressY(self)
     cdef void loadBackgroundShifters(self)
+    cdef void reset_sprite_shift_registers(self)
 
     cdef void update_background_shifters(self)
     cdef void update_sprite_shifters(self)

@@ -14,6 +14,9 @@ ID = 1
 ATTRIBUTE = 2
 X = 3
 
+LOW_BITS = 0
+HIGH_BITS = 1
+
 cdef uint8_t flipbyte(uint8_t b):
     b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
     b = (b & 0xCC) >> 2 | (b & 0x33) << 2
@@ -58,8 +61,7 @@ cdef class PPU2C02:
         self.OAMADDR = 0x00
         memset(self.secondary_OAM, 0, 8*4*sizeof(uint8_t))
 
-        self.sprite_shifter_pattern_lo = [0x00] * 8
-        self.sprite_shifter_pattern_hi = [0x00] * 8
+        memset(self.sprite_pattern_shift_registers, 0, 8 * 2 * sizeof(uint8_t))
         self.eval_sprite0 = False
         self.render_sprite0 = False
         self.nmi = False
@@ -321,6 +323,11 @@ cdef class PPU2C02:
         self.background_attribute_shift_register.low_bits = (self.background_attribute_shift_register.low_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
         self.background_attribute_shift_register.high_bits =(self.background_attribute_shift_register.high_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
+    cdef void reset_sprite_shift_registers(self):
+        for i in range(0, 8):
+            self.sprite_pattern_shift_registers[i][LOW_BITS] = 0x00
+            self.sprite_pattern_shift_registers[i][HIGH_BITS] = 0x00
+
     cdef void update_background_shifters(self):
         self.background_pattern_shift_register.low_bits <<= 1
         self.background_pattern_shift_register.high_bits <<= 1
@@ -332,8 +339,8 @@ cdef class PPU2C02:
             if self.secondary_OAM[i][X] > 0:
                 self.secondary_OAM[i][X] -= 1
             else:
-                self.sprite_shifter_pattern_lo[i] <<= 1
-                self.sprite_shifter_pattern_hi[i] <<= 1
+                self.sprite_pattern_shift_registers[i][LOW_BITS] <<= 1
+                self.sprite_pattern_shift_registers[i][HIGH_BITS] <<= 1
 
     cdef void updateShifters(self):
         if self.PPUMASK.render_background == 1:
@@ -389,9 +396,7 @@ cdef class PPU2C02:
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
         self.sprite_count = 0
-        for i in range(0, 8):
-            self.sprite_shifter_pattern_lo[i] = 0
-            self.sprite_shifter_pattern_hi[i] = 0
+        self.reset_sprite_shift_registers()
             
         cdef uint8_t nOAMEntry = 0
         cdef int16_t y_offset, sprite_height
@@ -444,8 +449,8 @@ cdef class PPU2C02:
             sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
             sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
 
-        self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
-        self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi 
+        self.sprite_pattern_shift_registers[i][LOW_BITS] = sprite_pattern_bits_lo
+        self.sprite_pattern_shift_registers[i][HIGH_BITS] = sprite_pattern_bits_hi 
 
     cdef tuple draw_background(self):
         cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
@@ -469,8 +474,8 @@ cdef class PPU2C02:
         self.render_sprite0 = False
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] == 0:
-                foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
-                foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
+                foreground_pixel_lo = 1 if (self.sprite_pattern_shift_registers[i][LOW_BITS] & 0x80) > 0 else 0
+                foreground_pixel_hi = 1 if (self.sprite_pattern_shift_registers[i][HIGH_BITS] & 0x80) > 0 else 0
                 foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
                 foreground_palette = (self.secondary_OAM[i][ATTRIBUTE] & 0x03) + 0x04
                 self.foreground_priority = self.secondary_OAM[i][ATTRIBUTE] & 0x20 == 0
@@ -523,9 +528,7 @@ cdef class PPU2C02:
                 self.PPUSTATUS.vertical_blank = 0
                 self.PPUSTATUS.sprite_overflow = 0
                 self.PPUSTATUS.sprite_zero_hit = 0
-                for i in range(0, 8):
-                    self.sprite_shifter_pattern_hi[i] = 0
-                    self.sprite_shifter_pattern_lo[i] = 0
+                self.reset_sprite_shift_registers()
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.eval_background()
             if self.cycle == 256:
