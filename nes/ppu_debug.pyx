@@ -5,7 +5,7 @@ cimport numpy as np
 from ppu cimport PPU2C02
 
 
-cdef class PPU_DEBUG:
+cdef class PPUDebugger:
     def __init__(self, PPU2C02 ppu):
         self.ppu = ppu
         self._pattern_table = [np.zeros((128,128,3)).astype(np.uint8),np.zeros((128,128,3)).astype(np.uint8)]

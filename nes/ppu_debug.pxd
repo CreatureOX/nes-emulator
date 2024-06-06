@@ -5,7 +5,7 @@ cimport numpy as np
 from ppu cimport PPU2C02
 
 
-cdef class PPU_DEBUG:
+cdef class PPUDebugger:
     cdef PPU2C02 ppu
     cdef list _pattern_table
     
