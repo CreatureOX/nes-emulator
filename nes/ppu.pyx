@@ -402,7 +402,7 @@ cdef class PPU2C02:
         cdef int16_t y_offset, sprite_height
         self.eval_sprite0 = False
         while nOAMEntry < 64 and self.sprite_count < 9:
-            y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][0])
+            y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][Y])
             sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
             if 0 <= y_offset < sprite_height:
                 if self.sprite_count < 8:
