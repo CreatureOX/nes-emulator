@@ -34,6 +34,6 @@ cdef class PPUDebugger:
                         pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
                         y, x = tileY * 8 + row, tileX * 8 + (7 - col)
-                        self._pattern_table[i][y, x] = self.ppu.getColorFromPaletteTable(palette, pixel)
+                        self._pattern_table[i][y, x] = self.ppu.fetch_color(palette, pixel)
         
         return self._pattern_table[i]

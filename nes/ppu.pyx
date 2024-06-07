@@ -25,17 +25,13 @@ cdef uint8_t flipbyte(uint8_t b):
 
 cdef class PPU2C02:
     def __init__(self, bus: CPUBus) -> None:
-        self.patternTable = [[0x00] * 64 * 64] * 2
-        self.nameTable = [[0x00] * 32 * 32] * 2
-        self.paletteTable = [0x00] * 32
+        self._pattern_table = [[0x00] * 64 * 64] * 2
+        self._nametable = [[0x00] * 32 * 32] * 2
+        self._palette_table = [0x00] * 32
         
-        self.palettePanel = [None] * 4 * 16
+        self._palette_panel = [None] * 4 * 16
         self.screen_width, self.screen_height = 256, 240
         self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
-        self.spriteNameTable = [
-            np.zeros((self.screen_height,self.screen_width,3)),
-            np.zeros((self.screen_height,self.screen_width,3))
-        ]
 
         self.PPUSTATUS = Status()
         self.PPUMASK = Mask()
@@ -68,7 +64,7 @@ cdef class PPU2C02:
         self.frame_complete = False
 
         self.bus = bus
-        self.setPalettePanel()    
+        self._set_palette_panel()    
 
     cdef void connectCartridge(self, Cartridge cartridge):
         self.cartridge = cartridge   
@@ -186,27 +182,27 @@ cdef class PPU2C02:
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
-            data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
+            data = self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
             if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
                 elif 0x0800 <= addr <= 0x0BFF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self.nameTable[1][addr & 0x03FF]                                 
+                    data = self._nametable[1][addr & 0x03FF]                                 
             elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0800 <= addr <= 0x0BFF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
         elif 0x3F00 <= addr <= 0x3FFF:
             addr &= 0x001F
             if addr == 0x0010:
@@ -217,7 +213,7 @@ cdef class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            data = self.paletteTable[addr] & (0x30 if self.PPUMASK.greyscale == 1 else 0x3F)
+            data = self._palette_table[addr] & (0x30 if self.PPUMASK.greyscale == 1 else 0x3F)
         return data
 
     cdef void writeByPPU(self, uint16_t addr, uint8_t data):
@@ -227,27 +223,27 @@ cdef class PPU2C02:
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
-            self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
+            self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
             if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
                 if 0x0800 <= addr <= 0x0BFF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
             elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0800 <= addr <= 0x0BFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
         elif 0x3F00 <= addr <= 0x3FFF:
             addr &= 0x001F
             if addr == 0x0010:
@@ -258,17 +254,17 @@ cdef class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            self.paletteTable[addr] = data            
+            self._palette_table[addr] = data            
 
-    cdef void setPalettePanel(self):    
-        self.palettePanel[0x00],self.palettePanel[0x01],self.palettePanel[0x02],self.palettePanel[0x03],self.palettePanel[0x04],self.palettePanel[0x05],self.palettePanel[0x06],self.palettePanel[0x07],self.palettePanel[0x08],self.palettePanel[0x09],self.palettePanel[0x0a],self.palettePanel[0x0b],self.palettePanel[0x0c],self.palettePanel[0x0d],self.palettePanel[0x0e],self.palettePanel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x10],self.palettePanel[0x11],self.palettePanel[0x12],self.palettePanel[0x13],self.palettePanel[0x14],self.palettePanel[0x15],self.palettePanel[0x16],self.palettePanel[0x17],self.palettePanel[0x18],self.palettePanel[0x19],self.palettePanel[0x1a],self.palettePanel[0x1b],self.palettePanel[0x1c],self.palettePanel[0x1d],self.palettePanel[0x1e],self.palettePanel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x30],self.palettePanel[0x31],self.palettePanel[0x32],self.palettePanel[0x33],self.palettePanel[0x34],self.palettePanel[0x35],self.palettePanel[0x36],self.palettePanel[0x37],self.palettePanel[0x38],self.palettePanel[0x39],self.palettePanel[0x3a],self.palettePanel[0x3b],self.palettePanel[0x3c],self.palettePanel[0x3d],self.palettePanel[0x3e],self.palettePanel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
+    cdef void _set_palette_panel(self):    
+        self._palette_panel[0x00],self._palette_panel[0x01],self._palette_panel[0x02],self._palette_panel[0x03],self._palette_panel[0x04],self._palette_panel[0x05],self._palette_panel[0x06],self._palette_panel[0x07],self._palette_panel[0x08],self._palette_panel[0x09],self._palette_panel[0x0a],self._palette_panel[0x0b],self._palette_panel[0x0c],self._palette_panel[0x0d],self._palette_panel[0x0e],self._palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self._palette_panel[0x10],self._palette_panel[0x11],self._palette_panel[0x12],self._palette_panel[0x13],self._palette_panel[0x14],self._palette_panel[0x15],self._palette_panel[0x16],self._palette_panel[0x17],self._palette_panel[0x18],self._palette_panel[0x19],self._palette_panel[0x1a],self._palette_panel[0x1b],self._palette_panel[0x1c],self._palette_panel[0x1d],self._palette_panel[0x1e],self._palette_panel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self._palette_panel[0x20],self._palette_panel[0x21],self._palette_panel[0x22],self._palette_panel[0x23],self._palette_panel[0x24],self._palette_panel[0x25],self._palette_panel[0x26],self._palette_panel[0x27],self._palette_panel[0x28],self._palette_panel[0x29],self._palette_panel[0x2a],self._palette_panel[0x2b],self._palette_panel[0x2c],self._palette_panel[0x2d],self._palette_panel[0x2e],self._palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
+        self._palette_panel[0x30],self._palette_panel[0x31],self._palette_panel[0x32],self._palette_panel[0x33],self._palette_panel[0x34],self._palette_panel[0x35],self._palette_panel[0x36],self._palette_panel[0x37],self._palette_panel[0x38],self._palette_panel[0x39],self._palette_panel[0x3a],self._palette_panel[0x3b],self._palette_panel[0x3c],self._palette_panel[0x3d],self._palette_panel[0x3e],self._palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
-    cdef tuple getColorFromPaletteTable(self, uint8_t palette, uint8_t pixel):
+    cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
-        return self.palettePanel[color]
+        return self._palette_panel[color]
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -584,7 +580,7 @@ cdef class PPU2C02:
         palette, pixel = self.draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
 
         if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height: 
-            self._screen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
+            self._screen[self.scanline][<int>(self.cycle - 1)] = self.fetch_color(palette, pixel)
 
         self.cycle += 1
 

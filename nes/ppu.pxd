@@ -12,13 +12,12 @@ cdef uint8_t Y, ID, ATTRIBUTE, X
 cdef int LOW_NIBBLE, HIGH_NIBBLE
 
 cdef class PPU2C02:
-    cdef uint8_t[2][4096] patternTable
-    cdef uint8_t[2][1024] nameTable
-    cdef uint8_t[32] paletteTable
+    cdef uint8_t[2][4096] _pattern_table
+    cdef uint8_t[2][1024] _nametable
+    cdef uint8_t[32] _palette_table
 
-    cdef list palettePanel
+    cdef list _palette_panel
     cdef uint8_t[240][256][3] _screen
-    cdef list spriteNameTable
 
     cdef Status PPUSTATUS
     cdef Mask PPUMASK
@@ -73,9 +72,8 @@ cdef class PPU2C02:
     @cython.locals(success=bint)
     cdef void writeByPPU(self, uint16_t, uint8_t)
 
-    cdef void setPalettePanel(self)
-    @cython.locals(color=uint8_t)
-    cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
+    cdef void _set_palette_panel(self)
+    cdef tuple fetch_color(self, uint8_t, uint8_t)
     cdef void reset(self)
 
     cdef void _incr_coarseX(self)
