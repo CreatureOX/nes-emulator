@@ -14,8 +14,8 @@ ID = 1
 ATTRIBUTE = 2
 X = 3
 
-LOW_BITS = 0
-HIGH_BITS = 1
+LOW_NIBBLE = 0
+HIGH_NIBBLE = 1
 
 cdef uint8_t flipbyte(uint8_t b):
     b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
@@ -325,8 +325,8 @@ cdef class PPU2C02:
 
     cdef void reset_sprite_shift_registers(self):
         for i in range(0, 8):
-            self.sprite_pattern_shift_registers[i][LOW_BITS] = 0x00
-            self.sprite_pattern_shift_registers[i][HIGH_BITS] = 0x00
+            self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = 0x00
+            self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = 0x00
 
     cdef void update_background_shifters(self):
         self.background_pattern_shift_register.low_bits <<= 1
@@ -339,8 +339,8 @@ cdef class PPU2C02:
             if self.secondary_OAM[i][X] > 0:
                 self.secondary_OAM[i][X] -= 1
             else:
-                self.sprite_pattern_shift_registers[i][LOW_BITS] <<= 1
-                self.sprite_pattern_shift_registers[i][HIGH_BITS] <<= 1
+                self.sprite_pattern_shift_registers[i][LOW_NIBBLE] <<= 1
+                self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
     cdef void updateShifters(self):
         if self.PPUMASK.render_background == 1:
@@ -449,8 +449,8 @@ cdef class PPU2C02:
             sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
             sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
 
-        self.sprite_pattern_shift_registers[i][LOW_BITS] = sprite_pattern_bits_lo
-        self.sprite_pattern_shift_registers[i][HIGH_BITS] = sprite_pattern_bits_hi 
+        self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_bits_lo
+        self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_bits_hi 
 
     cdef tuple draw_background(self):
         cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
@@ -474,8 +474,8 @@ cdef class PPU2C02:
         self.render_sprite0 = False
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] == 0:
-                foreground_pixel_lo = 1 if (self.sprite_pattern_shift_registers[i][LOW_BITS] & 0x80) > 0 else 0
-                foreground_pixel_hi = 1 if (self.sprite_pattern_shift_registers[i][HIGH_BITS] & 0x80) > 0 else 0
+                foreground_pixel_lo = 1 if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0 else 0
+                foreground_pixel_hi = 1 if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0 else 0
                 foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
                 foreground_palette = (self.secondary_OAM[i][ATTRIBUTE] & 0x03) + 0x04
                 self.foreground_priority = self.secondary_OAM[i][ATTRIBUTE] & 0x20 == 0
