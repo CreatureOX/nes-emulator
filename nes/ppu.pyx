@@ -338,15 +338,9 @@ cdef class PPU2C02:
                 self.sprite_pattern_shift_registers[i][LOW_NIBBLE] <<= 1
                 self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
-    cdef void _update_shifters(self):
+    cdef void eval_background(self):
         if self.PPUMASK.render_background == 1:
             self._update_background_shifters()
-        if 1 <= self.cycle < 258:
-            if self.PPUMASK.render_sprites == 1:
-                self._update_sprite_shifters()
-
-    cdef void eval_background(self):
-        self._update_shifters()
         cdef background_cycle = (self.cycle - 1) % 8
         if background_cycle == 0:
             self._load_background_shifters()
@@ -505,10 +499,10 @@ cdef class PPU2C02:
             if self.eval_sprite0 and self.render_sprite0:
                 if self.PPUMASK.render_background & self.PPUMASK.render_sprites != 0:
                     if ((self.PPUMASK.render_background_left | self.PPUMASK.render_sprites_left) == 0):
-                        if 9 <= self.cycle < 258:
+                        if 9 <= self.cycle <= 256:
                             self.PPUSTATUS.sprite_zero_hit = 1
                     else:
-                        if 1 <= self.cycle < 258:
+                        if 1 <= self.cycle <= 256:
                             self.PPUSTATUS.sprite_zero_hit = 1
 
         return (palette, pixel)
@@ -520,45 +514,61 @@ cdef class PPU2C02:
         cdef bint vertical_blanking_lines = 241 <= self.scanline <= 260
 
         if pre_render_scanline:
+            if 1 <= self.cycle <= 256:
+                self.eval_background()
+                if self.cycle == 256:
+                    if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                        self._incr_Y()
+            elif self.cycle == 257:                
+                self._load_background_shifters()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._transfer_X_address()
+            elif 321 <= self.cycle <= 336: 
+                self.eval_background()
+            if self.cycle == 340:                
+                self.background_next_tile_id = self.fetch_background_tile()
+                self.background_next_tile_id = self.fetch_background_tile()
+
+            if 1 <= self.cycle <= 256:
+                if self.PPUMASK.render_sprites == 1:
+                    self._update_sprite_shifters()   
+            if self.cycle == 340:
+                self.fetch_sprites()
+
             if self.cycle == 1:
                 self.PPUSTATUS.vertical_blank = 0
                 self.PPUSTATUS.sprite_overflow = 0
                 self.PPUSTATUS.sprite_zero_hit = 0
                 self._reset_sprite_shift_registers()
-            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
-                self.eval_background()
-            if self.cycle == 256:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._incr_Y()
-            if self.cycle == 257:                
-                self._load_background_shifters()
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._transfer_X_address()
-            if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.fetch_background_tile()
-            if 280 <= self.cycle < 305:
+            elif 280 <= self.cycle <= 304:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:               
                     self._transfer_Y_address()
-            if self.cycle == 340:
-                self.fetch_sprites()
         elif visible_scanlines:
             if self.scanline == 0 and self.cycle == 0:
                 self.cycle = 1
-            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
+
+            if 1 <= self.cycle <= 256:
                 self.eval_background()
-            if self.cycle == 256:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._incr_Y()
-            if self.cycle == 257:                
+                if self.cycle == 256:
+                    if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                        self._incr_Y()
+            elif self.cycle == 257:                
                 self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_X_address()
-            if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
-            if self.cycle == 257:
-                self.eval_sprites()
+            elif 321 <= self.cycle <= 336: 
+                self.eval_background()
             if self.cycle == 340:
-                self.fetch_sprites()
+                self.background_next_tile_id = self.fetch_background_tile()
+                self.background_next_tile_id = self.fetch_background_tile()
+
+            if 1 <= self.cycle <= 256: 
+                if self.PPUMASK.render_sprites == 1:
+                    self._update_sprite_shifters()        
+            elif self.cycle == 257:
+                self.eval_sprites()
+            elif self.cycle == 340:
+                self.fetch_sprites()        
         elif post_render_scanline:
             pass
         elif vertical_blanking_lines:            

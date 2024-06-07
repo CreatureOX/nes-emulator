@@ -85,7 +85,6 @@ cdef class PPU2C02:
 
     cdef void _update_background_shifters(self)
     cdef void _update_sprite_shifters(self)
-    cdef void _update_shifters(self)
     cdef void clock(self) except *
 
     cdef void eval_background(self)
