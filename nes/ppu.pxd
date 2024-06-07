@@ -22,8 +22,8 @@ cdef class PPU2C02:
     cdef Status PPUSTATUS
     cdef Mask PPUMASK
     cdef Controller PPUCTRL
-    cdef LoopRegister vram_addr
-    cdef LoopRegister tram_addr
+    cdef LoopRegister VRAM_addr
+    cdef LoopRegister temp_VRAM_addr
 
     cdef uint8_t fine_x
 

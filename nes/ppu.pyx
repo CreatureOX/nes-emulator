@@ -36,8 +36,8 @@ cdef class PPU2C02:
         self.PPUSTATUS = Status()
         self.PPUMASK = Mask()
         self.PPUCTRL = Controller()
-        self.vram_addr = LoopRegister()
-        self.tram_addr = LoopRegister()
+        self.VRAM_addr = LoopRegister()
+        self.temp_VRAM_addr = LoopRegister()
 
         self.fine_x = 0x00
 
@@ -127,18 +127,18 @@ cdef class PPU2C02:
             elif addr == 0x0007:
                 # PPU Data
                 data = self.ppu_data_buffer
-                self.ppu_data_buffer = self.readByPPU(self.vram_addr.value)
-                if self.vram_addr.value >= 0x3F00:
+                self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value)
+                if self.VRAM_addr.value >= 0x3F00:
                     data = self.ppu_data_buffer
-                self.vram_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+                self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
         return data
 
     cdef void writeByCPU(self, uint16_t addr, uint8_t data):
         if addr == 0x0000:
             # Control
             self.PPUCTRL.value = data
-            self.tram_addr.nametable_x = self.PPUCTRL.nametable_x
-            self.tram_addr.nametable_y = self.PPUCTRL.nametable_y
+            self.temp_VRAM_addr.nametable_x = self.PPUCTRL.nametable_x
+            self.temp_VRAM_addr.nametable_y = self.PPUCTRL.nametable_y
         elif addr == 0x0001:
             # Mask
             self.PPUMASK.value = data
@@ -155,25 +155,25 @@ cdef class PPU2C02:
             # Scroll
             if self.address_latch == 0:
                 self.fine_x = data & 0x07
-                self.tram_addr.coarse_x = data >> 3
+                self.temp_VRAM_addr.coarse_x = data >> 3
                 self.address_latch = 1
             else:
-                self.tram_addr.fine_y = data & 0x07
-                self.tram_addr.coarse_y = data >> 3
+                self.temp_VRAM_addr.fine_y = data & 0x07
+                self.temp_VRAM_addr.coarse_y = data >> 3
                 self.address_latch = 0
         elif addr == 0x0006:
             # PPU Address
             if self.address_latch == 0:
-                self.tram_addr.value = ((data & 0x3F) << 8) | (self.tram_addr.value & 0x00FF)
+                self.temp_VRAM_addr.value = ((data & 0x3F) << 8) | (self.temp_VRAM_addr.value & 0x00FF)
                 self.address_latch = 1
             else:
-                self.tram_addr.value = (self.tram_addr.value & 0xFF00) | data
-                self.vram_addr.value = self.tram_addr.value
+                self.temp_VRAM_addr.value = (self.temp_VRAM_addr.value & 0xFF00) | data
+                self.VRAM_addr.value = self.temp_VRAM_addr.value
                 self.address_latch = 0
         elif addr == 0x0007:
             # PPU Data
-            self.writeByPPU(self.vram_addr.value, data)
-            self.vram_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            self.writeByPPU(self.VRAM_addr.value, data)
+            self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
 
     cdef uint8_t readByPPU(self, uint16_t addr):
         addr &= 0x3FFF
@@ -280,37 +280,37 @@ cdef class PPU2C02:
         self.PPUSTATUS.value = 0x00
         self.PPUMASK.value = 0x00
         self.PPUCTRL.value = 0x00
-        self.vram_addr.value = 0x0000
-        self.tram_addr.value = 0x0000
+        self.VRAM_addr.value = 0x0000
+        self.temp_VRAM_addr.value = 0x0000
 
     cdef void _incr_coarseX(self):
-        if self.vram_addr.coarse_x == 31:
-            self.vram_addr.coarse_x = 0
-            self.vram_addr.nametable_x = ~self.vram_addr.nametable_x
+        if self.VRAM_addr.coarse_x == 31:
+            self.VRAM_addr.coarse_x = 0
+            self.VRAM_addr.nametable_x = ~self.VRAM_addr.nametable_x
         else:
-            self.vram_addr.coarse_x += 1
+            self.VRAM_addr.coarse_x += 1
 
     cdef void _incr_Y(self):
-        if self.vram_addr.fine_y < 7:
-            self.vram_addr.fine_y += 1
+        if self.VRAM_addr.fine_y < 7:
+            self.VRAM_addr.fine_y += 1
         else:
-            self.vram_addr.fine_y = 0
-            if self.vram_addr.coarse_y == 29:
-                self.vram_addr.coarse_y = 0
-                self.vram_addr.nametable_y = ~self.vram_addr.nametable_y
-            elif self.vram_addr.coarse_y == 31:
-                self.vram_addr.coarse_y = 0
+            self.VRAM_addr.fine_y = 0
+            if self.VRAM_addr.coarse_y == 29:
+                self.VRAM_addr.coarse_y = 0
+                self.VRAM_addr.nametable_y = ~self.VRAM_addr.nametable_y
+            elif self.VRAM_addr.coarse_y == 31:
+                self.VRAM_addr.coarse_y = 0
             else:
-                self.vram_addr.coarse_y += 1
+                self.VRAM_addr.coarse_y += 1
 
     cdef void _transfer_X_address(self):
-        self.vram_addr.nametable_x = self.tram_addr.nametable_x
-        self.vram_addr.coarse_x = self.tram_addr.coarse_x
+        self.VRAM_addr.nametable_x = self.temp_VRAM_addr.nametable_x
+        self.VRAM_addr.coarse_x = self.temp_VRAM_addr.coarse_x
 
     cdef void _transfer_Y_address(self):
-        self.vram_addr.fine_y = self.tram_addr.fine_y
-        self.vram_addr.nametable_y = self.tram_addr.nametable_y
-        self.vram_addr.coarse_y = self.tram_addr.coarse_y
+        self.VRAM_addr.fine_y = self.temp_VRAM_addr.fine_y
+        self.VRAM_addr.nametable_y = self.temp_VRAM_addr.nametable_y
+        self.VRAM_addr.coarse_y = self.temp_VRAM_addr.coarse_y
 
     cdef void _load_background_shifters(self):
         self.background_pattern_shift_register.low_bits = ((self.background_pattern_shift_register.low_bits & 0xFF00) | self.background_next_tile_lsb)
@@ -364,7 +364,7 @@ cdef class PPU2C02:
     cdef uint8_t fetch_background(self, uint16_t offset):
         cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
         cdef uint16_t which_tile = self.background_next_tile_id
-        cdef uint16_t which_row = self.vram_addr.fine_y    
+        cdef uint16_t which_row = self.VRAM_addr.fine_y    
 
         cdef uint16_t background_tile_addr = (which_pattern_table << 12) \
             + (which_tile << 4) \
@@ -373,18 +373,18 @@ cdef class PPU2C02:
         return self.readByPPU(background_tile_addr)
 
     cdef uint8_t fetch_background_tile(self):
-        return self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+        return self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
     
     cdef uint8_t fetch_background_attribute(self):
         cdef uint8_t attribute = self.readByPPU(0x23C0 \
-            | (self.vram_addr.nametable_y << 11) \
-            | (self.vram_addr.nametable_x << 10) \
-            | ((self.vram_addr.coarse_y >> 2) << 3) \
-            | (self.vram_addr.coarse_x >> 2))
+            | (self.VRAM_addr.nametable_y << 11) \
+            | (self.VRAM_addr.nametable_x << 10) \
+            | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+            | (self.VRAM_addr.coarse_x >> 2))
                 
-        if self.vram_addr.coarse_y & 0x02 > 0:
+        if self.VRAM_addr.coarse_y & 0x02 > 0:
             attribute >>= 4
-        if self.vram_addr.coarse_x & 0x02 > 0:
+        if self.VRAM_addr.coarse_x & 0x02 > 0:
             attribute >>= 2
         attribute &= 0x03
         return attribute
@@ -554,7 +554,7 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_X_address()
             if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
+                self.background_next_tile_id = self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
             if self.cycle == 257:
                 self.eval_sprites()
             if self.cycle == 340:
