@@ -82,13 +82,12 @@ cdef class PPU2C02:
     cdef void _incr_Y(self)
     cdef void _transfer_X_address(self)
     cdef void _transfer_Y_address(self)
-    cdef void loadBackgroundShifters(self)
-    cdef void reset_sprite_shift_registers(self)
+    cdef void _load_background_shifters(self)
+    cdef void _reset_sprite_shift_registers(self)
 
-    cdef void update_background_shifters(self)
-    cdef void update_sprite_shifters(self)
-    @cython.locals(i=int)
-    cdef void updateShifters(self)
+    cdef void _update_background_shifters(self)
+    cdef void _update_sprite_shifters(self)
+    cdef void _update_shifters(self)
     cdef void clock(self) except *
 
     cdef void eval_background(self)

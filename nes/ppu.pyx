@@ -316,25 +316,25 @@ cdef class PPU2C02:
         self.vram_addr.nametable_y = self.tram_addr.nametable_y
         self.vram_addr.coarse_y = self.tram_addr.coarse_y
 
-    cdef void loadBackgroundShifters(self):
+    cdef void _load_background_shifters(self):
         self.background_pattern_shift_register.low_bits = ((self.background_pattern_shift_register.low_bits & 0xFF00) | self.background_next_tile_lsb)
         self.background_pattern_shift_register.high_bits = ((self.background_pattern_shift_register.high_bits & 0xFF00) | self.background_next_tile_msb)
 
         self.background_attribute_shift_register.low_bits = (self.background_attribute_shift_register.low_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
         self.background_attribute_shift_register.high_bits =(self.background_attribute_shift_register.high_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
 
-    cdef void reset_sprite_shift_registers(self):
+    cdef void _reset_sprite_shift_registers(self):
         for i in range(0, 8):
             self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = 0x00
             self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = 0x00
 
-    cdef void update_background_shifters(self):
+    cdef void _update_background_shifters(self):
         self.background_pattern_shift_register.low_bits <<= 1
         self.background_pattern_shift_register.high_bits <<= 1
         self.background_attribute_shift_register.low_bits <<= 1
         self.background_attribute_shift_register.high_bits <<= 1
 
-    cdef void update_sprite_shifters(self):
+    cdef void _update_sprite_shifters(self):
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] > 0:
                 self.secondary_OAM[i][X] -= 1
@@ -342,18 +342,18 @@ cdef class PPU2C02:
                 self.sprite_pattern_shift_registers[i][LOW_NIBBLE] <<= 1
                 self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
-    cdef void updateShifters(self):
+    cdef void _update_shifters(self):
         if self.PPUMASK.render_background == 1:
-            self.update_background_shifters()
+            self._update_background_shifters()
         if 1 <= self.cycle < 258:
             if self.PPUMASK.render_sprites == 1:
-                self.update_sprite_shifters()
+                self._update_sprite_shifters()
 
     cdef void eval_background(self):
-        self.updateShifters()
+        self._update_shifters()
         cdef background_cycle = (self.cycle - 1) % 8
         if background_cycle == 0:
-            self.loadBackgroundShifters()
+            self._load_background_shifters()
             self.background_next_tile_id = self.fetch_background_tile()
         elif background_cycle == 2:
             self.background_next_tile_attribute = self.fetch_background_attribute()
@@ -396,7 +396,7 @@ cdef class PPU2C02:
     cdef void eval_sprites(self):
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
         self.sprite_count = 0
-        self.reset_sprite_shift_registers()
+        self._reset_sprite_shift_registers()
             
         cdef uint8_t nOAMEntry = 0
         cdef int16_t y_offset, sprite_height
@@ -528,14 +528,14 @@ cdef class PPU2C02:
                 self.PPUSTATUS.vertical_blank = 0
                 self.PPUSTATUS.sprite_overflow = 0
                 self.PPUSTATUS.sprite_zero_hit = 0
-                self.reset_sprite_shift_registers()
+                self._reset_sprite_shift_registers()
             if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
                 self.eval_background()
             if self.cycle == 256:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._incr_Y()
             if self.cycle == 257:                
-                self.loadBackgroundShifters()
+                self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_X_address()
             if self.cycle == 338 or self.cycle == 340:                
@@ -554,7 +554,7 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._incr_Y()
             if self.cycle == 257:                
-                self.loadBackgroundShifters()
+                self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_X_address()
             if self.cycle == 338 or self.cycle == 340:                
