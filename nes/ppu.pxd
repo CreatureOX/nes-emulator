@@ -78,10 +78,10 @@ cdef class PPU2C02:
     cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
     cdef void reset(self)
 
-    cdef void incrementScrollX(self)
-    cdef void incrementScrollY(self)
-    cdef void transferAddressX(self)
-    cdef void transferAddressY(self)
+    cdef void _incr_coarseX(self)
+    cdef void _incr_Y(self)
+    cdef void _transfer_X_address(self)
+    cdef void _transfer_Y_address(self)
     cdef void loadBackgroundShifters(self)
     cdef void reset_sprite_shift_registers(self)
 
