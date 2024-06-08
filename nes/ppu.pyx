@@ -440,16 +440,16 @@ cdef class PPU2C02:
             which_tile += 1 if vertical_flip_sprite and is_upper_tile else 0
 
         cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
-        cdef uint8_t sprite_pattern_bits_lo = self.readByPPU(tile_addr + 0)
-        cdef uint8_t sprite_pattern_bits_hi = self.readByPPU(tile_addr + 8)
+        cdef uint8_t sprite_pattern_low_bits = self.readByPPU(tile_addr + 0)
+        cdef uint8_t sprite_pattern_high_bits = self.readByPPU(tile_addr + 8)
         
         cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0
         if horizontal_flip_sprite:
-            sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
-            sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
+            sprite_pattern_low_bits = flipbyte(sprite_pattern_low_bits)
+            sprite_pattern_high_bits = flipbyte(sprite_pattern_high_bits)
 
-        self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_bits_lo
-        self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_bits_hi 
+        self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_low_bits
+        self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_high_bits 
 
     cdef tuple draw_background(self):
         cdef uint16_t bit_mux = 0x8000 >> self.fine_x
