@@ -452,30 +452,37 @@ cdef class PPU2C02:
         self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_bits_hi 
 
     cdef tuple draw_background(self):
-        cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
-        cdef uint8_t background_palette = 0x00, background_palette_0, background_palette_1
         cdef uint16_t bit_mux = 0x8000 >> self.fine_x
 
-        background_pixel_0 = 1 if (self.background_pattern_shift_register.low_bits & bit_mux) > 0 else 0
-        background_pixel_1 = 1 if (self.background_pattern_shift_register.high_bits & bit_mux) > 0 else 0
-        background_pixel = (background_pixel_1 << 1) | background_pixel_0
+        cdef uint8_t background_pixel = 0x00, background_pixel_low_bit = 0x00, background_pixel_high_bit = 0x00
+        if (self.background_pattern_shift_register.low_bits & bit_mux) > 0:
+            background_pixel_low_bit = 1
+        if (self.background_pattern_shift_register.high_bits & bit_mux) > 0:
+            background_pixel_high_bit = 1
+        background_pixel = (background_pixel_high_bit << 1) | background_pixel_low_bit
 
-        background_palette_0 = 1 if (self.background_attribute_shift_register.low_bits & bit_mux) > 0 else 0
-        background_palette_1 = 1 if (self.background_attribute_shift_register.high_bits & bit_mux) > 0 else 0
-        background_palette = (background_palette_1 << 1) | background_palette_0
+        cdef uint8_t background_palette = 0x00, background_palette_low_bit = 0x00, background_palette_high_bit = 0x00
+        if (self.background_attribute_shift_register.low_bits & bit_mux) > 0:
+            background_palette_low_bit = 1
+        if (self.background_attribute_shift_register.high_bits & bit_mux) > 0:
+            background_palette_high_bit = 1
+        background_palette = (background_palette_high_bit << 1) | background_palette_low_bit
 
         return (background_palette, background_pixel)
 
     cdef tuple draw_sprites(self):
-        cdef uint8_t foreground_pixel = 0x00, foreground_pixel_lo, foreground_pixel_hi
+        cdef uint8_t foreground_pixel = 0x00, foreground_pixel_low_bit = 0x00, foreground_pixel_high_bit = 0x00
         cdef uint8_t foreground_palette
 
         self.render_sprite0 = False
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] == 0:
-                foreground_pixel_lo = 1 if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0 else 0
-                foreground_pixel_hi = 1 if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0 else 0
-                foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
+                if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0:
+                    foreground_pixel_low_bit = 1
+                if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0:
+                    foreground_pixel_high_bit = 1
+                foreground_pixel = (foreground_pixel_high_bit << 1) | foreground_pixel_low_bit
+                
                 foreground_palette = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PALETTE) + 0x04
                 self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
 
