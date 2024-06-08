@@ -414,24 +414,23 @@ cdef class PPU2C02:
             self.fetch_sprite(i)    
 
     cdef void fetch_sprite(self, int i):
-        cdef uint16_t which_pattern_table, which_tile, y_offset
-        cdef bint is_upper_tile
-
         cdef bint vertical_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_VERTICAL_FLIP) > 0
-        y_offset = self.scanline - self.secondary_OAM[i][Y]
+        cdef int sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
+        cdef uint16_t y_offset = self.scanline - self.secondary_OAM[i][Y]
+        if vertical_flip_sprite:
+            y_offset = sprite_height - 1 - y_offset
+        if y_offset > 7:
+            y_offset += 8
+
+        cdef uint16_t which_pattern_table, which_tile
         if self.PPUCTRL.sprite_size == 0:
             # 8x8 Sprite
             which_pattern_table = self.PPUCTRL.pattern_sprite
             which_tile = self.secondary_OAM[i][ID]
-            y_offset = (7 - y_offset if vertical_flip_sprite else y_offset) & 0xFFFF
         else:
             # 8x16 Sprite
             which_pattern_table = self.secondary_OAM[i][ID] & 0x01
             which_tile = self.secondary_OAM[i][ID] & 0xFE
-            y_offset = (7 - y_offset if vertical_flip_sprite else y_offset) & 0x07
-            is_upper_tile = self.scanline - self.secondary_OAM[i][Y] < 8
-            which_tile += 0 if not vertical_flip_sprite and is_upper_tile else 1
-            which_tile += 1 if vertical_flip_sprite and is_upper_tile else 0
 
         cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
         cdef uint8_t sprite_pattern_low_bits = self.readByPPU(tile_addr + 0)
