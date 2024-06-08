@@ -309,11 +309,19 @@ cdef class PPU2C02:
         self.VRAM_addr.coarse_y = self.temp_VRAM_addr.coarse_y
 
     cdef void _load_background_shifters(self):
-        self.background_pattern_shift_register.low_bits = ((self.background_pattern_shift_register.low_bits & 0xFF00) | self.background_next_tile_lsb)
-        self.background_pattern_shift_register.high_bits = ((self.background_pattern_shift_register.high_bits & 0xFF00) | self.background_next_tile_msb)
+        self.background_pattern_shift_register.low_bits &= 0xFF00
+        self.background_pattern_shift_register.low_bits |= self.background_next_tile_lsb
 
-        self.background_attribute_shift_register.low_bits = (self.background_attribute_shift_register.low_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
-        self.background_attribute_shift_register.high_bits =(self.background_attribute_shift_register.high_bits & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
+        self.background_pattern_shift_register.high_bits &= 0xFF00
+        self.background_pattern_shift_register.high_bits |= self.background_next_tile_msb
+
+        self.background_attribute_shift_register.low_bits &= 0xFF00
+        if self.background_next_tile_attribute & 0b01 > 0:
+            self.background_attribute_shift_register.low_bits |= 0xFF
+
+        self.background_attribute_shift_register.high_bits &= 0xFF00
+        if self.background_next_tile_attribute & 0b10 > 0:
+            self.background_attribute_shift_register.high_bits |= 0xFF
 
     cdef void _reset_sprite_shift_registers(self):
         for i in range(0, 8):
