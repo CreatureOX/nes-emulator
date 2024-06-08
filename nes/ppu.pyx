@@ -344,21 +344,22 @@ cdef class PPU2C02:
         cdef background_cycle = (self.cycle - 1) % 8
         if background_cycle == 0:
             self._load_background_shifters()
-            self.background_next_tile_id = self.fetch_background_tile()
+            self.background_next_tile_id = self.fetch_background_tile_id()
         elif background_cycle == 2:
             self.background_next_tile_attribute = self.fetch_background_attribute()
         elif background_cycle == 4:
-            self.background_next_tile_lsb = self.fetch_background(0)
+            self.background_next_tile_lsb = self.fetch_background_tile_nibble(LOW_NIBBLE)
         elif background_cycle == 6:
-            self.background_next_tile_msb = self.fetch_background(8)
+            self.background_next_tile_msb = self.fetch_background_tile_nibble(HIGH_NIBBLE)
         elif background_cycle == 7:
             if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                 self._incr_coarseX()
 
-    cdef uint8_t fetch_background(self, uint16_t offset):
+    cdef uint8_t fetch_background_tile_nibble(self, int nibble):
         cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
         cdef uint16_t which_tile = self.background_next_tile_id
-        cdef uint16_t which_row = self.VRAM_addr.fine_y    
+        cdef uint16_t which_row = self.VRAM_addr.fine_y
+        cdef uint16_t offset = 8 if nibble == HIGH_NIBBLE else 0    
 
         cdef uint16_t background_tile_addr = (which_pattern_table << 12) \
             + (which_tile << 4) \
@@ -366,7 +367,7 @@ cdef class PPU2C02:
             + offset
         return self.readByPPU(background_tile_addr)
 
-    cdef uint8_t fetch_background_tile(self):
+    cdef uint8_t fetch_background_tile_id(self):
         return self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
     
     cdef uint8_t fetch_background_attribute(self):
@@ -526,8 +527,8 @@ cdef class PPU2C02:
             elif 321 <= self.cycle <= 336: 
                 self.eval_background()
             if self.cycle == 340:                
-                self.background_next_tile_id = self.fetch_background_tile()
-                self.background_next_tile_id = self.fetch_background_tile()
+                self.background_next_tile_id = self.fetch_background_tile_id()
+                self.background_next_tile_id = self.fetch_background_tile_id()
 
             if 1 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
@@ -559,8 +560,8 @@ cdef class PPU2C02:
             elif 321 <= self.cycle <= 336: 
                 self.eval_background()
             if self.cycle == 340:
-                self.background_next_tile_id = self.fetch_background_tile()
-                self.background_next_tile_id = self.fetch_background_tile()
+                self.background_next_tile_id = self.fetch_background_tile_id()
+                self.background_next_tile_id = self.fetch_background_tile_id()
 
             if 1 <= self.cycle <= 256: 
                 if self.PPUMASK.render_sprites == 1:
