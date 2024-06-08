@@ -5,11 +5,10 @@ from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
 from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from ppu_sprite cimport *
 
 import cython
 
-cdef uint8_t Y, ID, ATTRIBUTE, X
-cdef int LOW_NIBBLE, HIGH_NIBBLE
 
 cdef class PPU2C02:
     cdef uint8_t[2][4096] _pattern_table

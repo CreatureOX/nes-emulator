@@ -7,12 +7,8 @@ from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
 from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from ppu_sprite cimport *
 
-
-Y = 0
-ID = 1
-ATTRIBUTE = 2
-X = 3
 
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
@@ -64,7 +60,7 @@ cdef class PPU2C02:
         self.frame_complete = False
 
         self.bus = bus
-        self._set_palette_panel()    
+        self._set_palette_panel()
 
     cdef void connectCartridge(self, Cartridge cartridge):
         self.cartridge = cartridge   
@@ -407,7 +403,7 @@ cdef class PPU2C02:
                 break
             self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
             self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
-            self.secondary_OAM[self.sprite_count][ATTRIBUTE] = self.OAM[nOAMEntry][ATTRIBUTE]
+            self.secondary_OAM[self.sprite_count][ATTRIBUTES] = self.OAM[nOAMEntry][ATTRIBUTES]
             self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
             self.sprite_count += 1
 
@@ -419,7 +415,7 @@ cdef class PPU2C02:
         cdef uint16_t which_pattern_table, which_tile, y_offset
         cdef bint is_upper_tile
 
-        cdef bint vertical_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x80 > 0
+        cdef bint vertical_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_VERTICAL_FLIP) > 0
         y_offset = self.scanline - self.secondary_OAM[i][Y]
         if self.PPUCTRL.sprite_size == 0:
             # 8x8 Sprite
@@ -439,7 +435,7 @@ cdef class PPU2C02:
         cdef uint8_t sprite_pattern_bits_lo = self.readByPPU(tile_addr + 0)
         cdef uint8_t sprite_pattern_bits_hi = self.readByPPU(tile_addr + 8)
         
-        cdef bint horizontal_flip_sprite = self.secondary_OAM[i][ATTRIBUTE] & 0x40 > 0
+        cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0
         if horizontal_flip_sprite:
             sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
             sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
@@ -472,8 +468,8 @@ cdef class PPU2C02:
                 foreground_pixel_lo = 1 if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0 else 0
                 foreground_pixel_hi = 1 if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0 else 0
                 foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
-                foreground_palette = (self.secondary_OAM[i][ATTRIBUTE] & 0x03) + 0x04
-                self.foreground_priority = self.secondary_OAM[i][ATTRIBUTE] & 0x20 == 0
+                foreground_palette = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PALETTE) + 0x04
+                self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
 
                 if foreground_pixel != 0:
                     if i == 0:
