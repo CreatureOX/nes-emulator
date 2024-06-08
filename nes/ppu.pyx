@@ -273,11 +273,11 @@ cdef class PPU2C02:
         self.background_pattern_shift_register.reset()
         self.background_attribute_shift_register.reset()
 
-        self.PPUSTATUS.value = 0x00
-        self.PPUMASK.value = 0x00
-        self.PPUCTRL.value = 0x00
-        self.VRAM_addr.value = 0x0000
-        self.temp_VRAM_addr.value = 0x0000
+        self.PPUSTATUS.reset()
+        self.PPUMASK.reset()
+        self.PPUCTRL.reset()
+        self.VRAM_addr.reset()
+        self.temp_VRAM_addr.reset()
 
     cdef void _incr_coarseX(self):
         if self.VRAM_addr.coarse_x == 31:
