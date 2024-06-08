@@ -339,6 +339,8 @@ cdef class PPU2C02:
                 self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
     cdef void eval_background(self):
+        if self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0:
+            return
         if self.PPUMASK.render_background == 1:
             self._update_background_shifters()
         cdef background_cycle = (self.cycle - 1) % 8
@@ -352,8 +354,10 @@ cdef class PPU2C02:
         elif background_cycle == 6:
             self.background_next_tile_msb = self.fetch_background_tile_nibble(HIGH_NIBBLE)
         elif background_cycle == 7:
-            if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+            if self.cycle != 256:
                 self._incr_coarseX()
+            else:
+                self._incr_Y()
 
     cdef uint8_t fetch_background_tile_nibble(self, int nibble):
         cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
@@ -517,9 +521,6 @@ cdef class PPU2C02:
         if pre_render_scanline:
             if 1 <= self.cycle <= 256:
                 self.eval_background()
-                if self.cycle == 256:
-                    if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                        self._incr_Y()
             elif self.cycle == 257:                
                 self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
@@ -550,9 +551,6 @@ cdef class PPU2C02:
 
             if 1 <= self.cycle <= 256:
                 self.eval_background()
-                if self.cycle == 256:
-                    if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                        self._incr_Y()
             elif self.cycle == 257:                
                 self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
