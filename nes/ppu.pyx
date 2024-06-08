@@ -385,27 +385,27 @@ cdef class PPU2C02:
         return attribute
 
     cdef void eval_sprites(self):
-        memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
+        cdef int16_t y_offset, sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
         self.sprite_count = 0
+        self.eval_sprite0 = False
+        memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
         self._reset_sprite_shift_registers()
             
         cdef uint8_t nOAMEntry = 0
-        cdef int16_t y_offset, sprite_height
-        self.eval_sprite0 = False
-        while nOAMEntry < 64 and self.sprite_count < 9:
+        for nOAMEntry in range(64):
             y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][Y])
-            sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
-            if 0 <= y_offset < sprite_height:
-                if self.sprite_count < 8:
-                    if nOAMEntry == 0:
-                        self.eval_sprite0 = True
-                    self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
-                    self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
-                    self.secondary_OAM[self.sprite_count][ATTRIBUTE] = self.OAM[nOAMEntry][ATTRIBUTE]
-                    self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
-                    self.sprite_count += 1
-            nOAMEntry += 1
-        self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
+            if not (0 <= y_offset < sprite_height):
+                continue
+            if nOAMEntry == 0:
+                self.eval_sprite0 = True
+            if self.sprite_count >= 8:
+                self.PPUSTATUS.sprite_overflow = 1
+                break
+            self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
+            self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
+            self.secondary_OAM[self.sprite_count][ATTRIBUTE] = self.OAM[nOAMEntry][ATTRIBUTE]
+            self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
+            self.sprite_count += 1
 
     cdef void fetch_sprites(self):
         for i in range(0, self.sprite_count):
