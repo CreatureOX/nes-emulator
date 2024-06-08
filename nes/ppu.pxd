@@ -10,6 +10,8 @@ from ppu_sprite cimport *
 import cython
 
 
+cdef int LOW_NIBBLE, HIGH_NIBBLE
+
 cdef class PPU2C02:
     cdef uint8_t[2][4096] _pattern_table
     cdef uint8_t[2][1024] _nametable
