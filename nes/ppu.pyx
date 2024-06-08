@@ -347,7 +347,7 @@ cdef class PPU2C02:
             return
         if self.PPUMASK.render_background == 1:
             self._update_background_shifters()
-        cdef background_cycle = (self.cycle - 1) % 8
+        cdef int background_cycle = (self.cycle - 1) % 8
         if background_cycle == 0:
             self._load_background_shifters()
             self.background_next_tile_id = self.fetch_background_tile_id()
