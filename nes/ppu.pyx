@@ -13,12 +13,6 @@ from ppu_sprite cimport *
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
 
-cdef uint8_t flipbyte(uint8_t b):
-    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
-    b = (b & 0xCC) >> 2 | (b & 0x33) << 2
-    b = (b & 0xAA) >> 1 | (b & 0x55) << 1
-    return b
-
 cdef class PPU2C02:
     def __init__(self, bus: CPUBus) -> None:
         self._pattern_table = [[0x00] * 64 * 64] * 2
