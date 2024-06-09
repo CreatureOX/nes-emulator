@@ -467,7 +467,7 @@ cdef class PPU2C02:
         cdef uint8_t foreground_pixel = 0x00, foreground_pixel_low_bit = 0x00, foreground_pixel_high_bit = 0x00
         cdef uint8_t foreground_palette
 
-        self.render_sprite0 = False
+        cdef int i, sprite_index
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] == 0:
                 if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0:
@@ -475,15 +475,12 @@ cdef class PPU2C02:
                 if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0:
                     foreground_pixel_high_bit = 1
                 foreground_pixel = (foreground_pixel_high_bit << 1) | foreground_pixel_low_bit
-                
-                foreground_palette = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PALETTE) + 0x04
-                self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
-
                 if foreground_pixel != 0:
-                    if i == 0:
-                        self.render_sprite0 = True
+                    sprite_index = i
+                    foreground_palette = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PALETTE) + 0x04
+                    self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
                     break
-
+        self.render_sprite0 = sprite_index == 0
         return (foreground_palette, foreground_pixel)
 
     cdef tuple draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
