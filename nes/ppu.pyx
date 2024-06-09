@@ -445,6 +445,9 @@ cdef class PPU2C02:
         self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_high_bits 
 
     cdef tuple draw_background(self):
+        if self.PPUMASK.render_background_left == 1 and (self.cycle - 1) < 8:
+            return (0x00, 0x00)
+
         cdef uint16_t bit_mux = 0x8000 >> self.fine_x
 
         cdef uint8_t background_pixel = 0x00, background_pixel_low_bit = 0x00, background_pixel_high_bit = 0x00
@@ -467,7 +470,7 @@ cdef class PPU2C02:
         cdef uint8_t foreground_pixel = 0x00, foreground_pixel_low_bit = 0x00, foreground_pixel_high_bit = 0x00
         cdef uint8_t foreground_palette
 
-        cdef int i, sprite_index
+        cdef int i, sprite_index = 7
         for i in range(0, self.sprite_count):
             if self.secondary_OAM[i][X] == 0:
                 if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0:
@@ -481,15 +484,16 @@ cdef class PPU2C02:
                     self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
                     break
         self.render_sprite0 = sprite_index == 0
+        cdef start_render_position = 8 if self.PPUMASK.render_sprites_left == 1 else 0
+        if foreground_pixel == 0 or (self.cycle - 1) < start_render_position:
+            return (0x00, 0x00)
         return (foreground_palette, foreground_pixel)
 
     cdef tuple draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
-        cdef uint8_t palette, pixel
+        cdef uint8_t palette = 0x00, pixel = 0x00
+        cdef int16_t start_render_position
 
-        if background_pixel == 0 and foreground_pixel == 0:
-            pixel = 0x00
-            palette = 0x00
-        elif background_pixel == 0 and foreground_pixel > 0:
+        if background_pixel == 0 and foreground_pixel > 0:
             pixel = foreground_pixel
             palette = foreground_palette
         elif background_pixel > 0 and foreground_pixel == 0:
@@ -502,14 +506,14 @@ cdef class PPU2C02:
             else:
                 pixel = background_pixel
                 palette = background_palette
-            if self.eval_sprite0 and self.render_sprite0:
-                if self.PPUMASK.render_background & self.PPUMASK.render_sprites != 0:
-                    if ((self.PPUMASK.render_background_left | self.PPUMASK.render_sprites_left) == 0):
-                        if 9 <= self.cycle <= 256:
-                            self.PPUSTATUS.sprite_zero_hit = 1
-                    else:
-                        if 1 <= self.cycle <= 256:
-                            self.PPUSTATUS.sprite_zero_hit = 1
+
+            if (self.PPUMASK.render_background != 0 or self.PPUMASK.render_sprites != 0):              
+                if self.eval_sprite0 and self.render_sprite0:
+                    start_render_position = 0
+                    if self.PPUMASK.render_background_left == 1 or self.PPUMASK.render_sprites_left == 1:
+                        start_render_position = 8
+                    if start_render_position < self.cycle < 256:
+                        self.PPUSTATUS.sprite_zero_hit = 1
 
         return (palette, pixel)
 
