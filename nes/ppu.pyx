@@ -536,7 +536,7 @@ cdef class PPU2C02:
                 self.background_next_tile_id = self.fetch_background_tile_id()
                 self.background_next_tile_id = self.fetch_background_tile_id()
 
-            if 1 <= self.cycle <= 256:
+            if 2 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()   
             if self.cycle == 340:
@@ -566,7 +566,7 @@ cdef class PPU2C02:
                 self.background_next_tile_id = self.fetch_background_tile_id()
                 self.background_next_tile_id = self.fetch_background_tile_id()
 
-            if 1 <= self.cycle <= 256: 
+            if 2 <= self.cycle <= 256: 
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()        
             elif self.cycle == 257:
