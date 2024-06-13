@@ -33,7 +33,7 @@ def run_test(test_rom_path: str,
     time.sleep(wait_seconds)
     stop.set()
     # test
-    _, screenshot_path = emu.capture_screenshot()
+    _, screenshot_path = emu.capture_screenshot(screenshot_path)
     assert _run_ocr(screenshot_path) == expect_output, error_message
     print(f'{test_rom_path} PASSED')
     # clean
