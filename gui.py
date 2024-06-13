@@ -288,7 +288,7 @@ class Emulator:
             pygame.display.flip()
         return True
     
-    def capture_screenshot(self, screenshot_path: str = None) -> bool:
+    def capture_screenshot(self, screenshot_path: str = None):
         image_data = np.array(self.console.bus.ppu.getScreen())
         if image_data.shape[2] == 3:
             image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
@@ -300,7 +300,7 @@ class Emulator:
 
         image = Image.fromarray(image_data)
         image.save(screenshot_path)
-        return True
+        return True, screenshot_path
 
     def emulate(self) -> None:
         stop = Event()
