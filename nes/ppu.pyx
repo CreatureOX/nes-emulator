@@ -19,7 +19,7 @@ cdef class PPU2C02:
         self._nametable = [[0x00] * 32 * 32] * 2
         self._palette_table = [0x00] * 32
         
-        self._palette_panel = [None] * 4 * 16
+        self.palette_panel = [None] * 4 * 16
         self.screen_width, self.screen_height = 256, 240
         self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
 
@@ -247,14 +247,14 @@ cdef class PPU2C02:
             self._palette_table[addr] = data            
 
     cdef void _set_palette_panel(self):    
-        self._palette_panel[0x00],self._palette_panel[0x01],self._palette_panel[0x02],self._palette_panel[0x03],self._palette_panel[0x04],self._palette_panel[0x05],self._palette_panel[0x06],self._palette_panel[0x07],self._palette_panel[0x08],self._palette_panel[0x09],self._palette_panel[0x0a],self._palette_panel[0x0b],self._palette_panel[0x0c],self._palette_panel[0x0d],self._palette_panel[0x0e],self._palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self._palette_panel[0x10],self._palette_panel[0x11],self._palette_panel[0x12],self._palette_panel[0x13],self._palette_panel[0x14],self._palette_panel[0x15],self._palette_panel[0x16],self._palette_panel[0x17],self._palette_panel[0x18],self._palette_panel[0x19],self._palette_panel[0x1a],self._palette_panel[0x1b],self._palette_panel[0x1c],self._palette_panel[0x1d],self._palette_panel[0x1e],self._palette_panel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self._palette_panel[0x20],self._palette_panel[0x21],self._palette_panel[0x22],self._palette_panel[0x23],self._palette_panel[0x24],self._palette_panel[0x25],self._palette_panel[0x26],self._palette_panel[0x27],self._palette_panel[0x28],self._palette_panel[0x29],self._palette_panel[0x2a],self._palette_panel[0x2b],self._palette_panel[0x2c],self._palette_panel[0x2d],self._palette_panel[0x2e],self._palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
-        self._palette_panel[0x30],self._palette_panel[0x31],self._palette_panel[0x32],self._palette_panel[0x33],self._palette_panel[0x34],self._palette_panel[0x35],self._palette_panel[0x36],self._palette_panel[0x37],self._palette_panel[0x38],self._palette_panel[0x39],self._palette_panel[0x3a],self._palette_panel[0x3b],self._palette_panel[0x3c],self._palette_panel[0x3d],self._palette_panel[0x3e],self._palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x00],self.palette_panel[0x01],self.palette_panel[0x02],self.palette_panel[0x03],self.palette_panel[0x04],self.palette_panel[0x05],self.palette_panel[0x06],self.palette_panel[0x07],self.palette_panel[0x08],self.palette_panel[0x09],self.palette_panel[0x0a],self.palette_panel[0x0b],self.palette_panel[0x0c],self.palette_panel[0x0d],self.palette_panel[0x0e],self.palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x10],self.palette_panel[0x11],self.palette_panel[0x12],self.palette_panel[0x13],self.palette_panel[0x14],self.palette_panel[0x15],self.palette_panel[0x16],self.palette_panel[0x17],self.palette_panel[0x18],self.palette_panel[0x19],self.palette_panel[0x1a],self.palette_panel[0x1b],self.palette_panel[0x1c],self.palette_panel[0x1d],self.palette_panel[0x1e],self.palette_panel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
-        return self._palette_panel[color]
+        return self.palette_panel[color]
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -336,7 +336,7 @@ cdef class PPU2C02:
                 self.sprite_pattern_shift_registers[i][LOW_NIBBLE] <<= 1
                 self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
-    cdef void eval_background(self):
+    cdef void _eval_background(self):
         if self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0:
             return
         if self.PPUMASK.render_background == 1:
@@ -344,20 +344,20 @@ cdef class PPU2C02:
         cdef int background_cycle = (self.cycle - 1) % 8
         if background_cycle == 0:
             self._load_background_shifters()
-            self.background_next_tile_id = self.fetch_background_tile_id()
+            self.background_next_tile_id = self._fetch_background_tile_id()
         elif background_cycle == 2:
-            self.background_next_tile_attribute = self.fetch_background_attribute()
+            self.background_next_tile_attribute = self._fetch_background_attribute()
         elif background_cycle == 4:
-            self.background_next_tile_lsb = self.fetch_background_tile_nibble(LOW_NIBBLE)
+            self.background_next_tile_lsb = self._fetch_background_tile_nibble(LOW_NIBBLE)
         elif background_cycle == 6:
-            self.background_next_tile_msb = self.fetch_background_tile_nibble(HIGH_NIBBLE)
+            self.background_next_tile_msb = self._fetch_background_tile_nibble(HIGH_NIBBLE)
         elif background_cycle == 7:
             if self.cycle != 256:
                 self._incr_coarseX()
             else:
                 self._incr_Y()
 
-    cdef uint8_t fetch_background_tile_nibble(self, int nibble):
+    cdef uint8_t _fetch_background_tile_nibble(self, int nibble):
         cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
         cdef uint16_t which_tile = self.background_next_tile_id
         cdef uint16_t which_row = self.VRAM_addr.fine_y
@@ -369,10 +369,10 @@ cdef class PPU2C02:
             + offset
         return self.readByPPU(background_tile_addr)
 
-    cdef uint8_t fetch_background_tile_id(self):
+    cdef uint8_t _fetch_background_tile_id(self):
         return self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
     
-    cdef uint8_t fetch_background_attribute(self):
+    cdef uint8_t _fetch_background_attribute(self):
         cdef uint8_t attribute = self.readByPPU(0x23C0 \
             | (self.VRAM_addr.nametable_y << 11) \
             | (self.VRAM_addr.nametable_x << 10) \
@@ -386,7 +386,7 @@ cdef class PPU2C02:
         attribute &= 0x03
         return attribute
 
-    cdef void eval_sprites(self):
+    cdef void _eval_sprites(self):
         cdef int16_t y_offset, sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
         self.sprite_count = 0
         self.eval_sprite0 = False
@@ -409,11 +409,11 @@ cdef class PPU2C02:
             self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
             self.sprite_count += 1
 
-    cdef void fetch_sprites(self):
+    cdef void _fetch_sprites(self):
         for i in range(0, self.sprite_count):
-            self.fetch_sprite(i)    
+            self._fetch_sprite(i)    
 
-    cdef void fetch_sprite(self, int i):
+    cdef void _fetch_sprite(self, int i):
         cdef bint vertical_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_VERTICAL_FLIP) > 0
         cdef int sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
         cdef uint16_t y_offset = self.scanline - self.secondary_OAM[i][Y]
@@ -444,7 +444,7 @@ cdef class PPU2C02:
         self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_low_bits
         self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_high_bits 
 
-    cdef tuple draw_background(self):
+    cdef tuple _draw_background(self):
         cdef int16_t start_render_position = 8 if self.PPUMASK.render_background_left == 0 else 0
         if (self.cycle - 1) < start_render_position:
             return (0x00, 0x00)
@@ -467,7 +467,7 @@ cdef class PPU2C02:
 
         return (background_palette, background_pixel)
 
-    cdef tuple draw_sprites(self):
+    cdef tuple _draw_sprites(self):
         cdef uint8_t foreground_pixel = 0x00, foreground_pixel_low_bit = 0x00, foreground_pixel_high_bit = 0x00
         cdef uint8_t foreground_palette
 
@@ -490,7 +490,7 @@ cdef class PPU2C02:
             return (0x00, 0x00)
         return (foreground_palette, foreground_pixel)
 
-    cdef tuple draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
+    cdef tuple _draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
         cdef uint8_t palette = 0x00, pixel = 0x00
         
         if background_pixel == 0 and foreground_pixel > 0:
@@ -522,24 +522,24 @@ cdef class PPU2C02:
 
         if pre_render_scanline:
             if 1 <= self.cycle <= 256:
-                self.eval_background()
+                self._eval_background()
             elif self.cycle == 257:                
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._load_background_shifters()
                     self._transfer_X_address()
             elif 321 <= self.cycle <= 336: 
-                self.eval_background()
+                self._eval_background()
             if self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:                
-                    self.background_next_tile_id = self.fetch_background_tile_id()
-                    self.background_next_tile_id = self.fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
 
             if 2 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()   
             if self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self.fetch_sprites()
+                    self._fetch_sprites()
 
             if self.cycle == 1:
                 self.PPUSTATUS.vertical_blank = 0
@@ -554,27 +554,27 @@ cdef class PPU2C02:
                 self.cycle = 1
 
             if 1 <= self.cycle <= 256:
-                self.eval_background()
+                self._eval_background()
             elif self.cycle == 257:                
                 self._load_background_shifters()
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_X_address()
             elif 321 <= self.cycle <= 336: 
-                self.eval_background()
+                self._eval_background()
             if self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self.background_next_tile_id = self.fetch_background_tile_id()
-                    self.background_next_tile_id = self.fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
 
             if 2 <= self.cycle <= 256: 
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()        
             elif self.cycle == 257:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self.eval_sprites()
+                    self._eval_sprites()
             elif self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self.fetch_sprites()        
+                    self._fetch_sprites()        
         elif post_render_scanline:
             pass
         elif vertical_blanking_lines:            
@@ -585,15 +585,15 @@ cdef class PPU2C02:
 
         cdef uint8_t background_palette = 0x00, background_pixel = 0x00
         if self.PPUMASK.render_background == 1:
-            background_palette, background_pixel = self.draw_background()
+            background_palette, background_pixel = self._draw_background()
 
         cdef uint8_t foreground_palette = 0x00, foreground_pixel = 0x00
         self.foreground_priority = False
         if self.PPUMASK.render_sprites == 1:
-            foreground_palette, foreground_pixel = self.draw_sprites()
+            foreground_palette, foreground_pixel = self._draw_sprites()
 
         cdef uint8_t pixel = 0x00, palette = 0x00
-        palette, pixel = self.draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
+        palette, pixel = self._draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
 
         if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height: 
             self._screen[self.scanline][<int>(self.cycle - 1)] = self.fetch_color(palette, pixel)
