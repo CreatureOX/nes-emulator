@@ -2,6 +2,7 @@ import PySimpleGUI as gui
 import pygame
 import os
 import numpy as np
+import time
 from threading import Thread, Event, Lock
 from PIL import Image, ImageTk
 import cv2
@@ -13,7 +14,7 @@ from console import Console
 
 class Emulator:
     menu_def = [
-        ['File', ['Open File','Reset','Exit']],
+        ['File', ['Open File', 'Reset', 'Screenshot', 'Exit']],
         ['Config', ['Keyboard']],
         ['Debug', ['CPU','PPU','Hex Viewer']],
         ['Help', ['About',]],
@@ -286,6 +287,20 @@ class Emulator:
             self.gameScreen.blit(surf, (0,0))
             pygame.display.flip()
         return True
+    
+    def capture_screenshot(self, screenshot_path: str = None):
+        image_data = np.array(self.console.bus.ppu.getScreen())
+        if image_data.shape[2] == 3:
+            image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
+
+        if not os.path.exists("./screenshots"):
+            os.mkdir("./screenshots")
+        if screenshot_path is None:
+            screenshot_path = "./screenshots/{}.jpg".format(str(int(time.time())))
+
+        image = Image.fromarray(image_data)
+        image.save(screenshot_path)
+        return True, screenshot_path
 
     def emulate(self) -> None:
         stop = Event()
@@ -299,6 +314,8 @@ class Emulator:
                 success = self.openFile()
                 asyncRun = Thread(target=self.run, args=(stop,))
                 asyncRun.start()
+            elif event == 'Screenshot':
+                success = self.capture_screenshot("test.jpg")
             elif event == 'Reset':
                 self.console.reset()
             elif event == 'Keyboard':
