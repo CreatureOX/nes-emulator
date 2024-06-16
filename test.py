@@ -94,3 +94,28 @@ run_test(test_rom_path="./roms/sprite_hit_tests_2005.10.05/11.edge_timing.nes",
          expect_output="SPRITE HIT EDGE TIMING PASSED", 
          error_message="SPRITE HIT EDGE TIMING FAILED", 
          screenshot_path="./screenshots/11.edge_timing.jpg")
+
+run_test(test_rom_path="./roms/sprite_overflow_tests/1.Basics.nes", 
+         expect_output="SPRITE OVERFLOW BASICS PASSED", 
+         error_message="SPRITE OVERFLOW BASICS FAILED", 
+         screenshot_path="./screenshots/1.Basics.jpg")
+
+run_test(test_rom_path="./roms/sprite_overflow_tests/2.Details.nes", 
+         expect_output="SPRITE OVERFLOW DETAILS PASSED", 
+         error_message="SPRITE OVERFLOW DETAILS FAILED", 
+         screenshot_path="./screenshots/2.Details.jpg")
+
+run_test(test_rom_path="./roms/sprite_overflow_tests/3.Timing.nes", 
+         expect_output="SPRITE OVERFLOW TIMING PASSED", 
+         error_message="SPRITE OVERFLOW TIMING FAILED", 
+         screenshot_path="./screenshots/3.Timing.jpg")
+
+run_test(test_rom_path="./roms/sprite_overflow_tests/4.Obscure.nes", 
+         expect_output="SPRITE OVERFLOW OBSCURE PASSED", 
+         error_message="SPRITE OVERFLOW OBSCURE FAILED", 
+         screenshot_path="./screenshots/4.Obscure.jpg")
+
+run_test(test_rom_path="./roms/sprite_overflow_tests/5.Emulator.nes", 
+         expect_output="SPRITE OVERFLOW EMULATION PASSED", 
+         error_message="SPRITE OVERFLOW EMULATION FAILED", 
+         screenshot_path="./screenshots/5.Emulator.jpg")
