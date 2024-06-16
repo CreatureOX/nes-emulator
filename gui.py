@@ -289,7 +289,7 @@ class Emulator:
         return True
     
     def capture_screenshot(self, screenshot_path: str = None):
-        image_data = np.array(self.console.bus.ppu.getScreen())
+        image_data = np.array(self.console.bus.ppu.screen())
         if image_data.shape[2] == 3:
             image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
 
