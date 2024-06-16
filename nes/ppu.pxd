@@ -17,7 +17,7 @@ cdef class PPU2C02:
     cdef uint8_t[2][1024] _nametable
     cdef uint8_t[32] _palette_table
 
-    cdef list _palette_panel
+    cdef list palette_panel
     cdef uint8_t[240][256][3] _screen
 
     cdef Status PPUSTATUS
@@ -88,15 +88,15 @@ cdef class PPU2C02:
     cdef void _update_sprite_shifters(self)
     cdef void clock(self) except *
 
-    cdef void eval_background(self)
-    cdef uint8_t fetch_background_tile_nibble(self, int)
-    cdef uint8_t fetch_background_tile_id(self)
-    cdef uint8_t fetch_background_attribute(self)
+    cdef void _eval_background(self)
+    cdef uint8_t _fetch_background_tile_nibble(self, int)
+    cdef uint8_t _fetch_background_tile_id(self)
+    cdef uint8_t _fetch_background_attribute(self)
 
-    cdef void eval_sprites(self)
-    cdef void fetch_sprites(self)
-    cdef void fetch_sprite(self, int)
+    cdef void _eval_sprites(self)
+    cdef void _fetch_sprites(self)
+    cdef void _fetch_sprite(self, int)
     
-    cdef tuple draw_background(self)
-    cdef tuple draw_sprites(self)
-    cdef tuple draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t) 
+    cdef tuple _draw_background(self)
+    cdef tuple _draw_sprites(self)
+    cdef tuple _draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t)

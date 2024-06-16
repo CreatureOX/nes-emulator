@@ -14,7 +14,7 @@ cdef class PPUDebugger:
         _palette = np.zeros((4, 16, 3)).astype(np.uint8)
         for x in range(4):
             for y in range(16):
-                _palette[x][y][:] = self.ppu.palettePanel[x * 16 + y]
+                _palette[x][y][:] = self.ppu.palette_panel[x * 16 + y]
         return _palette
 
     cpdef uint8_t[:,:,:] pattern_table(self, uint8_t i, uint8_t palette):
