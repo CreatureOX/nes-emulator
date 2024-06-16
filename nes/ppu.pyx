@@ -152,6 +152,7 @@ cdef class PPU2C02:
         elif addr == 0x0004:
             # OAM Data
             self.OAM[self.OAMADDR // 4][self.OAMADDR % 4] = data
+            self.OAMADDR += 1
         elif addr == 0x0005:
             # Scroll
             if self.address_latch == 0:
