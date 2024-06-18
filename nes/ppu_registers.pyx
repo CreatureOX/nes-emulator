@@ -127,3 +127,11 @@ cdef class LoopRegister:
         self.nametable_y = (value >> 11) & 0b1
         self.fine_y = (value >> 12) & 0b111
         self.unused = (value >> 15) & 0b1
+
+cdef class BackgroundShiftRegister:
+    def __init__(self) -> None:
+        self.reset()
+
+    cdef void reset(self):
+        self.low_bits = 0x0000
+        self.high_bits = 0x0000

@@ -3,6 +3,8 @@ from libc.stdint cimport uint8_t, uint16_t
 from cartridge cimport Cartridge
 from bus cimport CPUBus
 
+from ppu_debug cimport PPUDebugger
+
 
 cdef uint8_t K_x
 cdef uint8_t K_z
@@ -15,6 +17,8 @@ cdef uint8_t K_RIGHT
 
 cdef class Console:
     cdef public CPUBus bus
+    
+    cdef PPUDebugger ppu_debugger
 
     cpdef void power_up(self)
     cpdef void reset(self)

@@ -4,32 +4,27 @@ from numpy cimport ndarray
 from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
-from ppu_registers cimport Controller, Mask, Status, LoopRegister
+from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from ppu_sprite cimport *
 
 import cython
 
-cdef uint8_t Y 
-cdef uint8_t ID
-cdef uint8_t ATTRIBUTE
-cdef uint8_t X 
 
-cdef uint8_t offset(uint8_t,uint8_t)
+cdef int LOW_NIBBLE, HIGH_NIBBLE
 
 cdef class PPU2C02:
-    cdef uint8_t[2][4096] patternTable
-    cdef uint8_t[2][1024] nameTable
-    cdef uint8_t[32] paletteTable
+    cdef uint8_t[2][4096] _pattern_table
+    cdef uint8_t[2][1024] _nametable
+    cdef uint8_t[32] _palette_table
 
-    cdef list palettePanel
-    cdef uint8_t[240][256][3] spriteScreen
-    cdef list spriteNameTable
-    cdef list spritePatternTable
+    cdef list palette_panel
+    cdef uint8_t[240][256][3] _screen
 
     cdef Status PPUSTATUS
     cdef Mask PPUMASK
     cdef Controller PPUCTRL
-    cdef LoopRegister vram_addr
-    cdef LoopRegister tram_addr
+    cdef LoopRegister VRAM_addr
+    cdef LoopRegister temp_VRAM_addr
 
     cdef uint8_t fine_x
 
@@ -40,24 +35,22 @@ cdef class PPU2C02:
 
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
-    cdef uint8_t background_next_tile_lsb
-    cdef uint8_t background_next_tile_msb
-    cdef uint16_t background_shifter_pattern_lo
-    cdef uint16_t background_shifter_pattern_hi
-    cdef uint16_t background_shifter_attribute_lo
-    cdef uint16_t background_shifter_attribute_hi
+    cdef uint8_t background_next_tile_lsb, background_next_tile_msb
 
-    cdef public uint8_t[2048] pOAM
+    cdef BackgroundShiftRegister background_pattern_shift_register
+    cdef BackgroundShiftRegister background_attribute_shift_register
+    cdef uint8_t[8][2] sprite_pattern_shift_registers
 
-    cdef uint8_t oam_addr
+    cdef public uint8_t[64][4] OAM
 
-    cdef uint8_t[256] pSpriteScanline
+    cdef uint8_t OAMADDR
+
+    cdef uint8_t[8][4] secondary_OAM
     cdef uint8_t sprite_count
-    cdef uint8_t[8] sprite_shifter_pattern_lo
-    cdef uint8_t[8] sprite_shifter_pattern_hi
 
-    cdef bint bSpriteZeroHitPossible
-    cdef bint bSpriteZeroBeingRendered
+    cdef bint eval_sprite0
+    cdef bint render_sprite0
+    cdef bint foreground_priority
 
     cdef Cartridge cartridge
 
@@ -67,11 +60,10 @@ cdef class PPU2C02:
 
     cdef CPUBus bus
 
-    cdef int screenWidth
-    cdef int screenHeight
+    cdef int screen_width, screen_height
 
     cdef void connectCartridge(self, Cartridge)
-    cpdef uint8_t[:,:,:] getScreen(self)
+    cpdef uint8_t[:,:,:] screen(self)
 
     @cython.locals(data=uint8_t)
     cdef uint8_t readByCPU(self, uint16_t, bint)
@@ -81,18 +73,30 @@ cdef class PPU2C02:
     @cython.locals(success=bint)
     cdef void writeByPPU(self, uint16_t, uint8_t)
 
-    cdef void setPalettePanel(self)
-    @cython.locals(color=uint8_t)
-    cdef tuple getColorFromPaletteTable(self, uint8_t, uint8_t)
-    cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t, uint8_t)
-    cpdef uint8_t[:,:,:] getPalette(self)
+    cdef void _set_palette_panel(self)
+    cdef tuple fetch_color(self, uint8_t, uint8_t)
     cdef void reset(self)
 
-    cdef void incrementScrollX(self)
-    cdef void incrementScrollY(self)
-    cdef void transferAddressX(self)
-    cdef void transferAddressY(self)
-    cdef void loadBackgroundShifters(self)
-    @cython.locals(i=int)
-    cdef void updateShifters(self)
+    cdef void _incr_coarseX(self)
+    cdef void _incr_Y(self)
+    cdef void _transfer_X_address(self)
+    cdef void _transfer_Y_address(self)
+    cdef void _load_background_shifters(self)
+    cdef void _reset_sprite_shift_registers(self)
+
+    cdef void _update_background_shifters(self)
+    cdef void _update_sprite_shifters(self)
     cdef void clock(self) except *
+
+    cdef void _eval_background(self)
+    cdef uint8_t _fetch_background_tile_nibble(self, int)
+    cdef uint8_t _fetch_background_tile_id(self)
+    cdef uint8_t _fetch_background_attribute(self)
+
+    cdef void _eval_sprites(self)
+    cdef void _fetch_sprites(self)
+    cdef void _fetch_sprite(self, int)
+    
+    cdef tuple _draw_background(self)
+    cdef tuple _draw_sprites(self)
+    cdef tuple _draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t)

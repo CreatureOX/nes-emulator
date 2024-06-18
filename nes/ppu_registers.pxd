@@ -105,3 +105,10 @@ cdef class LoopRegister:
         uint16_t unused
 
     cdef void reset(self)
+
+cdef class BackgroundShiftRegister:
+    cdef:
+        uint16_t low_bits
+        uint16_t high_bits
+
+    cdef void reset(self)

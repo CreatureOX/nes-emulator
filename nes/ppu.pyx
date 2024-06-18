@@ -6,85 +6,66 @@ cimport numpy as np
 from bus cimport CPUBus
 from cartridge cimport Cartridge
 from mirror cimport *
-from ppu_registers cimport Controller, Mask, Status, LoopRegister
+from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from ppu_sprite cimport *
 
 
-Y = 0
-ID = 1
-ATTRIBUTE = 2
-X = 3
-
-cdef uint8_t offset(uint8_t i,uint8_t offset):
-    return i*4+offset
-
-cdef uint8_t flipbyte(uint8_t b):
-    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
-    b = (b & 0xCC) >> 2 | (b & 0x33) << 2
-    b = (b & 0xAA) >> 1 | (b & 0x55) << 1
-    return b
+LOW_NIBBLE = 0
+HIGH_NIBBLE = 1
 
 cdef class PPU2C02:
     def __init__(self, bus: CPUBus) -> None:
-        self.patternTable = [[0x00] * 64 * 64] * 2
-        self.nameTable = [[0x00] * 32 * 32] * 2
-        self.paletteTable = [0x00] * 32
+        self._pattern_table = [[0x00] * 64 * 64] * 2
+        self._nametable = [[0x00] * 32 * 32] * 2
+        self._palette_table = [
+            0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D,
+            0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C, 
+            0x09, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 
+            0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08
+        ]
         
-        self.palettePanel = [None] * 4 * 16
-        self.screenWidth, self.screenHeight = 256, 240
-        self.spriteScreen = np.zeros((self.screenHeight,self.screenWidth,3)).astype(np.uint8)
-        self.spriteNameTable = [np.zeros((self.screenHeight,self.screenWidth,3)),np.zeros((self.screenHeight,self.screenWidth,3))]
-        self.spritePatternTable = [np.zeros((128,128,3)).astype(np.uint8),np.zeros((128,128,3)).astype(np.uint8)]
+        self.palette_panel = [None] * 4 * 16
+        self.screen_width, self.screen_height = 256, 240
+        self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
 
         self.PPUSTATUS = Status()
         self.PPUMASK = Mask()
         self.PPUCTRL = Controller()
-        self.vram_addr = LoopRegister()
-        self.tram_addr = LoopRegister()
+        self.VRAM_addr = LoopRegister()
+        self.temp_VRAM_addr = LoopRegister()
 
         self.fine_x = 0x00
 
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
 
-        self.scanline = 0
-        self.cycle = 0
+        self.scanline, self.cycle = 0, 0
 
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb = 0x00
         self.background_next_tile_msb = 0x00
-        self.background_shifter_pattern_lo = 0x0000
-        self.background_shifter_pattern_hi = 0x0000
-        self.background_shifter_attribute_lo = 0x0000
-        self.background_shifter_attribute_hi = 0x0000
+        self.background_pattern_shift_register = BackgroundShiftRegister()
+        self.background_attribute_shift_register = BackgroundShiftRegister()
 
-        # self.OAM = (sObjectAttributeEntry * 64)()
-        # self.pOAM = cast(self.OAM, POINTER(c_uint8))
-        # self.pOAM = np.zeros((64 * 32), dtype=np.uint8)
-        memset(self.pOAM, 0, 64*32*sizeof(uint8_t))
+        memset(self.OAM, 0, 64*4*sizeof(uint8_t))
+        self.OAMADDR = 0x00
+        memset(self.secondary_OAM, 0, 8*4*sizeof(uint8_t))
 
-        self.oam_addr = 0x00
-
-        # self.spriteScanline = (sObjectAttributeEntry * 8)()
-        # self.spriteScanline = array([sObjectAttributeEntry(0x00,0x00,0x00,0x00) for _ in range(8)])
-        # self.pSpriteScanline = np.zeros((8 * 32), dtype=np.uint8)
-        memset(self.pSpriteScanline, 0, 8*32*sizeof(uint8_t))
-
-        self.sprite_shifter_pattern_lo = [0x00] * 8
-        self.sprite_shifter_pattern_hi = [0x00] * 8
-        self.bSpriteZeroHitPossible = False
-        self.bSpriteZeroBeingRendered = False
+        memset(self.sprite_pattern_shift_registers, 0, 8 * 2 * sizeof(uint8_t))
+        self.eval_sprite0 = False
+        self.render_sprite0 = False
         self.nmi = False
         self.frame_complete = False
 
         self.bus = bus
-        self.setPalettePanel()    
+        self._set_palette_panel()
 
     cdef void connectCartridge(self, Cartridge cartridge):
         self.cartridge = cartridge   
 
-    cpdef uint8_t[:,:,:] getScreen(self):
-        return self.spriteScreen               
+    cpdef uint8_t[:,:,:] screen(self):
+        return self._screen               
 
     cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
         data = 0x00
@@ -131,7 +112,7 @@ cdef class PPU2C02:
                 pass
             elif addr == 0x0004:
                 # OAM Data
-                data = self.pOAM[self.oam_addr]
+                data = self.OAM[self.OAMADDR // 4][self.OAMADDR % 4]
             elif addr == 0x0005:
                 # Scroll
                 pass
@@ -140,19 +121,25 @@ cdef class PPU2C02:
                 pass
             elif addr == 0x0007:
                 # PPU Data
-                data = self.ppu_data_buffer
-                self.ppu_data_buffer = self.readByPPU(self.vram_addr.value)
-                if self.vram_addr.value >= 0x3F00:
+                if self.VRAM_addr.value >= 0x3F00:
+                    self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x3FFF) - 0x1000)
+                    data = self.readByPPU(self.VRAM_addr.value)
+                else:
                     data = self.ppu_data_buffer
-                self.vram_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+                    self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)    
+                if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
+                    self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+                else:
+                    self._incr_coarseX()
+                    self._incr_Y()
         return data
 
     cdef void writeByCPU(self, uint16_t addr, uint8_t data):
         if addr == 0x0000:
             # Control
             self.PPUCTRL.value = data
-            self.tram_addr.nametable_x = self.PPUCTRL.nametable_x
-            self.tram_addr.nametable_y = self.PPUCTRL.nametable_y
+            self.temp_VRAM_addr.nametable_x = self.PPUCTRL.nametable_x
+            self.temp_VRAM_addr.nametable_y = self.PPUCTRL.nametable_y
         elif addr == 0x0001:
             # Mask
             self.PPUMASK.value = data
@@ -161,33 +148,34 @@ cdef class PPU2C02:
             pass
         elif addr == 0x0003:
             # OAM Address
-            self.oam_addr = data
+            self.OAMADDR = data
         elif addr == 0x0004:
             # OAM Data
-            self.pOAM[self.oam_addr] = data
+            self.OAM[self.OAMADDR // 4][self.OAMADDR % 4] = data
+            self.OAMADDR += 1
         elif addr == 0x0005:
             # Scroll
             if self.address_latch == 0:
                 self.fine_x = data & 0x07
-                self.tram_addr.coarse_x = data >> 3
+                self.temp_VRAM_addr.coarse_x = data >> 3
                 self.address_latch = 1
             else:
-                self.tram_addr.fine_y = data & 0x07
-                self.tram_addr.coarse_y = data >> 3
+                self.temp_VRAM_addr.fine_y = data & 0x07
+                self.temp_VRAM_addr.coarse_y = data >> 3
                 self.address_latch = 0
         elif addr == 0x0006:
             # PPU Address
             if self.address_latch == 0:
-                self.tram_addr.value = ((data & 0x3F) << 8) | (self.tram_addr.value & 0x00FF)
+                self.temp_VRAM_addr.value = ((data & 0x3F) << 8) | (self.temp_VRAM_addr.value & 0x00FF)
                 self.address_latch = 1
             else:
-                self.tram_addr.value = (self.tram_addr.value & 0xFF00) | data
-                self.vram_addr.value = self.tram_addr.value
+                self.temp_VRAM_addr.value = (self.temp_VRAM_addr.value & 0xFF00) | data
+                self.VRAM_addr.value = self.temp_VRAM_addr.value
                 self.address_latch = 0
         elif addr == 0x0007:
             # PPU Data
-            self.writeByPPU(self.vram_addr.value, data)
-            self.vram_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            self.writeByPPU(self.VRAM_addr.value, data)
+            self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
 
     cdef uint8_t readByPPU(self, uint16_t addr):
         addr &= 0x3FFF
@@ -196,27 +184,27 @@ cdef class PPU2C02:
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
-            data = self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF]
+            data = self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
             if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
                 elif 0x0800 <= addr <= 0x0BFF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self.nameTable[1][addr & 0x03FF]                                 
+                    data = self._nametable[1][addr & 0x03FF]                                 
             elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
-                    data = self.nameTable[0][addr & 0x03FF]
+                    data = self._nametable[0][addr & 0x03FF]
                 elif 0x0800 <= addr <= 0x0BFF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self.nameTable[1][addr & 0x03FF]
+                    data = self._nametable[1][addr & 0x03FF]
         elif 0x3F00 <= addr <= 0x3FFF:
             addr &= 0x001F
             if addr == 0x0010:
@@ -227,7 +215,7 @@ cdef class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            data = self.paletteTable[addr] & (0x30 if self.PPUMASK.greyscale == 1 else 0x3F)
+            data = self._palette_table[addr] & (0x30 if self.PPUMASK.greyscale == 1 else 0x3F)
         return data
 
     cdef void writeByPPU(self, uint16_t addr, uint8_t data):
@@ -237,27 +225,27 @@ cdef class PPU2C02:
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
-            self.patternTable[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
+            self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
             if self.cartridge.mirror == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
                 if 0x0800 <= addr <= 0x0BFF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
             elif self.cartridge.mirror == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
-                    self.nameTable[0][addr & 0x03FF] = data
+                    self._nametable[0][addr & 0x03FF] = data
                 if 0x0800 <= addr <= 0x0BFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
-                    self.nameTable[1][addr & 0x03FF] = data
+                    self._nametable[1][addr & 0x03FF] = data
         elif 0x3F00 <= addr <= 0x3FFF:
             addr &= 0x001F
             if addr == 0x0010:
@@ -268,41 +256,17 @@ cdef class PPU2C02:
                 addr = 0x0008
             if addr == 0x001C:
                 addr = 0x000C
-            self.paletteTable[addr] = data            
+            self._palette_table[addr] = data            
 
-    cdef void setPalettePanel(self):    
-        self.palettePanel[0x00],self.palettePanel[0x01],self.palettePanel[0x02],self.palettePanel[0x03],self.palettePanel[0x04],self.palettePanel[0x05],self.palettePanel[0x06],self.palettePanel[0x07],self.palettePanel[0x08],self.palettePanel[0x09],self.palettePanel[0x0a],self.palettePanel[0x0b],self.palettePanel[0x0c],self.palettePanel[0x0d],self.palettePanel[0x0e],self.palettePanel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x10],self.palettePanel[0x11],self.palettePanel[0x12],self.palettePanel[0x13],self.palettePanel[0x14],self.palettePanel[0x15],self.palettePanel[0x16],self.palettePanel[0x17],self.palettePanel[0x18],self.palettePanel[0x19],self.palettePanel[0x1a],self.palettePanel[0x1b],self.palettePanel[0x1c],self.palettePanel[0x1d],self.palettePanel[0x1e],self.palettePanel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x20],self.palettePanel[0x21],self.palettePanel[0x22],self.palettePanel[0x23],self.palettePanel[0x24],self.palettePanel[0x25],self.palettePanel[0x26],self.palettePanel[0x27],self.palettePanel[0x28],self.palettePanel[0x29],self.palettePanel[0x2a],self.palettePanel[0x2b],self.palettePanel[0x2c],self.palettePanel[0x2d],self.palettePanel[0x2e],self.palettePanel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
-        self.palettePanel[0x30],self.palettePanel[0x31],self.palettePanel[0x32],self.palettePanel[0x33],self.palettePanel[0x34],self.palettePanel[0x35],self.palettePanel[0x36],self.palettePanel[0x37],self.palettePanel[0x38],self.palettePanel[0x39],self.palettePanel[0x3a],self.palettePanel[0x3b],self.palettePanel[0x3c],self.palettePanel[0x3d],self.palettePanel[0x3e],self.palettePanel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
+    cdef void _set_palette_panel(self):    
+        self.palette_panel[0x00],self.palette_panel[0x01],self.palette_panel[0x02],self.palette_panel[0x03],self.palette_panel[0x04],self.palette_panel[0x05],self.palette_panel[0x06],self.palette_panel[0x07],self.palette_panel[0x08],self.palette_panel[0x09],self.palette_panel[0x0a],self.palette_panel[0x0b],self.palette_panel[0x0c],self.palette_panel[0x0d],self.palette_panel[0x0e],self.palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x10],self.palette_panel[0x11],self.palette_panel[0x12],self.palette_panel[0x13],self.palette_panel[0x14],self.palette_panel[0x15],self.palette_panel[0x16],self.palette_panel[0x17],self.palette_panel[0x18],self.palette_panel[0x19],self.palette_panel[0x1a],self.palette_panel[0x1b],self.palette_panel[0x1c],self.palette_panel[0x1d],self.palette_panel[0x1e],self.palette_panel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
+        self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
-    cdef tuple getColorFromPaletteTable(self, uint8_t palette, uint8_t pixel):
+    cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
         color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
-        return self.palettePanel[color]          
-
-    cpdef uint8_t[:,:,:] getPatternTable(self, uint8_t i, uint8_t palette):
-        cdef uint8_t tileY, tileX, tile_lsb, tile_msb, row, col, pixel
-        cdef uint16_t offset
-
-        for tileY in range(0,16):
-            for tileX in range(0,16):
-                offset = tileY * 256 + tileX * 16
-                for row in range(0,8):
-                    tile_lsb = self.readByPPU(i * 0x1000 + offset + row + 0x0000)
-                    tile_msb = self.readByPPU(i * 0x1000 + offset + row + 0x0008)
-                    for col in range(0,8):
-                        pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
-                        tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
-                        self.spritePatternTable[i][tileY * 8 + row,tileX * 8 + (7 - col)] = self.getColorFromPaletteTable(palette, pixel)
-        
-        return self.spritePatternTable[i]
-
-    cpdef uint8_t[:,:,:] getPalette(self):
-        _palette = np.zeros((4,16,3)).astype(np.uint8)
-        for x in range(4):
-            for y in range(16):
-                _palette[x][y][:] = self.palettePanel[x*16+y]
-        return _palette
+        return self.palette_panel[color]
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -312,264 +276,339 @@ cdef class PPU2C02:
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
-        self.background_shifter_pattern_lo, self.background_shifter_pattern_hi = 0x0000, 0x0000
-        self.background_shifter_attribute_lo, self.background_shifter_attribute_hi = 0x0000, 0x0000
-        self.PPUSTATUS.value = 0x00
-        self.PPUMASK.value = 0x00
-        self.PPUCTRL.value = 0x00
-        self.vram_addr.value = 0x0000
-        self.tram_addr.value = 0x0000
+        self.background_pattern_shift_register.reset()
+        self.background_attribute_shift_register.reset()
 
-    cdef void incrementScrollX(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.vram_addr.coarse_x == 31:
-                self.vram_addr.coarse_x = 0
-                self.vram_addr.nametable_x = ~self.vram_addr.nametable_x
+        self.PPUSTATUS.reset()
+        self.PPUMASK.reset()
+        self.PPUCTRL.reset()
+        self.VRAM_addr.reset()
+        self.temp_VRAM_addr.reset()
+
+    cdef void _incr_coarseX(self):
+        if self.VRAM_addr.coarse_x == 31:
+            self.VRAM_addr.coarse_x = 0
+            self.VRAM_addr.nametable_x = ~self.VRAM_addr.nametable_x
+        else:
+            self.VRAM_addr.coarse_x += 1
+
+    cdef void _incr_Y(self):
+        if self.VRAM_addr.fine_y < 7:
+            self.VRAM_addr.fine_y += 1
+        else:
+            self.VRAM_addr.fine_y = 0
+            if self.VRAM_addr.coarse_y == 29:
+                self.VRAM_addr.coarse_y = 0
+                self.VRAM_addr.nametable_y = ~self.VRAM_addr.nametable_y
+            elif self.VRAM_addr.coarse_y == 31:
+                self.VRAM_addr.coarse_y = 0
             else:
-                self.vram_addr.coarse_x += 1
+                self.VRAM_addr.coarse_y += 1
 
-    cdef void incrementScrollY(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.vram_addr.fine_y < 7:
-                self.vram_addr.fine_y += 1
+    cdef void _transfer_X_address(self):
+        self.VRAM_addr.nametable_x = self.temp_VRAM_addr.nametable_x
+        self.VRAM_addr.coarse_x = self.temp_VRAM_addr.coarse_x
+
+    cdef void _transfer_Y_address(self):
+        self.VRAM_addr.fine_y = self.temp_VRAM_addr.fine_y
+        self.VRAM_addr.nametable_y = self.temp_VRAM_addr.nametable_y
+        self.VRAM_addr.coarse_y = self.temp_VRAM_addr.coarse_y
+
+    cdef void _load_background_shifters(self):
+        self.background_pattern_shift_register.low_bits &= 0xFF00
+        self.background_pattern_shift_register.low_bits |= self.background_next_tile_lsb
+
+        self.background_pattern_shift_register.high_bits &= 0xFF00
+        self.background_pattern_shift_register.high_bits |= self.background_next_tile_msb
+
+        self.background_attribute_shift_register.low_bits &= 0xFF00
+        if self.background_next_tile_attribute & 0b01 > 0:
+            self.background_attribute_shift_register.low_bits |= 0xFF
+
+        self.background_attribute_shift_register.high_bits &= 0xFF00
+        if self.background_next_tile_attribute & 0b10 > 0:
+            self.background_attribute_shift_register.high_bits |= 0xFF
+
+    cdef void _reset_sprite_shift_registers(self):
+        for i in range(0, 8):
+            self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = 0x00
+            self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = 0x00
+
+    cdef void _update_background_shifters(self):
+        self.background_pattern_shift_register.low_bits <<= 1
+        self.background_pattern_shift_register.high_bits <<= 1
+        self.background_attribute_shift_register.low_bits <<= 1
+        self.background_attribute_shift_register.high_bits <<= 1
+
+    cdef void _update_sprite_shifters(self):
+        for i in range(0, self.sprite_count):
+            if self.secondary_OAM[i][X] > 0:
+                self.secondary_OAM[i][X] -= 1
             else:
-                self.vram_addr.fine_y = 0
-                if self.vram_addr.coarse_y == 29:
-                    self.vram_addr.coarse_y = 0
-                    self.vram_addr.nametable_y = ~self.vram_addr.nametable_y
-                elif self.vram_addr.coarse_y == 31:
-                    self.vram_addr.coarse_y = 0
-                else:
-                    self.vram_addr.coarse_y += 1
+                self.sprite_pattern_shift_registers[i][LOW_NIBBLE] <<= 1
+                self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] <<= 1
 
-    cdef void transferAddressX(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            self.vram_addr.nametable_x = self.tram_addr.nametable_x
-            self.vram_addr.coarse_x = self.tram_addr.coarse_x
-
-    cdef void transferAddressY(self):
-        if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            self.vram_addr.fine_y = self.tram_addr.fine_y
-            self.vram_addr.nametable_y = self.tram_addr.nametable_y
-            self.vram_addr.coarse_y = self.tram_addr.coarse_y
-
-    cdef void loadBackgroundShifters(self):
-        self.background_shifter_pattern_lo = ((self.background_shifter_pattern_lo & 0xFF00) | self.background_next_tile_lsb)
-        self.background_shifter_pattern_hi = ((self.background_shifter_pattern_hi & 0xFF00) | self.background_next_tile_msb) 
-        self.background_shifter_attribute_lo = (self.background_shifter_attribute_lo & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b01) > 0 else 0x00)
-        self.background_shifter_attribute_hi = (self.background_shifter_attribute_hi & 0xFF00) | (0xFF if (self.background_next_tile_attribute & 0b10) > 0 else 0x00)
-
-    cdef void updateShifters(self):
+    cdef void _eval_background(self):
+        if self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0:
+            return
         if self.PPUMASK.render_background == 1:
-            self.background_shifter_pattern_lo <<= 1
-            self.background_shifter_pattern_hi <<= 1
-            self.background_shifter_attribute_lo <<= 1
-            self.background_shifter_attribute_hi <<= 1
-        if self.PPUMASK.render_sprites == 1 and self.cycle >= 1 and self.cycle < 258:
-            for i in range(0, self.sprite_count):
-                if self.pSpriteScanline[offset(i,X)] > 0:
-                    # self.spriteScanline[i].x = self.spriteScanline[i].x - 1
-                    # self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
-                    self.pSpriteScanline[offset(i,X)] = self.pSpriteScanline[offset(i,X)] - 1
-                else:
-                    self.sprite_shifter_pattern_lo[i] <<= 1
-                    self.sprite_shifter_pattern_hi[i] <<= 1
+            self._update_background_shifters()
+        cdef int background_cycle = (self.cycle - 1) % 8
+        if background_cycle == 0:
+            self._load_background_shifters()
+            self.background_next_tile_id = self._fetch_background_tile_id()
+        elif background_cycle == 2:
+            self.background_next_tile_attribute = self._fetch_background_attribute()
+        elif background_cycle == 4:
+            self.background_next_tile_lsb = self._fetch_background_tile_nibble(LOW_NIBBLE)
+        elif background_cycle == 6:
+            self.background_next_tile_msb = self._fetch_background_tile_nibble(HIGH_NIBBLE)
+        elif background_cycle == 7:
+            if self.cycle != 256:
+                self._incr_coarseX()
+            else:
+                self._incr_Y()
 
-    cdef void clock(self) except *:
-        cdef uint8_t nOAMEntry
-        cdef sprite_pattern_addr_lo, sprite_pattern_addr_hi
-        cdef int16_t diff
-        cdef int v
+    cdef uint8_t _fetch_background_tile_nibble(self, int nibble):
+        cdef uint16_t which_pattern_table = self.PPUCTRL.pattern_background
+        cdef uint16_t which_tile = self.background_next_tile_id
+        cdef uint16_t which_row = self.VRAM_addr.fine_y
+        cdef uint16_t offset = 8 if nibble == HIGH_NIBBLE else 0    
 
-        if -1 <= self.scanline < 240:
-            if self.scanline == 0 and self.cycle == 0:
-                self.cycle = 1
-            if self.scanline == -1 and self.cycle == 1:
-                self.PPUSTATUS.vertical_blank = 0
-                self.PPUSTATUS.sprite_overflow = 0
-                self.PPUSTATUS.sprite_zero_hit = 0
-                for i in range(0, 8):
-                    self.sprite_shifter_pattern_hi[i] = 0
-                    self.sprite_shifter_pattern_lo[i] = 0
-            if (2 <= self.cycle < 258) or (321 <= self.cycle < 338): 
-                self.updateShifters()
-                v = (self.cycle - 1) % 8
-                if v == 0:
-                    self.loadBackgroundShifters()
-                    self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-                elif v == 2:
-                    self.background_next_tile_attribute = self.readByPPU(0x23C0 \
-                        | (self.vram_addr.nametable_y << 11) \
-                        | (self.vram_addr.nametable_x << 10) \
-                        | ((self.vram_addr.coarse_y >> 2) << 3) \
-                        | (self.vram_addr.coarse_x >> 2)    
-                    )
-                    if self.vram_addr.coarse_y & 0x02 > 0:
-                        self.background_next_tile_attribute >>= 4
-                    if self.vram_addr.coarse_x & 0x02 > 0:
-                        self.background_next_tile_attribute >>= 2
-                    self.background_next_tile_attribute &= 0x03
-                elif v == 4:
-                    self.background_next_tile_lsb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                        + (self.background_next_tile_id << 4) \
-                        + (self.vram_addr.fine_y) + 0
-                    )
-                elif v == 6:
-                    self.background_next_tile_msb = self.readByPPU((self.PPUCTRL.pattern_background << 12) \
-                        + (self.background_next_tile_id << 4) \
-                        + (self.vram_addr.fine_y) + 8
-                    )
-                elif v == 7:
-                    self.incrementScrollX()
-            if self.cycle == 256:
-                self.incrementScrollY()
-            if self.cycle == 257:                
-                self.loadBackgroundShifters()
-                self.transferAddressX()
-            if self.cycle == 338 or self.cycle == 340:                
-                self.background_next_tile_id = self.readByPPU(0x2000 | (self.vram_addr.value & 0x0FFF))
-            if self.scanline == -1 and 280 <= self.cycle < 305:               
-                self.transferAddressY()
-            if self.cycle == 257 and self.scanline >= 0:
-                # memset(self.spriteScanline, 0xFF, 8 * sizeof(sObjectAttributeEntry))
-                # self.spriteScanline = array([sObjectAttributeEntry(0xFF,0xFF,0xFF,0xFF) for _ in range(8)])
-                # self.pSpriteScanline = [0xFF for _ in range(8 * 32)]
-                memset(self.pSpriteScanline, 0xFF, 8*32*sizeof(uint8_t))
-                self.sprite_count = 0
-                for i in range(0, 8):
-                    self.sprite_shifter_pattern_lo[i] = 0
-                    self.sprite_shifter_pattern_hi[i] = 0
-                nOAMEntry = 0
-                self.bSpriteZeroHitPossible = False
-                while nOAMEntry < 64 and self.sprite_count < 9:
-                    # diff = self.scanline - int16(self.OAM(nOAMEntry).y)
-                    diff = self.scanline - <int16_t>(self.pOAM[offset(nOAMEntry, Y)])
-                    diff_compare = 16 if self.PPUCTRL.sprite_size == 1 else 8
-                    if 0 <= diff < diff_compare:
-                        if self.sprite_count < 8:
-                            if nOAMEntry == 0:
-                                self.bSpriteZeroHitPossible = True
-                            # self.spriteScanline[self.sprite_count] = self.OAM(nOAMEntry)
-                            self.pSpriteScanline[offset(self.sprite_count,Y)] = self.pOAM[offset(nOAMEntry,Y)]
-                            self.pSpriteScanline[offset(self.sprite_count,ID)] = self.pOAM[offset(nOAMEntry,ID)]
-                            self.pSpriteScanline[offset(self.sprite_count,ATTRIBUTE)] = self.pOAM[offset(nOAMEntry,ATTRIBUTE)]
-                            self.pSpriteScanline[offset(self.sprite_count,X)] = self.pOAM[offset(nOAMEntry,X)]
-                            self.sprite_count += 1
-                    nOAMEntry += 1
-                self.PPUSTATUS.sprite_overflow = 1 if self.sprite_count > 8 else 0
-            if self.cycle == 340:
-                for i in range(0, self.sprite_count):
-                    sprite_pattern_bits_lo, sprite_pattern_bits_hi = 0x00, 0x00
-                    sprite_pattern_addr_lo, sprite_pattern_addr_hi = 0x0000, 0x0000
-                    if self.PPUCTRL.sprite_size == 0:
-                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                            sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
-                                | ((self.scanline - self.pSpriteScanline[offset(i,Y)]) & 0xFFFF)
-                        else:
-                            sprite_pattern_addr_lo = (self.PPUCTRL.pattern_sprite<<12) \
-                                | (self.pSpriteScanline[offset(i,ID)]<<4) \
-                                | ((7 - (self.scanline - self.pSpriteScanline[offset(i,Y)])) & 0xFFFF)
-                    else:
-                        if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x80) == 0:
-                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
-                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
-                            else:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
-                                    | ((self.scanline - self.pSpriteScanline[offset(i,Y)])&0x07) 
-                        else:
-                            if self.scanline - self.pSpriteScanline[offset(i,Y)] < 8:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | (((self.pSpriteScanline[offset(i,ID)] & 0xFE)+1)<<4) \
-                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07) 
-                            else:
-                                sprite_pattern_addr_lo = ((self.pSpriteScanline[offset(i,ID)] & 0x01)<<12) \
-                                    | ((self.pSpriteScanline[offset(i,ID)] & 0xFE)<<4) \
-                                    | ((7-(self.scanline - self.pSpriteScanline[offset(i,Y)]))&0x07)   
+        cdef uint16_t background_tile_addr = (which_pattern_table << 12) \
+            + (which_tile << 4) \
+            + (which_row) \
+            + offset
+        return self.readByPPU(background_tile_addr)
+
+    cdef uint8_t _fetch_background_tile_id(self):
+        return self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
+    
+    cdef uint8_t _fetch_background_attribute(self):
+        cdef uint8_t attribute = self.readByPPU(0x23C0 \
+            | (self.VRAM_addr.nametable_y << 11) \
+            | (self.VRAM_addr.nametable_x << 10) \
+            | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+            | (self.VRAM_addr.coarse_x >> 2))
                 
-                    sprite_pattern_addr_hi = sprite_pattern_addr_lo + 8
-                    
-                    sprite_pattern_bits_lo = self.readByPPU(sprite_pattern_addr_lo)
-                    sprite_pattern_bits_hi = self.readByPPU(sprite_pattern_addr_hi)
-                    
-                    if self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x40 != 0:
-                        sprite_pattern_bits_lo = flipbyte(sprite_pattern_bits_lo)
-                        sprite_pattern_bits_hi = flipbyte(sprite_pattern_bits_hi)
+        if self.VRAM_addr.coarse_y & 0x02 > 0:
+            attribute >>= 4
+        if self.VRAM_addr.coarse_x & 0x02 > 0:
+            attribute >>= 2
+        attribute &= 0x03
+        return attribute
 
-                    self.sprite_shifter_pattern_lo[i] = sprite_pattern_bits_lo
-                    self.sprite_shifter_pattern_hi[i] = sprite_pattern_bits_hi
-        if self.scanline == 240:
-            pass
-        if 241 <= self.scanline < 261:            
-            if self.scanline == 241 and self.cycle == 1:
-                self.PPUSTATUS.vertical_blank = 1
-                if self.PPUCTRL.enable_nmi == 1:
-                    self.nmi = True
+    cdef void _eval_sprites(self):
+        cdef int16_t y_offset, sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
+        self.sprite_count = 0
+        self.eval_sprite0 = False
+        memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
+        self._reset_sprite_shift_registers()
+            
+        cdef uint8_t nOAMEntry = 0
+        for nOAMEntry in range(64):
+            y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][Y])
+            if not (0 <= y_offset < sprite_height):
+                continue
+            if nOAMEntry == 0:
+                self.eval_sprite0 = True
+            if self.sprite_count >= 8:
+                self.PPUSTATUS.sprite_overflow = 1
+                break
+            self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
+            self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
+            self.secondary_OAM[self.sprite_count][ATTRIBUTES] = self.OAM[nOAMEntry][ATTRIBUTES]
+            self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
+            self.sprite_count += 1
 
-        cdef uint8_t background_pixel = 0x00, background_pixel_0, background_pixel_1
-        cdef uint8_t background_palette = 0x00, background_palette_0, background_palette_1
-        cdef uint16_t bit_mux
+    cdef void _fetch_sprites(self):
+        for i in range(0, self.sprite_count):
+            self._fetch_sprite(i)    
 
-        if self.PPUMASK.render_background == 1:
-            bit_mux = 0x8000 >> self.fine_x
+    cdef void _fetch_sprite(self, int i):
+        cdef bint vertical_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_VERTICAL_FLIP) > 0
+        cdef int sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
+        cdef uint16_t y_offset = self.scanline - self.secondary_OAM[i][Y]
+        if vertical_flip_sprite:
+            y_offset = sprite_height - 1 - y_offset
+        if y_offset > 7:
+            y_offset += 8
 
-            background_pixel_0 = 1 if (self.background_shifter_pattern_lo & bit_mux) > 0 else 0
-            background_pixel_1 = 1 if (self.background_shifter_pattern_hi & bit_mux) > 0 else 0
-            background_pixel = (background_pixel_1 << 1) | background_pixel_0
+        cdef uint16_t which_pattern_table, which_tile
+        if self.PPUCTRL.sprite_size == 0:
+            # 8x8 Sprite
+            which_pattern_table = self.PPUCTRL.pattern_sprite
+            which_tile = self.secondary_OAM[i][ID]
+        else:
+            # 8x16 Sprite
+            which_pattern_table = self.secondary_OAM[i][ID] & 0x01
+            which_tile = self.secondary_OAM[i][ID] & 0xFE
 
-            background_palette_0 = 1 if (self.background_shifter_attribute_lo & bit_mux) > 0 else 0
-            background_palette_1 = 1 if (self.background_shifter_attribute_hi & bit_mux) > 0 else 0
-            background_palette = (background_palette_1 << 1) | background_palette_0
-
-        cdef uint8_t foreground_pixel_lo, foreground_pixel_hi, foreground_pixel = 0, foreground_palette = 0x00, foreground_priority = 0x00,
-
-        if self.PPUMASK.render_sprites == 1:
-            self.bSpriteZeroBeingRendered = False
-            for i in range(0, self.sprite_count):
-                if self.pSpriteScanline[offset(i,X)] == 0:
-                    foreground_pixel_lo = 1 if (self.sprite_shifter_pattern_lo[i] & 0x80) > 0 else 0
-                    foreground_pixel_hi = 1 if (self.sprite_shifter_pattern_hi[i] & 0x80) > 0 else 0
-                    foreground_pixel = (foreground_pixel_hi << 1) | foreground_pixel_lo
-                    foreground_palette = (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x03) + 0x04
-                    foreground_priority = 1 if (self.pSpriteScanline[offset(i,ATTRIBUTE)] & 0x20) == 0 else 0
-
-                    if foreground_pixel != 0:
-                        if i == 0:
-                            self.bSpriteZeroBeingRendered = True
-                        break
-
-        cdef uint8_t pixel = 0x00, palette = 0x00
+        cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
+        cdef uint8_t sprite_pattern_low_bits = self.readByPPU(tile_addr + 0)
+        cdef uint8_t sprite_pattern_high_bits = self.readByPPU(tile_addr + 8)
         
-        if background_pixel == 0 and foreground_pixel == 0:
-            pixel = 0x00
-            palette = 0x00
-        elif background_pixel == 0 and foreground_pixel > 0:
+        cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0
+        if horizontal_flip_sprite:
+            sprite_pattern_low_bits = flipbyte(sprite_pattern_low_bits)
+            sprite_pattern_high_bits = flipbyte(sprite_pattern_high_bits)
+
+        self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_low_bits
+        self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_high_bits 
+
+    cdef tuple _draw_background(self):
+        cdef int16_t start_render_position = 8 if self.PPUMASK.render_background_left == 0 else 0
+        if (self.cycle - 1) < start_render_position:
+            return (0x00, 0x00)
+
+        cdef uint16_t bit_mux = 0x8000 >> self.fine_x
+
+        cdef uint8_t background_pixel = 0x00, background_pixel_low_bit = 0x00, background_pixel_high_bit = 0x00
+        if (self.background_pattern_shift_register.low_bits & bit_mux) > 0:
+            background_pixel_low_bit = 1
+        if (self.background_pattern_shift_register.high_bits & bit_mux) > 0:
+            background_pixel_high_bit = 1
+        background_pixel = (background_pixel_high_bit << 1) | background_pixel_low_bit
+
+        cdef uint8_t background_palette = 0x00, background_palette_low_bit = 0x00, background_palette_high_bit = 0x00
+        if (self.background_attribute_shift_register.low_bits & bit_mux) > 0:
+            background_palette_low_bit = 1
+        if (self.background_attribute_shift_register.high_bits & bit_mux) > 0:
+            background_palette_high_bit = 1
+        background_palette = (background_palette_high_bit << 1) | background_palette_low_bit
+
+        return (background_palette, background_pixel)
+
+    cdef tuple _draw_sprites(self):
+        cdef uint8_t foreground_pixel = 0x00, foreground_pixel_low_bit = 0x00, foreground_pixel_high_bit = 0x00
+        cdef uint8_t foreground_palette
+
+        cdef int i, sprite_index = 7
+        for i in range(0, self.sprite_count):
+            if self.secondary_OAM[i][X] == 0:
+                if (self.sprite_pattern_shift_registers[i][LOW_NIBBLE] & 0x80) > 0:
+                    foreground_pixel_low_bit = 1
+                if (self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] & 0x80) > 0:
+                    foreground_pixel_high_bit = 1
+                foreground_pixel = (foreground_pixel_high_bit << 1) | foreground_pixel_low_bit
+                if foreground_pixel != 0:
+                    sprite_index = i
+                    foreground_palette = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PALETTE) + 0x04
+                    self.foreground_priority = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_PRIORITY) == 0
+                    break
+        self.render_sprite0 = sprite_index == 0
+        cdef int16_t start_render_position = 8 if self.PPUMASK.render_sprites_left == 0 else 0
+        if foreground_pixel == 0 or (self.cycle - 1) < start_render_position:
+            return (0x00, 0x00)
+        return (foreground_palette, foreground_pixel)
+
+    cdef tuple _draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
+        cdef uint8_t palette = 0x00, pixel = 0x00
+        
+        if background_pixel == 0 and foreground_pixel > 0:
             pixel = foreground_pixel
             palette = foreground_palette
         elif background_pixel > 0 and foreground_pixel == 0:
             pixel = background_pixel
             palette = background_palette
         elif background_pixel > 0 and foreground_pixel > 0:
-            if foreground_priority:
+            if self.foreground_priority:
                 pixel = foreground_pixel
                 palette = foreground_palette
             else:
                 pixel = background_pixel
                 palette = background_palette
-            if self.bSpriteZeroHitPossible and self.bSpriteZeroBeingRendered:
-                if self.PPUMASK.render_background & self.PPUMASK.render_sprites != 0:
-                    if ((self.PPUMASK.render_background_left | self.PPUMASK.render_sprites_left) == 0):
-                        if 9 <= self.cycle < 258:
-                            self.PPUSTATUS.sprite_zero_hit = 1
-                    else:
-                        if 1 <= self.cycle < 258:
-                            self.PPUSTATUS.sprite_zero_hit = 1
 
-        if 0 <= self.cycle - 1 < self.screenWidth and 0 <= self.scanline < self.screenHeight: 
-            self.spriteScreen[self.scanline][<int>(self.cycle - 1)] = self.getColorFromPaletteTable(palette, pixel)
+            if (self.PPUMASK.render_background != 0 or self.PPUMASK.render_sprites != 0):              
+                if self.eval_sprite0 and self.render_sprite0:
+                    if  self.cycle - 1 < 255:
+                        self.PPUSTATUS.sprite_zero_hit = 1
+
+        return (palette, pixel)
+
+    cdef void clock(self) except *:
+        cdef bint pre_render_scanline = self.scanline == -1 or self.scanline == 261
+        cdef bint visible_scanlines = 0 <= self.scanline <= 239
+        cdef bint post_render_scanline = self.scanline == 240
+        cdef bint vertical_blanking_lines = 241 <= self.scanline <= 260
+
+        if pre_render_scanline:
+            if 1 <= self.cycle <= 256:
+                self._eval_background()
+            elif self.cycle == 257:                
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._load_background_shifters()
+                    self._transfer_X_address()
+            elif 321 <= self.cycle <= 336: 
+                self._eval_background()
+            if self.cycle == 340:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:                
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+
+            if 2 <= self.cycle <= 256:
+                if self.PPUMASK.render_sprites == 1:
+                    self._update_sprite_shifters()   
+            if self.cycle == 340:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._fetch_sprites()
+
+            if self.cycle == 1:
+                self.PPUSTATUS.vertical_blank = 0
+                self.PPUSTATUS.sprite_overflow = 0
+                self.PPUSTATUS.sprite_zero_hit = 0
+                self._reset_sprite_shift_registers()
+            elif 280 <= self.cycle <= 304:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:               
+                    self._transfer_Y_address()
+        elif visible_scanlines:
+            if self.scanline == 0 and self.cycle == 0:
+                self.cycle = 1
+
+            if 1 <= self.cycle <= 256:
+                self._eval_background()
+            elif self.cycle == 257:                
+                self._load_background_shifters()
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._transfer_X_address()
+            elif 321 <= self.cycle <= 336: 
+                self._eval_background()
+            if self.cycle == 340:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+                    self.background_next_tile_id = self._fetch_background_tile_id()
+
+            if 2 <= self.cycle <= 256: 
+                if self.PPUMASK.render_sprites == 1:
+                    self._update_sprite_shifters()        
+            elif self.cycle == 257:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._eval_sprites()
+            elif self.cycle == 340:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._fetch_sprites()        
+        elif post_render_scanline:
+            pass
+        elif vertical_blanking_lines:            
+            if self.scanline == 241 and self.cycle == 1:
+                self.PPUSTATUS.vertical_blank = 1
+                if self.PPUCTRL.enable_nmi == 1:
+                    self.nmi = True
+
+        cdef uint8_t background_palette = 0x00, background_pixel = 0x00
+        if self.PPUMASK.render_background == 1:
+            background_palette, background_pixel = self._draw_background()
+
+        cdef uint8_t foreground_palette = 0x00, foreground_pixel = 0x00
+        self.foreground_priority = False
+        if self.PPUMASK.render_sprites == 1:
+            foreground_palette, foreground_pixel = self._draw_sprites()
+
+        cdef uint8_t pixel = 0x00, palette = 0x00
+        palette, pixel = self._draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
+
+        if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height: 
+            self._screen[self.scanline][<int>(self.cycle - 1)] = self.fetch_color(palette, pixel)
 
         self.cycle += 1
 

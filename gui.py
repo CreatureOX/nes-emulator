@@ -281,7 +281,7 @@ class Emulator:
             ]) 
             self.gameClock.tick(self.fps)
             self.console.run()
-            originalImage = np.swapaxes(self.console.bus.ppu.getScreen(), 0, 1)
+            originalImage = np.swapaxes(self.console.bus.ppu.screen(), 0, 1)
             resizedImage = self.resize(originalImage)
             surf = pygame.surfarray.make_surface(resizedImage)
             self.gameScreen.blit(surf, (0,0))
@@ -289,7 +289,7 @@ class Emulator:
         return True
     
     def capture_screenshot(self, screenshot_path: str = None):
-        image_data = np.array(self.console.bus.ppu.getScreen())
+        image_data = np.array(self.console.bus.ppu.screen())
         if image_data.shape[2] == 3:
             image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
 
