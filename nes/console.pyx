@@ -67,11 +67,3 @@ cdef class Console:
             self.bus.controller[0] |= 0x02
         elif pressed[K_RIGHT]:
             self.bus.controller[0] |= 0x01
-
-    cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t i):
-        return self.ppu_debugger.pattern_table(i,0)
-        
-    cpdef uint8_t[:,:,:] ppu_palette(self):
-        return self.ppu_debugger.palette()
-
-        
