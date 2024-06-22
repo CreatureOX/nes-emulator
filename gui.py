@@ -206,7 +206,7 @@ class Emulator:
     def drawCPUStatus(self, window) -> None:
         if not self.console:
             return
-        status_info = self.console.cpu_status_info() 
+        status_info = self.console.cpu_debugger.status() 
         window["N"].Update(text_color='RED' if status_info["N"] else 'WHITE')
         window["V"].Update(text_color='RED' if status_info["V"] else 'WHITE')
         window["B"].Update(text_color='RED' if status_info["B"] else 'WHITE')
@@ -217,7 +217,7 @@ class Emulator:
     def drawCPURegisters(self, window) -> None:
         if not self.console:
             return
-        registers_info = self.console.cpu_registers_info()
+        registers_info = self.console.cpu_debugger.registers()
         window["PC"].Update("PC: ${PC:04X}".format(PC=registers_info["PC"]))
         window["A"].Update("A: ${a:02X}".format(a=registers_info["A"]))
         window["X"].Update("X: ${x:02X}".format(x=registers_info["X"]))
@@ -227,11 +227,11 @@ class Emulator:
     def drawCode(self, window, delta: int = 10) -> None:
         if not self.console:
             return
-        start, end = max(self.console.cpu_pc() - delta, 0x0000), self.console.cpu_pc() + delta
-        asm = self.console.cpu_code_readable(start, end)
+        start, end = max(self.console.cpu_debugger.PC() - delta, 0x0000), self.console.cpu_debugger.PC() + delta
+        asm = self.console.cpu_debugger.to_asm(start, end)
         window['READABLE'].Update("")
         for addr, inst in asm.items():
-            window['READABLE'].print(inst, text_color="CYAN" if addr == self.console.cpu_pc() else 'WHITE') 
+            window['READABLE'].print(inst, text_color="CYAN" if addr == self.console.cpu_debugger.PC() else 'WHITE') 
 
     def drawPatternTable(self, window) -> None:
         if not self.console:
@@ -252,7 +252,7 @@ class Emulator:
     def drawRAM(self, window, start_addr: np.uint16, end_addr: np.uint16) -> None:
         if not self.console:
             return
-        window['HEX'].Update(self.console.cpu_ram(start_addr, end_addr))
+        window['HEX'].Update(self.console.cpu_debugger.ram(start_addr, end_addr))
 
     def openFile(self) -> bool:
         filename = gui.popup_get_file('file to open', file_types=(("NES Files","*.nes"),), no_window=True)

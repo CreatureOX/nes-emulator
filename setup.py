@@ -35,6 +35,7 @@ setup(
         Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
         Extension("cpu_op", sources=["./nes/cpu_op.pyx"]),
         Extension("cpu", sources=["./nes/cpu.pyx"]),
+        Extension("cpu_debug", sources=["./nes/cpu_debug.pyx"]),
         Extension("ppu", sources=["./nes/ppu.pyx"]),
         Extension("ppu_registers", sources=["./nes/ppu_registers.pyx"]),
         Extension("ppu_sprite", sources=["./nes/ppu_sprite.pyx"]),
