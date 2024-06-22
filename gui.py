@@ -236,15 +236,15 @@ class Emulator:
     def drawPatternTable(self, window) -> None:
         if not self.console:
             return
-        patternTable0 = ImageTk.PhotoImage(image=Image.fromarray(np.asarray(self.console.ppu_pattern_table(0))))
+        patternTable0 = ImageTk.PhotoImage(image=Image.fromarray(np.asarray(self.console.ppu_debugger.pattern_table(0, 0))))
         window['PATTERN_0'].Update(data=patternTable0)
-        patternTable1 = ImageTk.PhotoImage(image=Image.fromarray(np.asarray(self.console.ppu_pattern_table(1))))
+        patternTable1 = ImageTk.PhotoImage(image=Image.fromarray(np.asarray(self.console.ppu_debugger.pattern_table(1, 0))))
         window['PATTERN_1'].Update(data=patternTable1) 
     
     def drawPalette(self, window, ratio: int = 1) -> None:
         if not self.console:
             return
-        palette = Image.fromarray(np.asarray(self.console.ppu_palette()))
+        palette = Image.fromarray(np.asarray(self.console.ppu_debugger.palette()))
         resize_palette = palette.resize((16*ratio, 4*ratio))
         image = ImageTk.PhotoImage(image=resize_palette)
         window['PALETTE'].Update(data=image)
