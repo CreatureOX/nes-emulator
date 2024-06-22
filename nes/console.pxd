@@ -20,7 +20,7 @@ cdef class Console:
     cdef public CPUBus bus
     
     cdef public CPUDebugger cpu_debugger
-    cdef PPUDebugger ppu_debugger
+    cdef public PPUDebugger ppu_debugger
 
     cpdef void power_up(self)
     cpdef void reset(self)
@@ -28,7 +28,4 @@ cdef class Console:
     cpdef void frame(self)
     cpdef void run(self)
     cpdef void control(self, list)
-
-    cpdef uint8_t[:,:,:] ppu_pattern_table(self, uint8_t)
-    cpdef uint8_t[:,:,:] ppu_palette(self)
     
