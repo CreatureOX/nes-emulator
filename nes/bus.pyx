@@ -131,8 +131,8 @@ cdef class CPUBus:
             self.ppu.nmi = False
             self.cpu.nmi()
 
-        if self.cartridge.getMapper().irqState():
-            self.cartridge.getMapper().irqClear()
+        if self.cartridge.getMapper().IRQ_state():
+            self.cartridge.getMapper().IRQ_clear()
             self.cpu.irq()
 
         self.nSystemClockCounter += 1
