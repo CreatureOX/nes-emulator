@@ -1,9 +1,9 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
-from mirror cimport *
-
 
 cdef class Mapper:
+    cdef str mapper_no
+
     cdef uint8_t PRGBanks
     cdef uint8_t CHRBanks
 
@@ -11,16 +11,20 @@ cdef class Mapper:
     cdef (bint, uint32_t) mapWriteByCPU(self, uint16_t, uint8_t)
     cdef (bint, uint32_t) mapReadByPPU(self, uint16_t)
     cdef (bint, uint32_t) mapWriteByPPU(self, uint16_t)
+
     cdef void reset(self)
+
     cdef uint8_t mirror(self)
+
     cdef bint irqState(self)
     cdef void irqClear(self)
+    
     cdef void scanline(self)
 
-cdef class Mapper000(Mapper):
+cdef class MapperNROM(Mapper):
     pass
 
-cdef class Mapper001(Mapper):
+cdef class MapperMMC1(Mapper):
     cdef uint8_t CHRBankSelect4Lo
     cdef uint8_t CHRBankSelect4Hi
     cdef uint8_t CHRBankSelect8
@@ -37,14 +41,14 @@ cdef class Mapper001(Mapper):
 
     cdef uint8_t[:] RAMStatic
 
-cdef class Mapper002(Mapper):
+cdef class MapperUxROM(Mapper):
     cdef uint8_t PRGBankSelectLo
     cdef uint8_t PRGBankSelectHi
 
-cdef class Mapper003(Mapper):
+cdef class MapperINES003(Mapper):
     cdef uint8_t CHRBankSelect
 
-cdef class Mapper004(Mapper):
+cdef class MapperMMC3(Mapper):
     cdef uint8_t targetRegister
     cdef bint PRGBankMode
     cdef bint CHRInversion
@@ -61,7 +65,7 @@ cdef class Mapper004(Mapper):
     cdef uint16_t IRQReload
 
     cdef uint8_t[:] RAMStatic
-      
-cdef class Mapper066(Mapper):
+
+cdef class MapperGxROM(Mapper):
     cdef uint8_t CHRBankSelect
     cdef uint8_t PRGBankSelect

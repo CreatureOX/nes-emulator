@@ -12,6 +12,10 @@ cdef class Mapper:
 
         self.reset()
 
+    @staticmethod
+    def instance(prgBanks: uint8_t, chrBanks: uint8_t):
+        return Mapper(prgBanks, chrBanks)
+
     cdef (bint, uint32_t, uint8_t) mapReadByCPU(self, uint16_t addr):
         pass
 
@@ -39,7 +43,11 @@ cdef class Mapper:
     cdef void scanline(self):
         pass
 
-cdef class Mapper000(Mapper):
+cdef class MapperNROM(Mapper):
+    def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
+        super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "000"
+
     cdef (bint, uint32_t, uint8_t) mapReadByCPU(self, uint16_t addr):
         if 0x8000 <= addr <= 0xFFFF:
             return (True, addr & (0x7FFF if self.PRGBanks > 1 else 0x3FFF), 0)
@@ -61,9 +69,12 @@ cdef class Mapper000(Mapper):
                 return (True, addr)
         return (False, addr)
 
-cdef class Mapper001(Mapper):
+cdef class MapperMMC1(Mapper):
+
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "001"
+
         self.RAMStatic = np.zeros(32768).astype(np.uint8)
         self.CHRBankSelect4Lo, self.CHRBankSelect4Hi, self.CHRBankSelect8 = 0x00, 0x00, 0x00
         self.PRGBankSelect16Lo, self.PRGBankSelect16Hi, self.PRGBankSelect32 = 0x00, 0x00, 0x00
@@ -172,11 +183,13 @@ cdef class Mapper001(Mapper):
         self.PRGBankSelect32, self.PRGBankSelect16Lo, self.PRGBankSelect16Hi = 0x00, 0x00, self.PRGBanks - 1
 
     cdef uint8_t mirror(self):
-        return self.mirrormode    
+        return self.mirrormode
 
-cdef class Mapper002(Mapper):
+cdef class MapperUxROM(Mapper):
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "002"
+
         self.PRGBankSelectLo, self.PRGBankSelectHi = 0x00, 0x00
 
     cdef (bint, uint32_t, uint8_t) mapReadByCPU(self, uint16_t addr):
@@ -210,9 +223,11 @@ cdef class Mapper002(Mapper):
     cdef void reset(self):
         self.PRGBankSelectLo, self.PRGBankSelectHi = 0, self.PRGBanks - 1
 
-cdef class Mapper003(Mapper):
+cdef class MapperINES003(Mapper):
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "003"
+        
         self.CHRBankSelect = 0x00    
 
     cdef (bint, uint32_t, uint8_t) mapReadByCPU(self, uint16_t addr):
@@ -247,9 +262,11 @@ cdef class Mapper003(Mapper):
     cdef void reset(self):
         self.CHRBankSelect = 0
 
-cdef class Mapper004(Mapper):
+cdef class MapperMMC3(Mapper):
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "004"
+        
         self.targetRegister = 0x00  
         self.PRGBankMode = False
         self.CHRInversion = False
@@ -428,9 +445,10 @@ cdef class Mapper004(Mapper):
         if self.IRQCounter == 0 and self.IRQEnable:
             self.IRQActive = True
 
-cdef class Mapper066(Mapper):
+cdef class MapperGxROM(Mapper):    
     def __init__(self, uint8_t prgBanks, uint8_t chrBanks):
         super().__init__(prgBanks, chrBanks)
+        self.mapper_no = "066"
         self.CHRBankSelect = 0x00
         self.PRGBankSelect = 0x00    
             

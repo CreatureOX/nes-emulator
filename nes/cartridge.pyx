@@ -2,10 +2,6 @@ from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 cimport numpy as np
 
-from mirror cimport *
-from mapper cimport Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
-from bus cimport CPUBus
-
 
 cdef class Header:
     def __init__(self, bytes bytes) -> None:
@@ -42,7 +38,7 @@ cdef class Cartridge:
             if self.header.mapper1 & 0b100 != 0:
                 self.trainer = nes.read(512)
             
-            mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
+            mapper_no = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
             fileType = INES
@@ -72,18 +68,7 @@ cdef class Cartridge:
                 CHRBanks = (self.header.prg_ram_size & 0x38) << 8 | self.header.chr_rom_chunks
                 self.CHRMemory = np.frombuffer(nes.read(8192 * CHRBanks), dtype=np.uint8).copy()
 
-            if mapperNo == 000:
-                self.mapper = Mapper000(PRGBanks, CHRBanks)
-            elif mapperNo == 1:
-                self.mapper = Mapper001(PRGBanks, CHRBanks)
-            elif mapperNo == 2:
-                self.mapper = Mapper002(PRGBanks, CHRBanks)
-            elif mapperNo == 3:
-                self.mapper = Mapper003(PRGBanks, CHRBanks)
-            elif mapperNo == 4:
-                self.mapper = Mapper004(PRGBanks, CHRBanks)
-            elif mapperNo == 66:
-                self.mapper = Mapper066(PRGBanks, CHRBanks)
+            self.mapper = MapperFactory.of(mapper_no)(PRGBanks, CHRBanks)      
 
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
         success, mapped_addr, data = self.mapper.mapReadByCPU(addr)

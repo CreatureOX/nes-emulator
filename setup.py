@@ -30,6 +30,7 @@ setup(
     ext_modules=cythonize([
         Extension("mirror", sources=["./nes/mirror.pyx"]),
         Extension("mapper", sources=["./nes/mapper.pyx"]),
+        Extension("mapper_factory", sources=["./nes/mapper_factory.pyx"]),
         Extension("cartridge", sources=["./nes/cartridge.pyx"]),
         Extension("bus", sources=["./nes/bus.pyx"]),
         Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
