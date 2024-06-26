@@ -1,4 +1,9 @@
-from mapper cimport MapperNROM, MapperMMC1, MapperUxROM, MapperINES003, MapperMMC3, MapperGxROM
+from mapper_nrom cimport MapperNROM
+from mapper_mmc1 cimport MapperMMC1
+from mapper_uxrom cimport MapperUxROM
+from mapper_ines003 cimport MapperINES003
+from mapper_mmc3 cimport MapperMMC3
+from mapper_gxrom cimport MapperGxROM
 
 
 mappers = {

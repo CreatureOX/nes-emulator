@@ -2,6 +2,8 @@ from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 cimport numpy as np
 
+from mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
+
 
 cdef class Header:
     def __init__(self, bytes bytes) -> None:
@@ -71,35 +73,38 @@ cdef class Cartridge:
             self.mapper = MapperFactory.of(mapper_no)(PRGBanks, CHRBanks)      
 
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
-        success, mapped_addr, data = self.mapper.mapReadByCPU(addr)
-        if success:
-            if mapped_addr == UINT32_MAX:
-                return (True, data)
+        cdef CPUReadMapping mapping = self.mapper.mapReadByCPU(addr)
+
+        if mapping.success:
+            if mapping.addr == UINT32_MAX:
+                return (True, mapping.data)
             else:
-                return (True, self.PRGMemory[mapped_addr])
+                return (True, self.PRGMemory[mapping.addr])
         else:
-            return (False, data)
+            return (False, mapping.data)
 
     cdef bint writeByCPU(self, uint16_t addr, uint8_t data):
-        success, mapped_addr = self.mapper.mapWriteByCPU(addr, data)
-        if success:
-            if mapped_addr == UINT32_MAX:
+        cdef CPUWriteMapping mapping = self.mapper.mapWriteByCPU(addr, data)
+
+        if mapping.success:
+            if mapping.addr == UINT32_MAX:
                 return True
             else:
-               self.PRGMemory[mapped_addr] = data
+               self.PRGMemory[mapping.addr] = data
                return True
         else:
             return False 
 
     cdef (bint, uint8_t) readByPPU(self, uint16_t addr):
-        success, mapped_addr = self.mapper.mapReadByPPU(addr)
-        return (success, self.CHRMemory[mapped_addr] if success else 0x00)
+        cdef PPUReadMapping mapping = self.mapper.mapReadByPPU(addr)
+        return (mapping.success, self.CHRMemory[mapping.addr] if mapping.success else 0x00)
 
     cdef bint writeByPPU(self, uint16_t addr, uint8_t data):
-        success, mapped_addr = self.mapper.mapWriteByPPU(addr)
-        if success:
-            self.CHRMemory[mapped_addr] = data
-        return success
+        cdef PPUWriteMapping mapping = self.mapper.mapWriteByPPU(addr)
+
+        if mapping.success:
+            self.CHRMemory[mapping.addr] = data
+        return mapping.success
 
     cdef void connectBus(self, CPUBus bus):
         self.bus = bus 
