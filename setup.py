@@ -38,6 +38,7 @@ setup(
         Extension("mapper_mmc3", sources=["./nes/mapper_mmc3.pyx"]),
         Extension("mapper_gxrom", sources=["./nes/mapper_gxrom.pyx"]),
         Extension("mapper_factory", sources=["./nes/mapper_factory.pyx"]),
+        Extension("cartridge_header", sources=["./nes/cartridge_header.pyx"]),
         Extension("cartridge", sources=["./nes/cartridge.pyx"]),
         Extension("bus", sources=["./nes/bus.pyx"]),
         Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
