@@ -2,9 +2,7 @@ from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 cimport numpy as np
 
-from mirror cimport *
-from mapper cimport Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
-from bus cimport CPUBus
+from mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
 
 
 cdef class Header:
@@ -42,7 +40,7 @@ cdef class Cartridge:
             if self.header.mapper1 & 0b100 != 0:
                 self.trainer = nes.read(512)
             
-            mapperNo = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
+            mapper_no = ((self.header.mapper2 >> 4)) << 4 | (self.header.mapper1 >> 4)
             self.mirror = VERTICAL if self.header.mapper1 & 0x01 else HORIZONTAL
             
             fileType = INES
@@ -72,49 +70,41 @@ cdef class Cartridge:
                 CHRBanks = (self.header.prg_ram_size & 0x38) << 8 | self.header.chr_rom_chunks
                 self.CHRMemory = np.frombuffer(nes.read(8192 * CHRBanks), dtype=np.uint8).copy()
 
-            if mapperNo == 000:
-                self.mapper = Mapper000(PRGBanks, CHRBanks)
-            elif mapperNo == 1:
-                self.mapper = Mapper001(PRGBanks, CHRBanks)
-            elif mapperNo == 2:
-                self.mapper = Mapper002(PRGBanks, CHRBanks)
-            elif mapperNo == 3:
-                self.mapper = Mapper003(PRGBanks, CHRBanks)
-            elif mapperNo == 4:
-                self.mapper = Mapper004(PRGBanks, CHRBanks)
-            elif mapperNo == 66:
-                self.mapper = Mapper066(PRGBanks, CHRBanks)
+            self.mapper = MapperFactory.of(mapper_no)(PRGBanks, CHRBanks)      
 
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
-        success, mapped_addr, data = self.mapper.mapReadByCPU(addr)
-        if success:
-            if mapped_addr == UINT32_MAX:
-                return (True, data)
+        cdef CPUReadMapping mapping = self.mapper.mapReadByCPU(addr)
+
+        if mapping.success:
+            if mapping.addr == UINT32_MAX:
+                return (True, mapping.data)
             else:
-                return (True, self.PRGMemory[mapped_addr])
+                return (True, self.PRGMemory[mapping.addr])
         else:
-            return (False, data)
+            return (False, mapping.data)
 
     cdef bint writeByCPU(self, uint16_t addr, uint8_t data):
-        success, mapped_addr = self.mapper.mapWriteByCPU(addr, data)
-        if success:
-            if mapped_addr == UINT32_MAX:
+        cdef CPUWriteMapping mapping = self.mapper.mapWriteByCPU(addr, data)
+
+        if mapping.success:
+            if mapping.addr == UINT32_MAX:
                 return True
             else:
-               self.PRGMemory[mapped_addr] = data
+               self.PRGMemory[mapping.addr] = data
                return True
         else:
             return False 
 
     cdef (bint, uint8_t) readByPPU(self, uint16_t addr):
-        success, mapped_addr = self.mapper.mapReadByPPU(addr)
-        return (success, self.CHRMemory[mapped_addr] if success else 0x00)
+        cdef PPUReadMapping mapping = self.mapper.mapReadByPPU(addr)
+        return (mapping.success, self.CHRMemory[mapping.addr] if mapping.success else 0x00)
 
     cdef bint writeByPPU(self, uint16_t addr, uint8_t data):
-        success, mapped_addr = self.mapper.mapWriteByPPU(addr)
-        if success:
-            self.CHRMemory[mapped_addr] = data
-        return success
+        cdef PPUWriteMapping mapping = self.mapper.mapWriteByPPU(addr)
+
+        if mapping.success:
+            self.CHRMemory[mapping.addr] = data
+        return mapping.success
 
     cdef void connectBus(self, CPUBus bus):
         self.bus = bus 

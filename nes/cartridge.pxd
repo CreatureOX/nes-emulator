@@ -1,8 +1,9 @@
 from libc.stdint cimport uint8_t, uint16_t
 
-from mirror cimport *
-from mapper cimport Mapper, Mapper000, Mapper001, Mapper002, Mapper003, Mapper004, Mapper066
 from bus cimport CPUBus
+from mirror cimport *
+from mapper cimport Mapper
+from mapper_factory cimport MapperFactory
 
 
 cdef class Header:
