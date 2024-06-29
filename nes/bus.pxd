@@ -1,6 +1,6 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
-from cartridge cimport Cartridge
+from cart cimport Cartridge
 from cpu cimport CPU6502
 from ppu cimport PPU2C02
 from apu cimport APU2A03

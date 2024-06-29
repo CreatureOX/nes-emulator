@@ -1,6 +1,6 @@
 from libc.stdint cimport uint8_t, uint16_t
 
-from cartridge cimport Cartridge
+from cart cimport Cartridge
 from bus cimport CPUBus
 
 from cpu_debug cimport CPUDebugger

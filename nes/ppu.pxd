@@ -2,7 +2,7 @@ from libc.stdint cimport uint8_t, uint16_t, int16_t
 from numpy cimport ndarray
 
 from bus cimport CPUBus
-from cartridge cimport Cartridge
+from cart cimport Cartridge
 from mirror cimport *
 from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 from ppu_sprite cimport *

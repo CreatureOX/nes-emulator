@@ -858,7 +858,7 @@ class PPU2C02:
 
         if self.mask.get_render_background() == 1 or self.mask.get_render_sprites() == 1:
             if self.cycle == 260 and self.scanline < 240:
-                self.cartridge.getMapper().scanline()
+                self.cartridge.mapper.scanline()
                 
         if self.cycle >= 341:
             self.cycle = 0

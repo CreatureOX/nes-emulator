@@ -1,5 +1,7 @@
 from libc.stdint cimport uint8_t, int8_t
 
+from file_loader cimport FileLoader
+
 import pyaudio
 import pygame
 
@@ -14,7 +16,7 @@ K_RIGHT = 7
 
 cdef class Console:
     def __init__(self, filename: str) -> None:
-        cart = Cartridge(filename)
+        cart = FileLoader.load(filename)
         self.bus = CPUBus(cart)
         self.cpu_debugger = CPUDebugger(self.bus)
         self.ppu_debugger = PPUDebugger(self.bus.ppu)

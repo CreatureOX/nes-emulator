@@ -1,6 +1,5 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
-from cartridge cimport Cartridge
 from cpu cimport CPU6502
 from ppu cimport PPU2C02
 from apu cimport APU2A03
@@ -27,7 +26,7 @@ cdef class CPUBus:
         self.ppu = PPU2C02(self)
         self.apu = APU2A03()
         self.cartridge = cartridge
-        self.cartridge.connectBus(self)
+        self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
 
     cpdef uint8_t read(self, uint16_t addr, bint readOnly):
@@ -131,8 +130,8 @@ cdef class CPUBus:
             self.ppu.nmi = False
             self.cpu.nmi()
 
-        if self.cartridge.getMapper().IRQ_state():
-            self.cartridge.getMapper().IRQ_clear()
+        if self.cartridge.mapper.IRQ_state():
+            self.cartridge.mapper.IRQ_clear()
             self.cpu.irq()
 
         self.nSystemClockCounter += 1
