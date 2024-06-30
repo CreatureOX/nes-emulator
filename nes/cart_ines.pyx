@@ -1,6 +1,5 @@
 import numpy as np
 cimport numpy as np
-from libc.string cimport memset
 
 from mapper_factory cimport MapperFactory
 from mirror cimport *
@@ -27,6 +26,8 @@ cdef class INesCart(Cartridge):
                 self.CHR_ROM_data = np.frombuffer(ines.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
             if self.CHR_RAM_bytes > 0:
                 self.CHR_RAM_data = np.frombuffer(ines.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
+                if len(self.CHR_RAM_data) == 0:
+                    self.CHR_RAM_data = np.array([0x00] * self.CHR_RAM_bytes, dtype = np.uint8)
             # PlayChoice10
             if self.header.flags_7.is_PlayChoice10 == 1:
                 self.PlayChoice_INST_ROM = ines.read(8192)
