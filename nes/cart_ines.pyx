@@ -1,5 +1,6 @@
 import numpy as np
 cimport numpy as np
+from libc.string cimport memset
 
 from mapper_factory cimport MapperFactory
 from mirror cimport *
@@ -11,24 +12,26 @@ cdef class INesCart(Cartridge):
             self.header = INesHeader(ines.read(16))
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = ines.read(512)
-            # ROM size
-            self.PRG_ROM_bytes = 16384 * self.header.PRG_ROM_size    
+            # ROM & RAM size
+            self.PRG_ROM_bytes = 16384 * self.header.PRG_ROM_size
+            if self.header.flags_6.present_persistent_memory == 1:
+                self.PRG_RAM_bytes = 8192 * self.header.flags_8.PRG_RAM_size    
             self.CHR_ROM_bytes = 8192 * self.header.CHR_ROM_size
-            # ROM
+            if self.CHR_ROM_bytes == 0:
+                self.CHR_RAM_bytes = 8192
+            # load ROM & RAM
             self.PRG_ROM_data = np.frombuffer(ines.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
+            if self.PRG_RAM_bytes > 0:
+                self.PRG_RAM_data = np.frombuffer(ines.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(ines.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
-            else:
-                CHR_data = np.frombuffer(ines.read(8192), dtype = np.uint8).copy()
-                if len(CHR_data) == 0:
-                    self.CHR_ROM_data = np.array([0x00] * 8192, dtype = np.uint8)
-                else:
-                    self.CHR_ROM_data = CHR_data
-
+            if self.CHR_RAM_bytes > 0:
+                self.CHR_RAM_data = np.frombuffer(ines.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
+            # PlayChoice10
             if self.header.flags_7.is_PlayChoice10 == 1:
                 self.PlayChoice_INST_ROM = ines.read(8192)
                 self.PlayChoice_PROM = ines.read(16)
-
+            # mapper & mirror
             self.mapper = MapperFactory.of(self.mapper_no())(self.header.PRG_ROM_size, self.header.CHR_ROM_size)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
 

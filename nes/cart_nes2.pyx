@@ -7,6 +7,7 @@ from mirror cimport *
 
 cdef class Nes2Cart(Cartridge):
     def __init__(self, filename) -> None:
+        # TODO
         with open(filename, 'rb') as nes2:
             self.header = Nes2Header(nes2.read(16))
             if self.header.flags_6.present_trainer == 1:

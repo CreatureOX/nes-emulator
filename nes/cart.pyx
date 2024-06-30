@@ -54,11 +54,21 @@ cdef class Cartridge:
 
     cdef (bint, uint8_t) readByPPU(self, uint16_t addr):
         cdef PPUReadMapping mapping = self.mapper.mapReadByPPU(addr)
-        return (mapping.success, self.CHR_ROM_data[mapping.addr] if mapping.success else 0x00)
+        cdef uint8_t data = 0x00
+
+        if mapping.success:
+            if self.CHR_RAM_bytes > 0:
+                data = self.CHR_RAM_data[mapping.addr]
+            else:
+                data = self.CHR_ROM_data[mapping.addr]
+        return (mapping.success, data)
 
     cdef bint writeByPPU(self, uint16_t addr, uint8_t data):
         cdef PPUWriteMapping mapping = self.mapper.mapWriteByPPU(addr)
 
         if mapping.success:
-            self.CHR_ROM_data[mapping.addr] = data
+            if self.CHR_RAM_bytes > 0:
+                self.CHR_RAM_data[mapping.addr] = data
+            else:
+                self.CHR_ROM_data[mapping.addr] = data
         return mapping.success

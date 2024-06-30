@@ -9,10 +9,14 @@ cdef class Header:
 
 cdef class Cartridge:
     cdef uint32_t PRG_ROM_bytes
+    cdef uint32_t PRG_RAM_bytes
     cdef uint32_t CHR_ROM_bytes
+    cdef uint32_t CHR_RAM_bytes
 
     cdef uint8_t[:] PRG_ROM_data
+    cdef uint8_t[:] PRG_RAM_data
     cdef uint8_t[:] CHR_ROM_data
+    cdef uint8_t[:] CHR_RAM_data
 
     cdef CPUBus bus    
     cdef Mapper mapper
