@@ -32,7 +32,7 @@ cdef class INesCart(Cartridge):
                 self.PlayChoice_INST_ROM = ines.read(8192)
                 self.PlayChoice_PROM = ines.read(16)
             # mapper & mirror
-            self.mapper = MapperFactory.of(self.mapper_no())(self.header.PRG_ROM_size, self.header.CHR_ROM_size)
+            self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
 
     cdef uint8_t mapper_no(self):

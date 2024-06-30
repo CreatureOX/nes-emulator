@@ -7,35 +7,36 @@ from mirror cimport *
 
 cdef class Nes2Cart(Cartridge):
     def __init__(self, filename) -> None:
-        # TODO
         with open(filename, 'rb') as nes2:
             self.header = Nes2Header(nes2.read(16))
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = nes2.read(512)
-            # ROM size
+            # ROM & RAM size
             if self.flags_9.PRG_ROM_size_MSB == 0xF:
                 multiplier = self.header.PRG_ROM_size_LSB & 0b11
                 exponent = (self.header.PRG_ROM_size_LSB & 0xFC) >> 2
                 self.PRG_ROM_bytes = (1 << exponent) * (multiplier * 2 + 1)
             else:
                 self.PRG_ROM_bytes = 16384 * ((self.flags_9.PRG_ROM_size_MSB << 8) | self.header.PRG_ROM_size_LSB)
+            if self.header.flags_10.PRG_RAM_shift_count > 0:
+                self.PRG_RAM_bytes = 64 << self.header.flags_10.PRG_RAM_shift_count
             if self.flags_9.CHR_ROM_size_MSB == 0xF:
                 multiplier = self.header.CHR_ROM_size_LSB & 0b11
                 exponent = (self.header.CHR_ROM_size_LSB & 0xFC) >> 2
                 self.CHR_ROM_bytes = (1 << exponent) * (multiplier * 2 + 1)
             else:
                 self.CHR_ROM_bytes = 8192 * ((self.flags_9.CHR_ROM_size_MSB << 8) | self.header.CHR_ROM_size_LSB)
-            # ROM
+            if self.flags_11.CHR_RAM_size_shift_count > 0:
+                self.CHR_RAM_bytes = 64 << self.flags_11.CHR_RAM_size_shift_count
+            # load ROM & RAM
             self.PRG_ROM_data = np.frombuffer(nes2.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
+            if self.PRG_RAM_bytes > 0:
+                self.PRG_RAM_data = np.frombuffer(nes2.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()    
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(nes2.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
-            else:
-                CHR_data = np.frombuffer(nes2.read(8192), dtype = np.uint8).copy()
-                if len(CHR_data) == 0:
-                    self.CHR_ROM_data = np.array([0x00] * 8192, dtype = np.uint8)
-                else:
-                    self.CHR_ROM_data = CHR_data
-
+            if self.CHR_RAM_bytes > 0:
+                self.CHR_RAM_data = np.frombuffer(nes2.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
+            # mapper & mirror
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 
 
