@@ -23,11 +23,15 @@ cdef class Cartridge:
         pass
 
     @staticmethod
-    def is_nes2(header_bytes: bytes) -> bool:
+    def nes_version(header_bytes: bytes) -> int:
         word = header_bytes[0:3].decode("UTF-8")
         is_ines_format = word == 'NES' and header_bytes[3] == 0x1A
         is_nes2_format = is_ines_format and header_bytes[7] & 0x0C == 0x08
-        return is_nes2_format
+        if is_nes2_format:
+            return 2
+        if is_ines_format:
+            return 1
+        return 0
 
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
         cdef CPUReadMapping mapping = self.mapper.mapReadByCPU(addr)
