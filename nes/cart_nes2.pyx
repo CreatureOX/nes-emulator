@@ -13,22 +13,22 @@ cdef class Nes2Cart(Cartridge):
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = nes2.read(512)
             # ROM & RAM size
-            if self.flags_9.PRG_ROM_size_MSB == 0xF:
+            if self.header.flags_9.PRG_ROM_size_MSB == 0xF:
                 multiplier = self.header.PRG_ROM_size_LSB & 0b11
                 exponent = (self.header.PRG_ROM_size_LSB & 0xFC) >> 2
                 self.PRG_ROM_bytes = (1 << exponent) * (multiplier * 2 + 1)
             else:
-                self.PRG_ROM_bytes = 16384 * ((self.flags_9.PRG_ROM_size_MSB << 8) | self.header.PRG_ROM_size_LSB)
+                self.PRG_ROM_bytes = 16384 * ((self.header.flags_9.PRG_ROM_size_MSB << 8) | self.header.PRG_ROM_size_LSB)
             if self.header.flags_10.PRG_RAM_shift_count > 0:
                 self.PRG_RAM_bytes = 64 << self.header.flags_10.PRG_RAM_shift_count
-            if self.flags_9.CHR_ROM_size_MSB == 0xF:
+            if self.header.flags_9.CHR_ROM_size_MSB == 0xF:
                 multiplier = self.header.CHR_ROM_size_LSB & 0b11
                 exponent = (self.header.CHR_ROM_size_LSB & 0xFC) >> 2
                 self.CHR_ROM_bytes = (1 << exponent) * (multiplier * 2 + 1)
             else:
-                self.CHR_ROM_bytes = 8192 * ((self.flags_9.CHR_ROM_size_MSB << 8) | self.header.CHR_ROM_size_LSB)
-            if self.flags_11.CHR_RAM_size_shift_count > 0:
-                self.CHR_RAM_bytes = 64 << self.flags_11.CHR_RAM_size_shift_count
+                self.CHR_ROM_bytes = 8192 * ((self.header.flags_9.CHR_ROM_size_MSB << 8) | self.header.CHR_ROM_size_LSB)
+            if self.header.flags_11.CHR_RAM_size_shift_count > 0:
+                self.CHR_RAM_bytes = 64 << self.header.flags_11.CHR_RAM_size_shift_count
             # load ROM & RAM
             self.PRG_ROM_data = np.frombuffer(nes2.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
             if self.PRG_RAM_bytes > 0:
@@ -44,9 +44,9 @@ cdef class Nes2Cart(Cartridge):
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 
 
     cdef uint8_t mapper_no(self):
-        cdef uint8_t lower_part = self.flags_6.mapper_no_lower_part
-        cdef uint8_t middle_part = self.flags_7.mapper_no_middle_part
-        cdef uint8_t upper_part = self.flags_8.mapper_no_upper_part
+        cdef uint8_t lower_part = self.header.flags_6.mapper_no_lower_part
+        cdef uint8_t middle_part = self.header.flags_7.mapper_no_middle_part
+        cdef uint8_t upper_part = self.header.flags_8.mapper_no_upper_part
         return (upper_part << 8) | (middle_part << 4) | lower_part  
         
 cdef class Nes2Header(Header):
