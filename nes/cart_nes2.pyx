@@ -33,12 +33,16 @@ cdef class Nes2Cart(Cartridge):
             self.PRG_ROM_data = np.frombuffer(nes2.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
             if self.PRG_RAM_bytes > 0:
                 self.PRG_RAM_data = np.frombuffer(nes2.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()    
+                if len(self.PRG_RAM_data) == 0:
+                    self.PRG_RAM_data = np.zeros(self.PRG_RAM_bytes, dtype = np.uint8).copy()
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(nes2.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
+                if len(self.CHR_ROM_data) == 0:
+                    self.CHR_ROM_data = np.zeros(self.CHR_ROM_bytes, dtype = np.uint8).copy()
             if self.CHR_RAM_bytes > 0:
                 self.CHR_RAM_data = np.frombuffer(nes2.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_RAM_data) == 0:
-                    self.CHR_RAM_data = np.array([0x00] * self.CHR_RAM_bytes, dtype = np.uint8)
+                    self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             # mapper & mirror
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 

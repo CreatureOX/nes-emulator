@@ -22,12 +22,16 @@ cdef class INesCart(Cartridge):
             self.PRG_ROM_data = np.frombuffer(ines.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
             if self.PRG_RAM_bytes > 0:
                 self.PRG_RAM_data = np.frombuffer(ines.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()
+                if len(self.PRG_RAM_data) == 0:
+                    self.PRG_RAM_data = np.zeros(self.PRG_RAM_bytes, dtype = np.uint8)
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(ines.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
+                if len(self.CHR_ROM_data) == 0:
+                    self.CHR_ROM_data = np.zeros(self.CHR_ROM_bytes, dtype = np.uint8)
             if self.CHR_RAM_bytes > 0:
                 self.CHR_RAM_data = np.frombuffer(ines.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_RAM_data) == 0:
-                    self.CHR_RAM_data = np.array([0x00] * self.CHR_RAM_bytes, dtype = np.uint8)
+                    self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             # PlayChoice10
             if self.header.flags_7.is_PlayChoice10 == 1:
                 self.PlayChoice_INST_ROM = ines.read(8192)
