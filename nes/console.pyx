@@ -20,6 +20,7 @@ cdef class Console:
         self.bus = CPUBus(cart)
         self.cpu_debugger = CPUDebugger(self.bus)
         self.ppu_debugger = PPUDebugger(self.bus.ppu)
+        self.cartridge_debugger = CartridgeDebugger(self.bus.cartridge)
 
     cpdef void power_up(self):
         self.bus.power_up()

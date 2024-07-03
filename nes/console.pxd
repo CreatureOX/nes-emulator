@@ -5,6 +5,7 @@ from bus cimport CPUBus
 
 from cpu_debug cimport CPUDebugger
 from ppu_debug cimport PPUDebugger
+from cart_debug cimport CartridgeDebugger
 
 
 cdef uint8_t K_x
@@ -21,6 +22,7 @@ cdef class Console:
     
     cdef public CPUDebugger cpu_debugger
     cdef public PPUDebugger ppu_debugger
+    cdef public CartridgeDebugger cartridge_debugger
 
     cpdef void power_up(self)
     cpdef void reset(self)

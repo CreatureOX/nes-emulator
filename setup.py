@@ -42,6 +42,7 @@ setup(
         Extension("cart_ines", sources=["./nes/cart_ines.pyx"]),
         Extension("cart_nes2", sources=["./nes/cart_nes2.pyx"]),
         Extension("file_loader", sources=["./nes/file_loader.pyx"]),
+        Extension("cart_debug", sources=["./nes/cart_debug.pyx"]),
         Extension("bus", sources=["./nes/bus.pyx"]),
         Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
         Extension("cpu_op", sources=["./nes/cpu_op.pyx"]),
