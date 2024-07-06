@@ -16,7 +16,7 @@ class Emulator:
     menu_def = [
         ['File', ['Open File', 'Reset', 'Screenshot', 'Exit']],
         ['Config', ['Keyboard']],
-        ['Debug', ['CPU','PPU','Hex Viewer']],
+        ['Debug', ['CPU','PPU','Hex Viewer','NES File Viewer']],
         ['Help', ['About',]],
     ]
     
@@ -302,6 +302,42 @@ class Emulator:
         image.save(screenshot_path)
         return True, screenshot_path
 
+    def open_nes_file_viewer(self) -> bool:
+        def nes_file_viewer_layout():
+            return [
+                [
+                    gui.Text("PRG ROM: "), gui.Text(key = "PRG ROM size", size = (8, 1)),
+                    gui.Text("PRG RAM: "), gui.Text(key = "PRG RAM size", size = (8, 1)), 
+                ],
+                [
+                    gui.Text("CHR ROM: "), gui.Text(key = "CHR ROM size", size = (8, 1)),
+                    gui.Text("CHR RAM: "), gui.Text(key = "CHR RAM size", size = (8, 1)), 
+                ],
+                [
+                    gui.Text("Mapper No: "), gui.Text(key = "mapper no", size = (8, 1)),
+                ]
+            ]
+        
+        nes_file_viewer_window = gui.Window("NES File Viewer", nes_file_viewer_layout())
+        while True:
+            event, values = nes_file_viewer_window.read(timeout=0)
+            if event in (None, 'Exit'):
+                break
+            else:
+                self.update_cartridge_info(nes_file_viewer_window)
+        nes_file_viewer_window.close()            
+        return True
+    
+    def update_cartridge_info(self, window):
+        if not self.console:
+            return
+        view_info = self.console.cartridge_debugger.view()
+        window["PRG ROM size"].Update(view_info["PRG ROM"])
+        window["PRG RAM size"].Update(view_info["PRG RAM"])
+        window["CHR ROM size"].Update(view_info["CHR ROM"])
+        window["CHR RAM size"].Update(view_info["CHR RAM"])
+        window["mapper no"].Update(view_info["mapper no"]) 
+
     def emulate(self) -> None:
         stop = Event()
         while True:   
@@ -326,6 +362,8 @@ class Emulator:
                 success = self.openPPUDebug()
             elif event == 'Hex Viewer':
                 success = self.openHexViewer()
+            elif event == 'NES File Viewer':
+                success = self.open_nes_file_viewer()
             elif event == 'About':
                 gui.popup('Nes Emulator\nVersion: 0\nAuthor: CreatureOX\n')           
             if not success:

@@ -5,12 +5,13 @@ from mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMa
 from mirror cimport HORIZONTAL, VERTICAL
 
 
+# TODO
 cdef class MapperMMC3(Mapper):
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "004"
         
-        self.targe_register = 0x00  
+        self.target_register = 0x00  
         self.PRG_bank_mode = False
         self.CHR_inversion = False
         self.mirrormode = HORIZONTAL
@@ -25,7 +26,7 @@ cdef class MapperMMC3(Mapper):
         self.IRQ_counter = 0x0000
         self.IRQ_reload = 0x0000
 
-        self.RAM_static = np.zeros(32768).astype(np.uint8)
+        self.RAM_static = np.zeros(32 * 1024).astype(np.uint8)
 
     cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
         cdef CPUReadMapping mapping = CPUReadMapping()
@@ -62,35 +63,36 @@ cdef class MapperMMC3(Mapper):
                 self.CHR_inversion = data & 0x80
             else:
                 self.register[self.target_register] = data
-                if self.CHR_inversion:
+                if self.CHR_inversion > 0:
                     self.CHR_bank[0] = self.register[2] * 0x0400
                     self.CHR_bank[1] = self.register[3] * 0x0400
                     self.CHR_bank[2] = self.register[4] * 0x0400
                     self.CHR_bank[3] = self.register[5] * 0x0400
                     self.CHR_bank[4] = (self.register[0] & 0xFE) * 0x0400
-                    self.CHR_bank[5] = self.register[0] & 0x0400 + 0x0400
+                    self.CHR_bank[5] = self.register[0] * 0x0400 + 0x0400
                     self.CHR_bank[6] = (self.register[1] & 0xFE) * 0x0400
-                    self.CHR_bank[7] = self.register[1] & 0x0400 + 0x0400
+                    self.CHR_bank[7] = self.register[1] * 0x0400 + 0x0400
                 else:
                     self.CHR_bank[0] = (self.register[0] & 0xFE) * 0x0400
-                    self.CHR_bank[1] = self.register[0] & 0x0400 + 0x0400
+                    self.CHR_bank[1] = self.register[0] * 0x0400 + 0x0400
                     self.CHR_bank[2] = (self.register[1] & 0xFE) * 0x0400
-                    self.CHR_bank[3] = self.register[1] & 0x0400 + 0x0400
+                    self.CHR_bank[3] = self.register[1] * 0x0400 + 0x0400
                     self.CHR_bank[4] = self.register[2] * 0x0400
                     self.CHR_bank[5] = self.register[3] * 0x0400
                     self.CHR_bank[6] = self.register[4] * 0x0400
                     self.CHR_bank[7] = self.register[5] * 0x0400
-                if self.PRG_bank_mode:
+        
+                if self.PRG_bank_mode > 0:
                     self.PRG_bank[2] = (self.register[6] & 0x3F) * 0x2000
-                    self.PRG_bank[0] = (self.PRG_banks * 2 -2) * 0x2000
+                    self.PRG_bank[0] = (self.PRG_banks * 2 - 2) * 0x2000
                 else:
                     self.PRG_bank[0] = (self.register[6] & 0x3F) * 0x2000
-                    self.PRG_bank[2] = (self.PRG_banks * 2 -2) * 0x2000  
+                    self.PRG_bank[2] = (self.PRG_banks * 2 - 2) * 0x2000  
                 self.PRG_bank[1] = (self.register[7] & 0x3F) * 0x2000
-                self.PRG_bank[3] = (self.PRG_banks * 2 -1) * 0x2000
+                self.PRG_bank[3] = (self.PRG_banks * 2 - 1) * 0x2000
         if 0xA000 <= addr <= 0xBFFF:
             if addr & 0x0001 == 0:
-                if data & 0x01 != 0:
+                if data & 0x01 > 0:
                     self.mirrormode = HORIZONTAL
                 else:
                     self.mirrormode = VERTICAL
@@ -123,7 +125,7 @@ cdef class MapperMMC3(Mapper):
         if 0x0C00 <= addr <= 0x0FFF:
             mapping.success = True
             mapping.addr = self.CHR_bank[3] + (addr & 0x03FF)
-        if 0x0100 <= addr <= 0x13FF:
+        if 0x1000 <= addr <= 0x13FF:
             mapping.success = True
             mapping.addr = self.CHR_bank[4] + (addr & 0x03FF)
         if 0x1400 <= addr <= 0x17FF:

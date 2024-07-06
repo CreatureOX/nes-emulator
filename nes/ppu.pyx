@@ -4,7 +4,7 @@ import numpy as np
 cimport numpy as np
 
 from bus cimport CPUBus
-from cartridge cimport Cartridge
+from cart cimport Cartridge
 from mirror cimport *
 from ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 from ppu_sprite cimport *
@@ -187,7 +187,7 @@ cdef class PPU2C02:
             data = self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == VERTICAL:
+            if self.cartridge.mirror_mode == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -196,7 +196,7 @@ cdef class PPU2C02:
                     data = self._nametable[0][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
                     data = self._nametable[1][addr & 0x03FF]                                 
-            elif self.cartridge.mirror == HORIZONTAL:
+            elif self.cartridge.mirror_mode == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     data = self._nametable[0][addr & 0x03FF]
                 elif 0x0400 <= addr <= 0x07FF:
@@ -228,7 +228,7 @@ cdef class PPU2C02:
             self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
             addr &= 0x0FFF
-            if self.cartridge.mirror == VERTICAL:
+            if self.cartridge.mirror_mode == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -237,7 +237,7 @@ cdef class PPU2C02:
                     self._nametable[0][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
                     self._nametable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror == HORIZONTAL:
+            elif self.cartridge.mirror_mode == HORIZONTAL:
                 if 0x0000 <= addr <= 0x03FF:
                     self._nametable[0][addr & 0x03FF] = data
                 if 0x0400 <= addr <= 0x07FF:
@@ -614,7 +614,7 @@ cdef class PPU2C02:
 
         if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
             if self.cycle == 260 and self.scanline < 240:
-                self.cartridge.getMapper().scanline()
+                self.cartridge.mapper.scanline()
 
         if self.cycle >= 341:
             self.cycle = 0
