@@ -52,6 +52,7 @@ setup(
         Extension("ppu_registers", sources=["./nes/ppu_registers.pyx"]),
         Extension("ppu_sprite", sources=["./nes/ppu_sprite.pyx"]),
         Extension("ppu_debug", sources=["./nes/ppu_debug.pyx"]),
+        Extension("apu_registers", sources=["./nes/apu_registers.pyx"]),
         Extension("apu", sources=["./nes/apu.pyx"]),
         Extension("console", sources=["./nes/console.pyx"]),
     ], compiler_directives={'language_level' : "3"}, 
