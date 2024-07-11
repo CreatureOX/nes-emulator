@@ -1,6 +1,6 @@
 from libc.stdint cimport uint8_t, int8_t
 
-from file_loader cimport FileLoader
+from nes.file_loader cimport FileLoader
 
 import pyaudio
 import pygame

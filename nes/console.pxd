@@ -1,11 +1,11 @@
 from libc.stdint cimport uint8_t, uint16_t
 
-from cart cimport Cartridge
-from bus cimport CPUBus
+from nes.cart.cart cimport Cartridge
+from nes.bus.bus cimport CPUBus
 
-from cpu_debug cimport CPUDebugger
-from ppu_debug cimport PPUDebugger
-from cart_debug cimport CartridgeDebugger
+from nes.cpu.cpu_debug cimport CPUDebugger
+from nes.ppu.ppu_debug cimport PPUDebugger
+from nes.cart.cart_debug cimport CartridgeDebugger
 
 
 cdef uint8_t K_x
