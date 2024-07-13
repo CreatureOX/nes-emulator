@@ -9,7 +9,7 @@ import cv2
 import json
 import pyximport; pyximport.install()
 
-from console import Console
+from nes.console import Console
 
 
 class Emulator:

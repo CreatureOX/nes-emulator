@@ -1,7 +1,9 @@
-from setuptools import Command, setup, Extension
+from setuptools import Command, setup
 from Cython.Build import cythonize
 import numpy as np
 import os
+import glob
+
 
 class Clean(Command):
     description = "Clean cythonized products"
@@ -24,38 +26,11 @@ class Clean(Command):
                     os.remove(dirpath + "\\" + filename)
 
 setup(
-    cmdclass={
+    cmdclass = {
         "clean": Clean
     },
-    ext_modules=cythonize([
-        Extension("mirror", sources=["./nes/mirror.pyx"]),
-        Extension("mapping", sources=["./nes/mapping.pyx"]),
-        Extension("mapper", sources=["./nes/mapper.pyx"]),
-        Extension("mapper_nrom", sources=["./nes/mapper_nrom.pyx"]),
-        Extension("mapper_mmc1", sources=["./nes/mapper_mmc1.pyx"]),
-        Extension("mapper_uxrom", sources=["./nes/mapper_uxrom.pyx"]),
-        Extension("mapper_ines003", sources=["./nes/mapper_ines003.pyx"]),
-        Extension("mapper_mmc3", sources=["./nes/mapper_mmc3.pyx"]),
-        Extension("mapper_gxrom", sources=["./nes/mapper_gxrom.pyx"]),
-        Extension("mapper_factory", sources=["./nes/mapper_factory.pyx"]),
-        Extension("cart", sources=["./nes/cart.pyx"]),
-        Extension("cart_ines", sources=["./nes/cart_ines.pyx"]),
-        Extension("cart_nes2", sources=["./nes/cart_nes2.pyx"]),
-        Extension("file_loader", sources=["./nes/file_loader.pyx"]),
-        Extension("cart_debug", sources=["./nes/cart_debug.pyx"]),
-        Extension("bus", sources=["./nes/bus.pyx"]),
-        Extension("cpu_registers", sources=["./nes/cpu_registers.pyx"]),
-        Extension("cpu_op", sources=["./nes/cpu_op.pyx"]),
-        Extension("cpu", sources=["./nes/cpu.pyx"]),
-        Extension("cpu_debug", sources=["./nes/cpu_debug.pyx"]),
-        Extension("ppu", sources=["./nes/ppu.pyx"]),
-        Extension("ppu_registers", sources=["./nes/ppu_registers.pyx"]),
-        Extension("ppu_sprite", sources=["./nes/ppu_sprite.pyx"]),
-        Extension("ppu_debug", sources=["./nes/ppu_debug.pyx"]),
-        Extension("apu_registers", sources=["./nes/apu_registers.pyx"]),
-        Extension("apu", sources=["./nes/apu.pyx"]),
-        Extension("console", sources=["./nes/console.pyx"]),
-    ], compiler_directives={'language_level' : "3"}, 
-    annotate=True),
-    include_dirs=[np.get_include()]
+    ext_modules = cythonize(glob.glob('nes/**/*.pyx', recursive = True), 
+                          compiler_directives = {'language_level' : "3"}, 
+                          annotate = True),
+    include_dirs = [np.get_include()]
 )
