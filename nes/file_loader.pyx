@@ -1,5 +1,5 @@
-from nes.cart.cart_ines cimport INesCart
-from nes.cart.cart_nes2 cimport Nes2Cart
+from nes.cart.impl.cart_ines cimport INesCart
+from nes.cart.impl.cart_nes2 cimport Nes2Cart
 
 
 cdef class FileLoader:
