@@ -1,4 +1,4 @@
-from nes.apu.apu_registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
+from nes.apu.registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
 
 
 cdef enum:

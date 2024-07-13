@@ -6,7 +6,7 @@ cimport numpy as np
 from nes.bus.bus cimport CPUBus
 from nes.cart.cart cimport Cartridge
 from nes.mapper.mirror cimport *
-from nes.ppu.ppu_registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 from nes.ppu.ppu_sprite cimport *
 
 

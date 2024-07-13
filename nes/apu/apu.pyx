@@ -1,12 +1,10 @@
-#import pyximport; pyximport.install()
-
 try:
     import pyaudio
     has_audio = False
 except ImportError:
     has_audio = True
 
-from nes.apu.apu_registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
+from nes.apu.registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
 
 #### The APU ###########################################################################################################
 
