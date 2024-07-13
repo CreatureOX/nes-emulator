@@ -1,9 +1,9 @@
-from nes.mapper.mapper_nrom cimport MapperNROM
-from nes.mapper.mapper_mmc1 cimport MapperMMC1
-from nes.mapper.mapper_uxrom cimport MapperUxROM
-from nes.mapper.mapper_ines003 cimport MapperINES003
-from nes.mapper.mapper_mmc3 cimport MapperMMC3
-from nes.mapper.mapper_gxrom cimport MapperGxROM
+from nes.mapper.impl.mapper_nrom cimport MapperNROM
+from nes.mapper.impl.mapper_mmc1 cimport MapperMMC1
+from nes.mapper.impl.mapper_uxrom cimport MapperUxROM
+from nes.mapper.impl.mapper_ines003 cimport MapperINES003
+from nes.mapper.impl.mapper_mmc3 cimport MapperMMC3
+from nes.mapper.impl.mapper_gxrom cimport MapperGxROM
 
 
 mappers = {
