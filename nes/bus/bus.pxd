@@ -5,10 +5,6 @@ from nes.cpu.cpu cimport CPU6502
 from nes.ppu.ppu cimport PPU2C02
 from nes.apu.apu cimport APU2A03
 
-import cython
-import pyaudio
-import pygame
-
 
 cdef class CPUBus:
     cdef uint8_t[2048] ram
@@ -28,9 +24,7 @@ cdef class CPUBus:
     cdef public APU2A03 apu
     cdef Cartridge cartridge
 
-    @cython.locals(success=bint, data=uint8_t)
     cpdef uint8_t read(self, uint16_t, bint)
-    @cython.locals(success=bint)
     cpdef void write(self, uint16_t, uint8_t)
     cpdef void reset(self)
     cpdef void power_up(self)

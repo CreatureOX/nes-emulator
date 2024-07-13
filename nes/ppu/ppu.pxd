@@ -1,13 +1,8 @@
 from libc.stdint cimport uint8_t, uint16_t, int16_t
-from numpy cimport ndarray
 
 from nes.bus.bus cimport CPUBus
 from nes.cart.cart cimport Cartridge
-from nes.mapper.mirror cimport *
 from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
-from nes.ppu.ppu_sprite cimport *
-
-import cython
 
 
 cdef int LOW_NIBBLE, HIGH_NIBBLE
@@ -65,12 +60,9 @@ cdef class PPU2C02:
     cdef void connectCartridge(self, Cartridge)
     cpdef uint8_t[:,:,:] screen(self)
 
-    @cython.locals(data=uint8_t)
     cdef uint8_t readByCPU(self, uint16_t, bint)
     cdef void writeByCPU(self, uint16_t, uint8_t)
-    @cython.locals(success=bint, data=uint8_t)
     cdef uint8_t readByPPU(self, uint16_t)
-    @cython.locals(success=bint)
     cdef void writeByPPU(self, uint16_t, uint8_t)
 
     cdef void _set_palette_panel(self)

@@ -1,9 +1,3 @@
-from libc.stdint cimport uint8_t, uint16_t, uint32_t
-
-from nes.cpu.cpu cimport CPU6502
-from nes.ppu.ppu cimport PPU2C02
-from nes.apu.apu cimport APU2A03
-
 import pyaudio
 import pygame
 

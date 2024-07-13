@@ -1,12 +1,8 @@
-from libc.stdint cimport uint8_t, uint16_t, int16_t
 from libc.string cimport memset
 import numpy as np
 cimport numpy as np
 
-from nes.bus.bus cimport CPUBus
-from nes.cart.cart cimport Cartridge
 from nes.mapper.mirror cimport *
-from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 from nes.ppu.ppu_sprite cimport *
 
 

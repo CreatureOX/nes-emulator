@@ -1,8 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t
 
 from nes.bus.bus cimport CPUBus
-from nes.cpu.registers cimport StatusRegister, Registers
-from nes.cpu.cpu_op cimport Op
+from nes.cpu.registers cimport Registers
 
     
 cdef class CPU6502:

@@ -4,8 +4,6 @@ try:
 except ImportError:
     has_audio = True
 
-from nes.apu.registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
-
 #### The APU ###########################################################################################################
 
 cdef class APU2A03:

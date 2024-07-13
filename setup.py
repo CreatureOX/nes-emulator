@@ -26,11 +26,11 @@ class Clean(Command):
                     os.remove(dirpath + "\\" + filename)
 
 setup(
-    cmdclass={
+    cmdclass = {
         "clean": Clean
     },
-    ext_modules=cythonize(glob.glob('nes/**/*.pyx', recursive=True), 
-                          compiler_directives={'language_level' : "3"}, 
-                          annotate=True),
-    include_dirs=[np.get_include()]
+    ext_modules = cythonize(glob.glob('nes/**/*.pyx', recursive = True), 
+                          compiler_directives = {'language_level' : "3"}, 
+                          annotate = True),
+    include_dirs = [np.get_include()]
 )
