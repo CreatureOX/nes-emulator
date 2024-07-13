@@ -1,15 +1,10 @@
 # nes-emulator
 | Donkey Kong (World) (Rev A).nes | Legend of Zelda, The (U) (PRG1) [!].nes | Mega Man (USA).nes |
 | ------------------------------- | --------------------------------------- | ------------------ |
-| <img src="docs/Donkey Kong (World) (Rev A).gif"/> | <img src="docs/Legend of Zelda, The (U) (PRG1) [!].gif"/> | <img src="docs/Mega Man (USA).nes.gif"/>
+| <img src="images/Donkey Kong (World) (Rev A).gif"/> | <img src="images/Legend of Zelda, The (U) (PRG1) [!].gif"/> | <img src="images/Mega Man (USA).nes.gif"/>
 
 ## Introduction
-A Nes Emulator implemented by Python
-
-3 Modes support: 
-* Pure Python
-* Mixed Python & Cython
-* Pure Cython  
+A Nes Emulator implemented by Python & Cython
 
 For more details, check `setup.py`
 
@@ -18,10 +13,127 @@ For more details, check `setup.py`
 2. `python setup.py build_ext --inplace`
 3. `python .\run.py`
 
-## Support Games
-* Mapper 000 Games 
-* Mapper 001 Games
-* Mapper 002 Games
-* Mapper 003 Games
-* Mapper 004 Games
-* Mapper 066 Games
+## Support Mapper
+<table border="1">
+  <thead>
+    <tr>
+      <th>&nbsp;</th>
+      <th>0</th>
+      <th>1</th>
+      <th>2</th>
+      <th>3</th>
+      <th>4</th>
+      <th>5</th>
+      <th>6</th>
+      <th>7</th>
+      <th>8</th>
+      <th>9</th>
+      <th>A</th>
+      <th>B</th>
+      <th>C</th>
+      <th>D</th>
+      <th>E</th>
+      <th>F</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0x0X</th>
+      <td>NROM <input type="checkbox" checked></td>
+      <td>MMC1 <input type="checkbox" checked></td>
+      <td>UxROM <input type="checkbox" checked></td>
+      <td>INES Mapper 003 <input type="checkbox" checked></td>
+      <td>MMC3</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>0x1X</th>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>0x2X</th>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>0x3X</th>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>0x4X</th>
+      <td></td>
+      <td></td>
+      <td>GxROM <input type="checkbox" checked></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+
+
