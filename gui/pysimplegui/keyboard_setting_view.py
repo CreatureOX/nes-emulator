@@ -140,7 +140,8 @@ class KeyboardSettingWindow(BaseView):
 
     def __load(self) -> dict:
         if not os.path.exists(self.keyboard_setting_path):
-            self.__keyboard = self.__DEFAULT_KEYMAP
+            with open(self.keyboard_setting_path, 'w') as keyboard:
+                json.dump(self.__DEFAULT_KEYMAP, keyboard)
         with open(self.keyboard_setting_path, 'r') as keyboard:
             self.__keyboard = json.load(keyboard)
 
