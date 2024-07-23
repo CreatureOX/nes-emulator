@@ -34,7 +34,7 @@ class EmulatorWindow(BaseView):
     __TITLE = "NES Emulator"
 
     __MENU_LAYOUT = [
-        ['File', ['Open', 'Reset', 'Screenshot', 'Exit']],
+        ['File', ['Open', 'Save', 'Load', 'Reset', 'Screenshot', 'Exit']],
         ['Config', ['Keymap']],
         ['Debug', ['CPU','PPU','Disassembler','NES File Viewer']],
         ['Help', ['About',]],
@@ -58,6 +58,8 @@ class EmulatorWindow(BaseView):
         self._events["Open"] = self.__run
         self._events["Reset"] = self.__reset
         self._events["Screenshot"] = self.__capture_screenshot
+        self._events["Save"] = self.__open_nes_file_hint
+        self._events["Load"] = self.__open_nes_file_hint
 
         # Config Tab
         self._events["Keymap"] = KeyboardSettingWindow().open
@@ -125,9 +127,18 @@ class EmulatorWindow(BaseView):
         self._events["CPU"] = CPUDebugWindow(self.__console).open
         self._events["PPU"] = PPUDebugWindow(self.__console).open
         self._events["Disassembler"] = DisassemblerWindow(self.__console).open
-        self._events["NES File Viewer"] = NesFileWindow(self.__console).open  
+        self._events["NES File Viewer"] = NesFileWindow(self.__console).open
+
+        self._events["Save"] = self.__save
+        self._events["Load"] = self.__load  
 
         return True
+    
+    def __save(self, values):
+        self.__console.save_state()
+
+    def __load(self, values):
+        self.__console.load_state()
 
     def __resize(self, original_image: np.ndarray) -> np.ndarray:
         with self.__lock:
