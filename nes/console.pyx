@@ -86,7 +86,7 @@ cdef class Console:
             state = pickle.load(file)
 
             self.__load_cpu_state(state.cpu_state)
-            # self.__load_ppu_state(state.ppu_state)
+            self.__load_ppu_state(state.ppu_state)
 
     cdef void __load_cpu_state(self, CPUState cpu_state):
         import numpy as np
@@ -105,9 +105,6 @@ cdef class Console:
         self.bus.ppu.PPUMASK = ppu_state.PPUMASK
         self.bus.ppu.PPUSTATUS = ppu_state.PPUSTATUS
         self.bus.ppu.OAMADDR = ppu_state.OAMADDR
-        self.bus.ppu.OAMDATA = ppu_state.OAMDATA
-        self.bus.ppu.PPUADDR = ppu_state.PPUADDR
-        self.bus.ppu.PPUDATA = ppu_state.PPUDATA
         self.bus.ppu.VRAM_addr = ppu_state.VRAM_addr
         self.bus.ppu.temp_VRAM_addr = ppu_state.temp_VRAM_addr
         self.bus.ppu.fine_x = ppu_state.fine_x
@@ -121,9 +118,9 @@ cdef class Console:
         self.bus.ppu.background_next_tile_msb = ppu_state.background_next_tile_msb
         self.bus.ppu.background_pattern_shift_register = ppu_state.background_pattern_shift_register
         self.bus.ppu.background_attribute_shift_register = ppu_state.background_attribute_shift_register
-        self.bus.ppu.sprite_pattern_shift_registers = ppu_state.sprite_pattern_shift_registers
-        self.bus.ppu.OAM = ppu_state.OAM
-        self.bus.ppu.secondary_OAM = ppu_state.secondary_OAM
+        # self.bus.ppu.sprite_pattern_shift_registers = ppu_state.sprite_pattern_shift_registers
+        # self.bus.ppu.OAM = ppu_state.OAM
+        # self.bus.ppu.secondary_OAM = ppu_state.secondary_OAM
         self.bus.ppu.sprite_count = ppu_state.sprite_count
         self.bus.ppu.eval_sprite0 = ppu_state.eval_sprite0
         self.bus.ppu.render_sprite0 = ppu_state.render_sprite0
@@ -133,4 +130,4 @@ cdef class Console:
         self.bus.ppu._pattern_table = ppu_state._pattern_table
         self.bus.ppu._nametable = ppu_state._nametable
         self.bus.ppu._palette_table = ppu_state._palette_table
-        self.bus.ppu._screen = ppu_state._screen
+        # self.bus.ppu._screen = ppu_state._screen

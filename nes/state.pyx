@@ -6,4 +6,4 @@ import cython
 cdef class State:
     def __init__(self, Console console) -> None:
         self.cpu_state = CPUState(console.bus.cpu)
-        # self.ppu_state = PPUState(console.bus.ppu)
+        self.ppu_state = PPUState(console.bus.ppu)

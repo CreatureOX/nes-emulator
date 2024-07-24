@@ -1,13 +1,15 @@
 from nes.ppu.ppu cimport PPU2C02
 import cython
 
+import numpy as np
+cimport numpy as np
+
 
 cdef class PPUState:
     def __init__(self, PPU2C02 ppu):
-        self._pattern_table = ppu._pattern_table
-        self._nametable = ppu._nametable
-        self._palette_table = ppu._palette_table
-        self.palette_panel = ppu.palette_panel
+        self._pattern_table = np.array(ppu._pattern_table, dtype = np.uint8)
+        self._nametable = np.array(ppu._nametable, dtype = np.uint8)
+        self._palette_table = np.array(ppu._palette_table, dtype = np.uint8)
         self._screen = ppu._screen
         self.PPUSTATUS = ppu.PPUSTATUS
         self.PPUMASK = ppu.PPUMASK

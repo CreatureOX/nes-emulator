@@ -2,13 +2,15 @@ from libc.stdint cimport uint8_t, uint16_t, int16_t
 
 from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 
+import numpy as np
+cimport numpy as np
+
 
 cdef class PPUState:
-    cdef uint8_t[2][4096] _pattern_table
-    cdef uint8_t[2][1024] _nametable
-    cdef uint8_t[32] _palette_table
-    cdef list palette_panel
-    cdef uint8_t[240][256][3] _screen
+    cdef np.ndarray _pattern_table
+    cdef np.ndarray _nametable
+    cdef np.ndarray _palette_table
+    cdef list _screen
     cdef Status PPUSTATUS
     cdef Mask PPUMASK
     cdef Controller PPUCTRL
@@ -24,10 +26,10 @@ cdef class PPUState:
     cdef uint8_t background_next_tile_lsb, background_next_tile_msb
     cdef BackgroundShiftRegister background_pattern_shift_register
     cdef BackgroundShiftRegister background_attribute_shift_register
-    cdef uint8_t[8][2] sprite_pattern_shift_registers
-    cdef uint8_t[64][4] OAM
+    cdef list sprite_pattern_shift_registers
+    cdef list OAM
     cdef uint8_t OAMADDR
-    cdef uint8_t[8][4] secondary_OAM
+    cdef list secondary_OAM
     cdef uint8_t sprite_count
     cdef bint eval_sprite0
     cdef bint render_sprite0
