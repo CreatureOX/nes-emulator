@@ -34,7 +34,7 @@ cdef class Console:
     cpdef void run(self)
     cpdef void control(self, list)
 
-    cpdef void save_state(self)
-    cpdef void load_state(self)
+    cpdef void save_state(self, str)
+    cpdef void load_state(self, str)
     cdef void __load_cpu_state(self, CPUState)
     cdef void __load_ppu_state(self, PPUState)

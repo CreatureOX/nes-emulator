@@ -72,17 +72,17 @@ cdef class Console:
         elif pressed[K_RIGHT]:
             self.bus.controller[0] |= 0x01
 
-    cpdef void save_state(self):
+    cpdef void save_state(self, str archive_path):
         cdef State state
 
-        with open("test.sav", "wb") as file:
+        with open(archive_path, "wb") as file:
             state = State(self)
             data = pickle.dump(state, file)
 
-    cpdef void load_state(self):
+    cpdef void load_state(self, str archive_path):
         cdef State state
 
-        with open("test.sav", "rb") as file:
+        with open(archive_path, "rb") as file:
             state = pickle.load(file)
 
             self.__load_cpu_state(state.cpu_state)

@@ -120,8 +120,8 @@ class EmulatorWindow(BaseView):
 
         # update emulator window title
         filename_with_extension = os.path.basename(file_path)
-        filename, extension = os.path.splitext(filename_with_extension)
-        self._window.TKroot.title('NES: ' + filename)
+        self.filename, extension = os.path.splitext(filename_with_extension)
+        self._window.TKroot.title('NES: ' + self.filename)
 
         # bind events about console
         self._events["CPU"] = CPUDebugWindow(self.__console).open
@@ -135,10 +135,15 @@ class EmulatorWindow(BaseView):
         return True
     
     def __save(self, values):
-        self.__console.save_state()
+        archive_name = "{filename}-{id}.sav".format(filename = self.filename, id = int(time.time()))
+        self.__console.save_state(archive_name)
 
     def __load(self, values):
-        self.__console.load_state()
+        archive_path = sg.popup_get_file('File to open', file_types = (("NES Archives", "*.sav"),), no_window = True)
+        if archive_path is None or archive_path == '':
+            sg.popup("Invalid .sav file path!")
+            return
+        self.__console.load_state(archive_path)
 
     def __resize(self, original_image: np.ndarray) -> np.ndarray:
         with self.__lock:
