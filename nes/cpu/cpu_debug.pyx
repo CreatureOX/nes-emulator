@@ -25,7 +25,7 @@ cdef class CPUDebugger:
     cpdef str ram(self, uint16_t start_addr, uint16_t end_addr):
         hex_code = ""
         for addr in range(start_addr, end_addr, 16):
-            code_group = ["{hex:02X}".format(hex = self.bus.cpu.read(_addr)) for _addr in range(addr, min(addr + 16, end_addr))]
+            code_group = ["{hex:02X}".format(hex = self.bus.read(_addr, True)) for _addr in range(addr, min(addr + 16, end_addr))]
             hex_code += "${addr:04X}: {codes}\n".format(addr = addr, codes = " ".join(code_group))
         return hex_code
 

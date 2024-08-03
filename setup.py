@@ -26,6 +26,9 @@ class Clean(Command):
                     os.remove(dirpath + "\\" + filename)
 
 setup(
+    name="nes",
+    packages=['nes'],
+    package_dir={'nes': 'nes'},
     cmdclass = {
         "clean": Clean
     },

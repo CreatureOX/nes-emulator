@@ -8,9 +8,9 @@ from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, Backgroun
 cdef int LOW_NIBBLE, HIGH_NIBBLE
 
 cdef class PPU2C02:
-    cdef uint8_t[2][4096] _pattern_table
-    cdef uint8_t[2][1024] _nametable
-    cdef uint8_t[32] _palette_table
+    cdef uint8_t[:,:] _pattern_table
+    cdef uint8_t[:,:] _nametable
+    cdef uint8_t[:] _palette_table
 
     cdef list palette_panel
     cdef uint8_t[240][256][3] _screen

@@ -1,5 +1,8 @@
 from nes.cpu.cpu_op cimport Op
 
+import numpy as np
+cimport numpy as np
+
 
 cdef class CPU6502:    
     cdef uint8_t read(self, uint16_t addr):
@@ -916,7 +919,7 @@ cdef class CPU6502:
         self.registers.status.value = 0x34
         self.registers.SP = 0xFD
         
-        self.ram = [0x00] * 2 * 1024
+        self.ram = np.array([0x00] * 2 * 1024, dtype = np.uint8)
 
         self.bus = bus
 
