@@ -11,14 +11,14 @@ HIGH_NIBBLE = 1
 
 cdef class PPU2C02:
     def __init__(self, bus: CPUBus) -> None:
-        self._pattern_table = [[0x00] * 64 * 64] * 2
-        self._nametable = [[0x00] * 32 * 32] * 2
-        self._palette_table = [
+        self._pattern_table = np.array([[0x00] * 64 * 64] * 2, dtype = np.uint8)
+        self._nametable = np.array([[0x00] * 32 * 32] * 2, dtype = np.uint8)
+        self._palette_table = np.array([
             0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D,
             0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C, 
             0x09, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 
             0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08
-        ]
+        ], dtype = np.uint8)
         
         self.palette_panel = [None] * 4 * 16
         self.screen_width, self.screen_height = 256, 240

@@ -6,7 +6,7 @@ from nes.cpu.registers cimport Registers
     
 cdef class CPU6502:
     cdef Registers registers
-    cdef uint8_t[2048] ram
+    cdef uint8_t[:] ram
     
     cdef CPUBus bus
 
