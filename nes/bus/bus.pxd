@@ -10,7 +10,7 @@ cdef class CPUBus:
     cdef uint8_t[2048] ram
     cdef public uint8_t[2] controller
     cdef uint8_t[2] controller_state
-    cdef uint32_t nSystemClockCounter
+    cdef uint32_t system_clock_counter
 
     cdef uint8_t dma_page
     cdef uint8_t dma_addr
@@ -24,8 +24,8 @@ cdef class CPUBus:
     cdef public APU2A03 apu
     cdef Cartridge cartridge
 
-    cpdef uint8_t read(self, uint16_t, bint)
-    cpdef void write(self, uint16_t, uint8_t)
+    cpdef uint8_t read(self, uint16_t addr, bint read_only)
+    cpdef void write(self, uint16_t addr, uint8_t data)
     cpdef void reset(self)
     cpdef void power_up(self)
     cpdef void clock(self) except * 

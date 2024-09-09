@@ -7,7 +7,7 @@ cdef class CPUBus:
         self.ram = [0x00] * 2 * 1024
         self.controller = [0x00,0x00]
         self.controller_state = [0x00,0x00]
-        self.nSystemClockCounter = 0
+        self.system_clock_counter = 0
 
         self.dma_page = 0x00
         self.dma_addr = 0x00
@@ -23,7 +23,7 @@ cdef class CPUBus:
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
 
-    cpdef uint8_t read(self, uint16_t addr, bint readOnly):
+    cpdef uint8_t read(self, uint16_t addr, bint read_only):
         success, data = self.cartridge.readByCPU(addr)
         if success:
             # $4020–$FFFF: Cartridge space: PRG ROM, PRG RAM, and mapper registers
@@ -35,7 +35,7 @@ cdef class CPUBus:
         elif 0x2000 <= addr <= 0x3FFF:
             # $2000–$2007: NES PPU registers
             # $2008–$3FFF are Mirrors of $2000–$2007 (repeats every 8 bytes)
-            data = self.ppu.readByCPU(addr & 0x0007, readOnly)
+            data = self.ppu.readByCPU(addr & 0x0007, read_only)
         elif addr == 0x4015:
             # $4015: APU Status
             data = self.apu.readByCPU(addr)
@@ -82,7 +82,7 @@ cdef class CPUBus:
         self.cpu.reset()
         self.ppu.reset()
         # self.apu.reset()
-        self.nSystemClockCounter = 0
+        self.system_clock_counter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
         self.dma_data = 0x00
@@ -93,7 +93,7 @@ cdef class CPUBus:
         self.cartridge.reset()
         self.cpu.power_up()
         self.ppu.reset()
-        self.nSystemClockCounter = 0
+        self.system_clock_counter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
         self.dma_data = 0x00
@@ -104,13 +104,13 @@ cdef class CPUBus:
         cdef uint8_t cycles = 0
 
         self.ppu.clock()
-        if self.nSystemClockCounter % 3 == 0:
+        if self.system_clock_counter % 3 == 0:
             if self.dma_transfer:
                 if self.dma_dummy:
-                    if self.nSystemClockCounter % 2 == 1:
+                    if self.system_clock_counter % 2 == 1:
                         self.dma_dummy = False
                 else:
-                    if self.nSystemClockCounter % 2 == 0:
+                    if self.system_clock_counter % 2 == 0:
                         self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
                         self.write(0x2004, self.dma_data)
@@ -128,20 +128,18 @@ cdef class CPUBus:
             self.cartridge.mapper.IRQ_clear()
             self.cpu.irq()
 
-        self.nSystemClockCounter += 1
+        self.system_clock_counter += 1
         self.apu.clock(cycles)
-        # if sample > 0.0:
-        #     print(sample)
 
     cpdef void run_frame(self):
         _clock = pygame.time.Clock()
         audio = pyaudio.PyAudio()
-        player = audio.open(format=pyaudio.paInt16,
-                        channels=1,
-                        rate=48000,
-                        output=True,
-                        frames_per_buffer=400,
-                        stream_callback=self.apu.pyaudio_callback,
+        player = audio.open(format = pyaudio.paInt16,
+                            channels = 1,
+                            rate = 48000,
+                            output = True,
+                            frames_per_buffer=400,
+                            stream_callback=self.apu.pyaudio_callback,
                         )
         player.start_stream() 
         for _ in range(262):
