@@ -1,10 +1,10 @@
-import PySimpleGUI as sg
-from gui.pysimplegui.base_view import BaseView
-from gui.pysimplegui.keyboard_setting_view import KeyboardSettingWindow
-from gui.pysimplegui.cpu_debug_view import CPUDebugWindow
-from gui.pysimplegui.ppu_debug_view import PPUDebugWindow
-from gui.pysimplegui.disassembler_view import DisassemblerWindow
-from gui.pysimplegui.nes_file_view import NesFileWindow
+import FreeSimpleGUI as sg
+from gui.freesimplegui.base_view import BaseView
+from gui.freesimplegui.keyboard_setting_view import KeyboardSettingWindow
+from gui.freesimplegui.cpu_debug_view import CPUDebugWindow
+from gui.freesimplegui.ppu_debug_view import PPUDebugWindow
+from gui.freesimplegui.disassembler_view import DisassemblerWindow
+from gui.freesimplegui.nes_file_view import NesFileWindow
 
 from threading import Thread, Event, Lock
 import pygame

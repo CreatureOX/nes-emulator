@@ -1,5 +1,5 @@
-import PySimpleGUI as sg
-from gui.pysimplegui.base_view import BaseView
+import FreeSimpleGUI as sg
+from gui.freesimplegui.base_view import BaseView
 import pygame
 import json
 import os
