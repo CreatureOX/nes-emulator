@@ -1,33 +1,6 @@
 from nes.apu.registers cimport APUTriangle, APUPulse, APUNoise, APUDMC
 
 
-cdef enum:
-    # sound synthesis constants
-    SAMPLE_RATE = 48000     # 48kHz sample rate
-    SAMPLE_SCALE = 65536    # 16 bit samples
-
-    CPU_FREQ_HZ = 1789773   # https://wiki.nesdev.com/w/index.php/Cycle_reference_chart#Clock_rates
-    MAX_CPU_CYCLES_PER_LOOP = 24  # if the cpu has done more than this many cycles, complete them in loops
-
-    # counter modes
-    FOUR_STEP = 0
-    FIVE_STEP = 1
-
-    # Bits in the status register during write
-    BIT_ENABLE_DMC = 4
-    BIT_ENABLE_NOISE = 3
-    BIT_ENABLE_TRIANGLE = 2
-    BIT_ENABLE_PULSE2 = 1
-    BIT_ENABLE_PULSE1 = 0
-
-    # Bits in the frame counter register
-    BIT_MODE = 7
-    BIT_IRQ_INHIBIT = 6
-
-    # buffer length of the APU's output buffer; must be a power of 2
-    APU_BUFFER_LENGTH = 65536
-    CHUNK_SIZE = 10000
-
 cdef class APU2A03:
     """
     References:
@@ -49,8 +22,8 @@ cdef class APU2A03:
         #### system interrupt listener
 
         #### buffers for up to 1s of data for each of the waveform generators
-        short output[APU_BUFFER_LENGTH]   # final output from the mixer; power of two sized to make ring buffer easier to implement
-        short buffer[CHUNK_SIZE]
+        short[65536] output # final output from the mixer; power of two sized to make ring buffer easier to implement
+        short[10000] buffer
 
         #### status register
         bint mode, irq_inhibit, frame_interrupt_flag

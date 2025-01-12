@@ -1,3 +1,8 @@
+cdef enum:
+    # sound synthesis constants
+    SAMPLE_RATE = 48000     # 48kHz sample rate
+    CPU_FREQ_HZ = 1789773   # https://wiki.nesdev.com/w/index.php/Cycle_reference_chart#Clock_rates
+
 cdef class APUEnvelope:
     """
     Volume envelope unit used in pulse and noise APU units

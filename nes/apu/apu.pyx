@@ -4,6 +4,33 @@ try:
 except ImportError:
     has_audio = True
 
+cdef enum:
+    # sound synthesis constants
+    SAMPLE_RATE = 48000     # 48kHz sample rate
+    SAMPLE_SCALE = 65536    # 16 bit samples
+
+    CPU_FREQ_HZ = 1789773   # https://wiki.nesdev.com/w/index.php/Cycle_reference_chart#Clock_rates
+    MAX_CPU_CYCLES_PER_LOOP = 24  # if the cpu has done more than this many cycles, complete them in loops
+
+    # counter modes
+    FOUR_STEP = 0
+    FIVE_STEP = 1
+
+    # Bits in the status register during write
+    BIT_ENABLE_DMC = 4
+    BIT_ENABLE_NOISE = 3
+    BIT_ENABLE_TRIANGLE = 2
+    BIT_ENABLE_PULSE2 = 1
+    BIT_ENABLE_PULSE1 = 0
+
+    # Bits in the frame counter register
+    BIT_MODE = 7
+    BIT_IRQ_INHIBIT = 6
+
+    # buffer length of the APU's output buffer; must be a power of 2
+    APU_BUFFER_LENGTH = 65536
+    CHUNK_SIZE = 10000
+
 #### The APU ###########################################################################################################
 
 cdef class APU2A03:
@@ -62,8 +89,8 @@ cdef class APU2A03:
         for i in range(samples):
             self.buffer[i] = self.output[(self._buffer_start + i) & (APU_BUFFER_LENGTH - 1)]
         self._buffer_start += samples
-        cdef short[:] data = <short[:samples]>self.buffer
-        return data
+        # cdef short[:] data = <short[:samples]>self.buffer
+        return self.buffer
 
     cdef void generate_sample(self):
         tri = self.triangle.generate_sample()

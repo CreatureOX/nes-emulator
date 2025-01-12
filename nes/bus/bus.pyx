@@ -148,4 +148,4 @@ cdef class CPUBus:
             for self.ppu.cycle in range(341):               
                 self.clock()
                 while self.apu.buffer_remaining() > 2400 and player.is_active():
-                    _clock.tick(240)  # wait for about 2ms (~= 96 samples)
+                    _clock.tick(500)  # wait for about 2ms (~= 96 samples)
