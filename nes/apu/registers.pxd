@@ -1,8 +1,3 @@
-cdef enum:
-    # sound synthesis constants
-    SAMPLE_RATE = 48000     # 48kHz sample rate
-    CPU_FREQ_HZ = 1789773   # https://wiki.nesdev.com/w/index.php/Cycle_reference_chart#Clock_rates
-
 cdef class APUEnvelope:
     cdef:
         bint start_flag, loop_flag
@@ -15,7 +10,7 @@ cdef class APUUnit:
     cdef:
         bint enable, ctr_halt
         int length_ctr
-        short output[SAMPLE_RATE]
+        short[48000] output
 
     cdef void update_length_ctr(self)
     cdef void set_enable(self, bint value)
@@ -41,7 +36,7 @@ cdef class APUPulse(APUUnit):
         bint sweep_enable, sweep_negate, sweep_reload
         int sweep_period, sweep_shift, sweep_divider
 
-        int duty_waveform[4][8]  # duty cycle sequences
+        int[4][8] duty_waveform # duty cycle sequences
 
     cdef void write_register(self, int address, unsigned char value)
     cdef void sweep_update(self)
@@ -56,7 +51,7 @@ cdef class APUNoise(APUUnit):
         #double shift_ctr
         APUEnvelope env
 
-        unsigned int timer_table[16]    # noise timer periods
+        unsigned int[16] timer_table # noise timer periods
 
     cdef void write_register(self, int address, unsigned char value)
     cdef void update_cycles(self, int cycles)
@@ -75,7 +70,7 @@ cdef class APUDMC(APUUnit):
         int output_level, bits_remaining
         unsigned char sample
 
-        unsigned int rate_table[16]    # sample consumption rates for the dmc
+        unsigned int[16] rate_table # sample consumption rates for the dmc
 
     cdef void write_register(self, int address, unsigned char value)
     cdef void update_cycles(self, int cycles)

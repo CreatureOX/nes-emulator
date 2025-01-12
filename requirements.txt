@@ -1,7 +1,7 @@
 pygame==1.9.6
 FreeSimpleGUI
-numpy==1.22.0
+numpy
 opencv-python==4.7.0.68
 Pillow==9.3.0
-Cython==0.29.32
+Cython==3.0.10
 PyAudio
