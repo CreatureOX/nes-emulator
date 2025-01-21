@@ -1,8 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t
 
 from nes.bus.bus cimport CPUBus
-from nes.cpu.registers cimport Registers
-
+from nes.cpu.registers cimport Registers, StatusMask
     
 cdef class CPU6502:
     cdef Registers registers
@@ -113,5 +112,5 @@ cdef class CPU6502:
 
     cdef int clock_count
     
-    cdef uint8_t clock(self)
+    cdef uint8_t clock(self) except *
     cpdef bint complete(self)

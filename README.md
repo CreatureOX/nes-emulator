@@ -11,7 +11,7 @@ For more details, check `setup.py`
 ## Installation
 1. `pip install -r requirements.txt`
 2. `python setup.py build_ext --inplace`
-3. `python .\nes-emulator.py  `
+3. `python .\nes-emulator.py`
 
 ## Support Mapper
 <table border="1">
