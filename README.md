@@ -1,7 +1,7 @@
 # nes-emulator
 | Donkey Kong (World) (Rev A).nes | Legend of Zelda, The (U) (PRG1) [!].nes | Mega Man (USA).nes |
 | ------------------------------- | --------------------------------------- | ------------------ |
-| <img src="images/Donkey Kong (World) (Rev A).gif"/> | <img src="images/Legend of Zelda, The (U) (PRG1) [!].gif"/> | <img src="images/Mega Man (USA).nes.gif"/>
+| <img src="images/Donkey%20Kong%20(World)%20(Rev%20A).gif"/> | <img src="images/Legend%20of%20Zelda%2C%20The%20(U)%20(PRG1)%20%5B!%5D.gif"/> | <img src="images/Mega%20Man%20(USA).nes.gif"/>
 
 ## Introduction
 A Nes Emulator implemented by Python & Cython
