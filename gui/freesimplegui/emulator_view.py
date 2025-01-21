@@ -100,8 +100,8 @@ class EmulatorWindow(BaseView):
 
         # init pygame settings
         self.__game_screen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
-        self.__game_clock = pygame.time.Clock()
-        self.__fps = 60
+        # self.__game_clock = pygame.time.Clock()
+        # self.__fps = 60
 
         pygame.display.init()
 
@@ -169,7 +169,6 @@ class EmulatorWindow(BaseView):
                 pressed[keyboard['LEFT']],
                 pressed[keyboard['RIGHT']]
             ]) 
-            self.__game_clock.tick(self.__fps)
             self.__console.run()
             original_image = np.swapaxes(self.__console.bus.ppu.screen(), 0, 1)
             resized_image = self.__resize(original_image)

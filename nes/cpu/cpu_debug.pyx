@@ -4,13 +4,13 @@ cdef class CPUDebugger:
 
     cpdef dict status(self):
         return {
-            "N": self.bus.cpu.registers.status.status_mask["N"] > 0,
-            "V": self.bus.cpu.registers.status.status_mask["V"] > 0,
-            "U": self.bus.cpu.registers.status.status_mask["U"] > 0,
-            "B": self.bus.cpu.registers.status.status_mask["B"] > 0,
-            "D": self.bus.cpu.registers.status.status_mask["D"] > 0,
-            "I": self.bus.cpu.registers.status.status_mask["I"] > 0,
-            "Z": self.bus.cpu.registers.status.status_mask["Z"] > 0,
+            "N": self.bus.cpu.registers.status.bits.N,
+            "V": self.bus.cpu.registers.status.bits.V,
+            "U": self.bus.cpu.registers.status.bits.U,
+            "B": self.bus.cpu.registers.status.bits.B,
+            "D": self.bus.cpu.registers.status.bits.D,
+            "I": self.bus.cpu.registers.status.bits.I,
+            "Z": self.bus.cpu.registers.status.bits.Z,
         }
 
     cpdef dict registers(self):

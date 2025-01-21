@@ -2,8 +2,6 @@ from libc.stdint cimport uint8_t, int8_t
 
 from nes.file_loader import FileLoader
 
-import pyaudio
-import pygame
 import pickle
 
 K_x = 0
