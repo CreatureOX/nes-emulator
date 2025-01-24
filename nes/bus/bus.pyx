@@ -1,4 +1,7 @@
-import pyaudio
+try:
+    import pyaudio
+except ImportError:
+    pass
 import pygame
 
 
@@ -138,7 +141,7 @@ cdef class CPUBus:
         # audio = pyaudio.PyAudio()
         # player = audio.open(format=pyaudio.paInt16,
         #                 channels=1,
-        #                 rate=44100,
+        #                 rate=48000,
         #                 output=True,
         #                 frames_per_buffer=400,
         #                 stream_callback=self.apu.pyaudio_callback,

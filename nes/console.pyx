@@ -2,6 +2,10 @@ from libc.stdint cimport uint8_t, int8_t
 
 from nes.file_loader import FileLoader
 
+try:
+    import pyaudio
+except ImportError:
+    pass
 import pickle
 
 K_x = 0
