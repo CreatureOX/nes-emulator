@@ -1,4 +1,3 @@
-import pyaudio
 import pygame
 
 
@@ -18,7 +17,7 @@ cdef class CPUBus:
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
-        self.apu = APU2A03()
+        # self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -38,7 +37,8 @@ cdef class CPUBus:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
             # $4015: APU Status
-            data = self.apu.readByCPU(addr)
+            # data = self.apu.readByCPU(addr)
+            pass
         elif 0x4016 <= addr <= 0x4017:
             # $4016:  I/O registers Joystick 1 data
             # $4017:  I/O registers Joystick 2 data       
@@ -66,7 +66,8 @@ cdef class CPUBus:
             # $4010–$4013: DMC
             # $4015: Status
             # $4017: Frame Counter
-            self.apu.writeByCPU(addr, data)
+            # self.apu.writeByCPU(addr, data)
+            pass
         elif addr == 0x4014:
             # $4014: Copy 256 bytes from $xx00-$xxFF into OAM via OAMDATA ($2004)
             self.dma_page = data
@@ -100,7 +101,7 @@ cdef class CPUBus:
         self.dma_dummy = True
         self.dma_transfer = False    
 
-    cpdef void clock(self) except *:
+    cpdef void clock(self):
         cdef uint8_t cycles = 0
 
         self.ppu.clock()
@@ -129,23 +130,10 @@ cdef class CPUBus:
             self.cpu.irq()
 
         self.nSystemClockCounter += 1
-        self.apu.clock(cycles)
-        # if sample > 0.0:
-        #     print(sample)
+        # self.apu.clock(cycles)
 
     cpdef void run_frame(self):
         _clock = pygame.time.Clock()
-        # audio = pyaudio.PyAudio()
-        # player = audio.open(format=pyaudio.paInt16,
-        #                 channels=1,
-        #                 rate=44100,
-        #                 output=True,
-        #                 frames_per_buffer=400,
-        #                 stream_callback=self.apu.pyaudio_callback,
-        #                 )
-        # player.start_stream() 
         for _ in range(262):
             for self.ppu.cycle in range(341):               
                 self.clock()
-                # while self.apu.buffer_remaining() > 2400 and player.is_active():
-                #     _clock.tick(500)  # wait for about 2ms (~= 96 samples)
