@@ -185,8 +185,6 @@ class EmulatorWindow(BaseView):
 
     def __capture_screenshot(self, values) -> None:
         image_data = np.array(self.__console.bus.ppu.screen())
-        if image_data.shape[2] == 3:
-            image_data = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
 
         if not os.path.exists("./screenshots"):
             os.mkdir("./screenshots")
