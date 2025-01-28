@@ -135,7 +135,9 @@ class EmulatorWindow(BaseView):
         return True
     
     def __save(self, values):
-        archive_name = "{filename}-{id}.sav".format(filename = self.filename, id = int(time.time()))
+        if not os.path.exists("./saves"):
+            os.mkdir("./saves")
+        archive_name = "./saves/{filename}-{id}.sav".format(filename = self.filename, id = int(time.time()))
         self.__console.save_state(archive_name)
 
     def __load(self, values):

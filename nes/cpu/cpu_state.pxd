@@ -1,9 +1,9 @@
 from libc.stdint cimport uint8_t, uint16_t
-
-from nes.cpu.registers cimport Registers
-
 import numpy as np
 cimport numpy as np
+
+from nes.cpu.registers cimport Registers
+from nes.cpu.cpu cimport CPU6502
 
 
 cdef class CPUState:
@@ -15,3 +15,5 @@ cdef class CPUState:
     cdef uint8_t opcode
     cdef uint16_t temp
     cdef uint8_t remaining_cycles
+
+    cdef void load_to(self, CPU6502 cpu)
