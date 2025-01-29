@@ -15,6 +15,7 @@ from PIL import Image
 import time
 import sys
 import json
+import ctypes
 
 from pathlib import Path
 
@@ -93,6 +94,10 @@ class EmulatorWindow(BaseView):
     def __open_nes_file_hint(self, values) -> None:
         sg.popup("Please select a nes file!")
 
+    def __switch_to_english_input(self):
+        user32 = ctypes.WinDLL('user32', use_last_error = True)
+        user32.LoadKeyboardLayoutW("00000409", 1)
+
     def _after_open(self) -> None:
         # bind Graph (key = "SCREEN") with pygame window
         os.environ['SDL_VIDEODRIVER'] = 'windib'
@@ -105,6 +110,8 @@ class EmulatorWindow(BaseView):
 
         pygame.display.init()
 
+        self.__switch_to_english_input()
+        
     def _before_exit(self, values = None) -> None:
         self.__stop.set()
 
