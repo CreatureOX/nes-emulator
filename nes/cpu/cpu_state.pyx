@@ -1,8 +1,3 @@
-from libc.stdint cimport uint8_t
-from libc.string cimport memcpy
-
-from nes.cpu.cpu cimport CPU6502
-
 import numpy as np
 cimport numpy as np
 
@@ -17,3 +12,13 @@ cdef class CPUState:
         self.opcode = cpu.opcode
         self.temp = cpu.temp
         self.remaining_cycles = cpu.remaining_cycles
+
+    cdef void load_to(self, CPU6502 cpu):
+        cpu.registers = self.registers
+        cpu.ram = self.ram
+        cpu.fetched = self.fetched
+        cpu.addr_abs = self.addr_abs
+        cpu.addr_rel = self.addr_rel
+        cpu.opcode = self.opcode
+        cpu.temp = self.temp
+        cpu.remaining_cycles = self.remaining_cycles

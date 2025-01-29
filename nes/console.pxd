@@ -1,10 +1,6 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t
 
-from nes.cart.cart cimport Cartridge
 from nes.bus.bus cimport CPUBus
-from nes.state cimport State
-from nes.cpu.cpu_state cimport CPUState
-from nes.ppu.ppu_state cimport PPUState
 
 from nes.cpu.cpu_debug cimport CPUDebugger
 from nes.ppu.ppu_debug cimport PPUDebugger
@@ -36,5 +32,3 @@ cdef class Console:
 
     cpdef void save_state(self, str)
     cpdef void load_state(self, str)
-    cdef void __load_cpu_state(self, CPUState)
-    cdef void __load_ppu_state(self, PPUState)

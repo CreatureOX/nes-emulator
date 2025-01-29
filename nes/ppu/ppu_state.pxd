@@ -1,6 +1,7 @@
-from libc.stdint cimport uint8_t, uint16_t, int16_t
+from libc.stdint cimport uint8_t, int16_t
 
 from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
+from nes.ppu.ppu cimport PPU2C02
 
 import numpy as np
 cimport numpy as np
@@ -36,3 +37,5 @@ cdef class PPUState:
     cdef bint foreground_priority
     cdef bint nmi
     cdef bint frame_complete
+
+    cdef void load_to(self, PPU2C02 ppu)

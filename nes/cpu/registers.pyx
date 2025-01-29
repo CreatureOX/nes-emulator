@@ -13,3 +13,22 @@ cdef class Registers:
     @P.setter
     def P(self, long status_value):
         self.status.value = <uint8_t> status_value & 0xFF
+
+    def __reduce__(self):
+        state = {
+            'PC': self.PC,
+            'SP': self.SP,
+            'A': self.A,
+            'X': self.X,
+            'Y': self.Y,
+            'P': self.P
+        }
+        return (self.__class__, (), state)
+
+    def __setstate__(self, state):
+        self.PC = state['PC']
+        self.SP = state['SP']
+        self.A = state['A']
+        self.X = state['X']
+        self.Y = state['Y']
+        self.P = state['P']
