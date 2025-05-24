@@ -1,1 +1,1 @@
-nuitka --windows-console-mode=disable .\nes-emulator.py
+nuitka --standalone --windows-console-mode=disable --output-dir=dist --include-package=nes --include-package=pygame --enable-plugin=tk-inter --show-progress nes-emulator.py

@@ -1,0 +1,55 @@
+name: Build and Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.7
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.7'
+
+    - name: Install MSVC Build Tools
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~\AppData\Local\pip\Cache
+          ~\.cache\nuitka
+        key: ${{ runner.os }}-deps-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-deps-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install nuitka zstandard
+
+    - name: Build Cython extensions
+      run: |
+        python setup.py build_ext --inplace
+
+    - name: Package with Nuitka
+      run: |
+        nuitka --standalone --windows-console-mode=disable --output-dir=dist --include-package=nes --include-package=pygame --enable-plugin=tk-inter --show-progress nes-emulator.py
+    - name: Compress artifacts
+      run: |
+        7z a -r nes-emulator.zip ./dist/nes-emulator.dist/*
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: nes-emulator
+        path: nes-emulator.zip
+        retention-days: 1
