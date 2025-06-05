@@ -1,1 +1,1 @@
-nuitka --windows-console-mode=disable .\nes-emulator.py
+pyinstaller .\nes-emulator.spec
