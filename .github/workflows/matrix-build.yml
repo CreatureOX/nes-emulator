@@ -1,0 +1,67 @@
+name: Build and Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+
+    - name: Install MSVC Build Tools
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~\AppData\Local\pip\Cache
+          **\node_modules
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+    - name: Install SDL2 dependencies (macOS only)
+      if: runner.os == 'macOS'
+      run: |
+        brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyyaml==6.0.1 altgraph==0.17.4 importlib-metadata==6.7.0 ordered-set==4.1.0 packaging==24.0 pefile==2024.8.26 pip==20.1.1 psutil==7.0.0 pywin32-ctypes==0.2.3 setuptools==68.0.0 typing-extensions==4.7.1 zipp==3.15.0
+
+        pip install pyinstaller==5.13.2 pyinstaller-hooks-contrib==2024.7 
+
+    - name: Install Visual C++ Redistributable
+      if: runner.os == 'Windows'
+      run: choco install -y vcredist-all
+
+    - name: Build Cython extensions
+      run: |
+        python setup.py build_ext --inplace
+
+    - name: Package with PyInstaller
+      run: |
+        pyinstaller ./nes-emulator.spec
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nes-emulator
+        path: |
+          dist/
+        retention-days: 1
