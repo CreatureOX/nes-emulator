@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-package:
+  matrix-build-and-package:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
