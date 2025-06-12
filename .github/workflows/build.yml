@@ -38,7 +38,7 @@ jobs:
         pip install pyinstaller==5.13.2 pyinstaller-hooks-contrib==2024.7 
 
     - name: Install Visual C++ Redistributable
-      run: choco install -y vcredist-all
+      run: choco install -y vcredist2017
 
     - name: Build Cython extensions
       run: |
