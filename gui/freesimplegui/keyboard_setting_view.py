@@ -1,5 +1,6 @@
 import FreeSimpleGUI as sg
 from gui.freesimplegui.base_view import BaseView
+from gui.freesimplegui.keyboard_manager import keyboard_manager
 import pygame
 import json
 import os
@@ -27,11 +28,10 @@ class KeyboardSettingWindow(BaseView):
         'A': pygame.K_z,        
     }
 
-    # Ensure keyboard settings are saved to project root
+    # Use the global keyboard manager
     @classmethod
     def get_keyboard_setting_path(cls):
-        current_dir = Path(__file__).resolve().parent.parent.parent
-        return str(current_dir / "keyboard.json")
+        return keyboard_manager.get_keyboard_setting_path()
 
     __TITLE = "KEYMAP"
 
@@ -147,18 +147,19 @@ class KeyboardSettingWindow(BaseView):
             'B': self.__MAPPING[values['-B-']],
             'A': self.__MAPPING[values['-A-']],
         }
-        path = self.get_keyboard_setting_path()
-        with open(path, 'w') as keyboard:
-            json.dump(self.__keyboard, keyboard)
-        sg.popup('键位设置已保存！', title='成功')
+        # 使用全局键位管理器保存，这会触发所有注册的回调
+        if keyboard_manager.set_keyboard(self.__keyboard):
+            sg.popup('键位设置已保存！', title='成功')
+        else:
+            sg.popup('保存键位设置失败！', title='错误')
 
     def __load(self) -> dict:
-        path = self.get_keyboard_setting_path()
-        if not os.path.exists(path):
-            with open(path, 'w') as keyboard:
-                json.dump(self.__DEFAULT_KEYMAP, keyboard)
-        with open(path, 'r') as keyboard:
-            self.__keyboard = json.load(keyboard)
+        # 使用全局键位管理器加载
+        self.__keyboard = keyboard_manager.get_keyboard()
+        if not self.__keyboard:
+            # 如果为空，使用默认配置并保存
+            self.__keyboard = self.__DEFAULT_KEYMAP
+            keyboard_manager.set_keyboard(self.__keyboard)
 
     def _after_open(self) -> None:
         for event_key in self.KEYMAP_EVENT_KEYS:

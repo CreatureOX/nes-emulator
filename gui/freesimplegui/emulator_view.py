@@ -1,6 +1,7 @@
 import FreeSimpleGUI as sg
 from gui.freesimplegui.base_view import BaseView
 from gui.freesimplegui.keyboard_setting_view import KeyboardSettingWindow
+from gui.freesimplegui.keyboard_manager import keyboard_manager
 from gui.freesimplegui.cpu_debug_view import CPUDebugWindow
 from gui.freesimplegui.ppu_debug_view import PPUDebugWindow
 from gui.freesimplegui.disassembler_view import DisassemblerWindow
@@ -167,13 +168,6 @@ class EmulatorWindow(BaseView):
         return resized_image   
     
     def __run_file(self) -> None:
-        # Cache keyboard mapping to avoid file I/O on every frame
-        with open(KeyboardSettingWindow.get_keyboard_setting_path()) as keyboard_setting:
-            keyboard = json.load(keyboard_setting)
-        
-        # Debug: print loaded keyboard config
-        print("[DEBUG] Loaded keyboard config:", keyboard)
-        
         # Initialize pygame clock for frame limiting
         clock = pygame.time.Clock()
         
@@ -212,6 +206,9 @@ class EmulatorWindow(BaseView):
         MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
         
         while not self.__stop.is_set():              
+            # 从全局键位管理器获取最新的键位配置（每帧都检查，支持实时更新）
+            keyboard = keyboard_manager.get_keyboard()
+            
             # Get keyboard state using cross-platform method
             control_inputs = [
                 get_key_state(keyboard['SELECT']),
