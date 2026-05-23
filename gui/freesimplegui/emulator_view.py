@@ -50,6 +50,7 @@ class EmulatorWindow(BaseView):
     def __init__(self):
         super().__init__(title = self.__TITLE,
                          size = self.__SIZE,
+                         return_keyboard_events = False,  # 禁用键盘事件以修复菜单功能
                          resizable = self.__RESIZABLE,
                          finalize = self.__FINALIZE)
         self.__lock = Lock()
@@ -107,12 +108,13 @@ class EmulatorWindow(BaseView):
         pygame.display.quit()  # Quit any existing display
         pygame.display.init()  # Reinitialize display
         self.__game_screen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
-        # self.__game_clock = pygame.time.Clock()
-        # self.__fps = 60
 
         # Initialize resize dimensions
         self.cur_w, self.cur_h = 256, 240
 
+        # Initialize pygame font and event handling
+        pygame.font.init()
+        
         self.__switch_to_english_input()
         
     def _before_exit(self, values = None) -> None:
@@ -165,72 +167,82 @@ class EmulatorWindow(BaseView):
         return resized_image   
     
     def __run_file(self) -> None:
-        print("Starting emulator thread...")
         # Cache keyboard mapping to avoid file I/O on every frame
         with open(KeyboardSettingWindow.keyboard_setting_path) as keyboard_setting:
             keyboard = json.load(keyboard_setting)
-        print(f"Loaded keyboard mapping: {keyboard}")
         
         # Initialize pygame clock for frame limiting
         clock = pygame.time.Clock()
-        print("Initialized pygame clock")
+        
+        # Try to use cross-platform keyboard detection
+        try:
+            # Try to import keyboard library for cross-platform keyboard detection
+            import keyboard as kb_lib
+            def get_key_state(key_code):
+                # Map key codes to key names
+                key_map = {
+                    119: 'w', 115: 's', 97: 'a', 100: 'd',  # WASD
+                    273: 'up', 274: 'down', 276: 'left', 275: 'right',  # Arrow keys
+                    99: 'c', 118: 'v', 120: 'x', 122: 'z'  # Other keys
+                }
+                key_name = key_map.get(key_code, chr(key_code) if 32 <= key_code <= 126 else '')
+                return kb_lib.is_pressed(key_name) if key_name else False
+        except ImportError:
+            # Fallback to pygame keyboard state (might not work well in embedded mode)
+            # Or use Windows API if on Windows
+            import sys
+            if sys.platform.startswith('win'):
+                import ctypes
+                user32 = ctypes.windll.user32
+                def get_key_state(key_code):
+                    return user32.GetAsyncKeyState(key_code) & 0x8000 != 0
+            else:
+                # For non-Windows platforms, fallback to pygame
+                def get_key_state(key_code):
+                    pressed = pygame.key.get_pressed()
+                    return pressed[key_code] if key_code < len(pressed) else False
         
         # Wait a bit for the game to initialize and enable rendering
         frames_waited = 0
         MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
         
-        print("Entering main emulation loop...")
         while not self.__stop.is_set():              
-            pressed = pygame.key.get_pressed()
-            self.__console.control([
-                pressed[keyboard['SELECT']],
-                pressed[keyboard['START']],
-                pressed[keyboard['B']],
-                pressed[keyboard['A']],
-                pressed[keyboard['UP']],
-                pressed[keyboard['DOWN']],
-                pressed[keyboard['LEFT']],
-                pressed[keyboard['RIGHT']]
-            ]) 
+            # Get keyboard state using cross-platform method
+            control_inputs = [
+                get_key_state(keyboard['SELECT']),
+                get_key_state(keyboard['START']),
+                get_key_state(keyboard['B']),
+                get_key_state(keyboard['A']),
+                get_key_state(keyboard['UP']),
+                get_key_state(keyboard['DOWN']),
+                get_key_state(keyboard['LEFT']),
+                get_key_state(keyboard['RIGHT'])
+            ]
             
-            # Run console and wait briefly for thread synchronization
-            print(f"Frame {frames_waited}: Running console...")
+            self.__console.control(control_inputs)
+            
             self.__console.run()
-            print(f"Frame {frames_waited}: Console run completed")
             
             # Get screen data - ensure we get a copy, not just a view
-            print(f"Frame {frames_waited}: Getting PPU screen data...")
             ppu_screen = self.__console.bus.ppu.screen()
-            print(f"Frame {frames_waited}: Got PPU screen reference")
             original_image = np.array(ppu_screen, copy=True)  # Force a copy to avoid potential view issues
-            print(f"Frame {frames_waited}: Converted to numpy array, shape: {original_image.shape}")
             original_image = np.swapaxes(original_image, 0, 1)
-            print(f"Frame {frames_waited}: Swapped axes, shape: {original_image.shape}")
             
             # Check if screen is still black (all zeros), and if so, try to wait a bit more
             is_black = np.all(original_image == 0)
-            print(f"Frame {frames_waited}: Screen is black: {is_black}")
             if frames_waited < MAX_WAIT_FRAMES and is_black:
                 frames_waited += 1
-                print(f"Frame {frames_waited-1}: Screen still black, skipping render (waited {frames_waited}/{MAX_WAIT_FRAMES})")
                 # Still update the display to prevent hanging
                 pygame.display.flip()
                 continue  # Skip rendering if screen is still black and we haven't waited enough
             
-            print(f"Frame {frames_waited}: Resizing image...")
             resized_image = self.__resize(original_image)
-            print(f"Frame {frames_waited}: Resize completed, shape: {resized_image.shape}")
             # Ensure the array is in the right format for pygame surfarray
             resized_image = resized_image.astype(np.uint8)
-            print(f"Frame {frames_waited}: Created surface from array...")
             surf = pygame.surfarray.make_surface(resized_image)
-            print(f"Frame {frames_waited}: Blitting surface to screen...")
             self.__game_screen.blit(surf, (0, 0))
-            print(f"Frame {frames_waited}: Flipping display...")
             pygame.display.flip()
-            print(f"Frame {frames_waited}: Ticking clock...")
             clock.tick(60)  # Limit to 60 FPS for smooth gameplay
-            print(f"Frame {frames_waited}: Completed frame")
             frames_waited += 1
 
     def __run(self, values) -> None:

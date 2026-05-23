@@ -4,3 +4,4 @@ numpy>=1.21.0
 opencv-python>=4.8.0.0
 Pillow>=9.3.0
 Cython>=3.0.6
+keyboard
