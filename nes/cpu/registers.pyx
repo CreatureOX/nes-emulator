@@ -1,3 +1,5 @@
+from nes.cpu.status_register cimport StatusRegister
+
 cdef class Registers:
     def __init__(self):
         self.PC = 0x0000    
@@ -5,6 +7,7 @@ cdef class Registers:
         self.A = 0x00
         self.X = 0x00                
         self.Y = 0x00
+        self.status = StatusRegister()
 
     @property
     def P(self):
