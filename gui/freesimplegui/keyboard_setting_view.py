@@ -3,6 +3,8 @@ from gui.freesimplegui.base_view import BaseView
 import pygame
 import json
 import os
+import sys
+from pathlib import Path
 
 
 class KeyboardSettingWindow(BaseView):
@@ -25,7 +27,11 @@ class KeyboardSettingWindow(BaseView):
         'A': pygame.K_z,        
     }
 
-    keyboard_setting_path = "keyboard.json"
+    # Ensure keyboard settings are saved to project root
+    @classmethod
+    def get_keyboard_setting_path(cls):
+        current_dir = Path(__file__).resolve().parent.parent.parent
+        return str(current_dir / "keyboard.json")
 
     __TITLE = "KEYMAP"
 
@@ -48,7 +54,13 @@ class KeyboardSettingWindow(BaseView):
         self._window[key].update(value)
 
     def __find_text(self, name: str) -> str:
-        return [k for k, v in self.__MAPPING.items() if v == self.__keyboard[name]][0]
+        key_code = self.__keyboard[name]
+        # 先在 __MAPPING 中查找
+        for display_key, code in self.__MAPPING.items():
+            if code == key_code:
+                return display_key
+        # 如果没找到，返回默认值
+        return 'Z'
 
     def _layout(self) -> list:
         return [
@@ -135,14 +147,17 @@ class KeyboardSettingWindow(BaseView):
             'B': self.__MAPPING[values['-B-']],
             'A': self.__MAPPING[values['-A-']],
         }
-        with open(self.keyboard_setting_path, 'w') as keyboard:
+        path = self.get_keyboard_setting_path()
+        with open(path, 'w') as keyboard:
             json.dump(self.__keyboard, keyboard)
+        sg.popup('键位设置已保存！', title='成功')
 
     def __load(self) -> dict:
-        if not os.path.exists(self.keyboard_setting_path):
-            with open(self.keyboard_setting_path, 'w') as keyboard:
+        path = self.get_keyboard_setting_path()
+        if not os.path.exists(path):
+            with open(path, 'w') as keyboard:
                 json.dump(self.__DEFAULT_KEYMAP, keyboard)
-        with open(self.keyboard_setting_path, 'r') as keyboard:
+        with open(path, 'r') as keyboard:
             self.__keyboard = json.load(keyboard)
 
     def _after_open(self) -> None:

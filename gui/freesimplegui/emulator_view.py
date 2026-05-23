@@ -64,7 +64,7 @@ class EmulatorWindow(BaseView):
         self._events["Load"] = self.__open_nes_file_hint
 
         # Config Tab
-        self._events["Keymap"] = KeyboardSettingWindow().open
+        self._events["Keymap"] = self.__open_keymap
 
         # DEBUG Tab
         self._events["CPU"] = self.__open_nes_file_hint
@@ -168,39 +168,44 @@ class EmulatorWindow(BaseView):
     
     def __run_file(self) -> None:
         # Cache keyboard mapping to avoid file I/O on every frame
-        with open(KeyboardSettingWindow.keyboard_setting_path) as keyboard_setting:
+        with open(KeyboardSettingWindow.get_keyboard_setting_path()) as keyboard_setting:
             keyboard = json.load(keyboard_setting)
+        
+        # Debug: print loaded keyboard config
+        print("[DEBUG] Loaded keyboard config:", keyboard)
         
         # Initialize pygame clock for frame limiting
         clock = pygame.time.Clock()
         
-        # Try to use cross-platform keyboard detection
-        try:
-            # Try to import keyboard library for cross-platform keyboard detection
-            import keyboard as kb_lib
+        # Use Windows API for reliable key state detection
+        import sys
+        if sys.platform.startswith('win'):
+            import ctypes
+            user32 = ctypes.windll.user32
+            
+            # Map pygame key codes to virtual key codes
+            pygame_to_vk = {
+                pygame.K_1: 0x31, pygame.K_2: 0x32, pygame.K_3: 0x33, pygame.K_4: 0x34, pygame.K_5: 0x35,
+                pygame.K_6: 0x36, pygame.K_7: 0x37, pygame.K_8: 0x38, pygame.K_9: 0x39, pygame.K_0: 0x30,
+                pygame.K_q: 0x51, pygame.K_w: 0x57, pygame.K_e: 0x45, pygame.K_r: 0x52, pygame.K_t: 0x54,
+                pygame.K_y: 0x59, pygame.K_u: 0x55, pygame.K_i: 0x49, pygame.K_o: 0x4F, pygame.K_p: 0x50,
+                pygame.K_a: 0x41, pygame.K_s: 0x53, pygame.K_d: 0x44, pygame.K_f: 0x46, pygame.K_g: 0x47,
+                pygame.K_h: 0x48, pygame.K_j: 0x4A, pygame.K_k: 0x4B, pygame.K_l: 0x4C,
+                pygame.K_z: 0x5A, pygame.K_x: 0x58, pygame.K_c: 0x43, pygame.K_v: 0x56, pygame.K_b: 0x42,
+                pygame.K_n: 0x4E, pygame.K_m: 0x4D,
+                pygame.K_UP: 0x26, pygame.K_DOWN: 0x28, pygame.K_LEFT: 0x25, pygame.K_RIGHT: 0x27,
+            }
+            
             def get_key_state(key_code):
-                # Map key codes to key names
-                key_map = {
-                    119: 'w', 115: 's', 97: 'a', 100: 'd',  # WASD
-                    273: 'up', 274: 'down', 276: 'left', 275: 'right',  # Arrow keys
-                    99: 'c', 118: 'v', 120: 'x', 122: 'z'  # Other keys
-                }
-                key_name = key_map.get(key_code, chr(key_code) if 32 <= key_code <= 126 else '')
-                return kb_lib.is_pressed(key_name) if key_name else False
-        except ImportError:
-            # Fallback to pygame keyboard state (might not work well in embedded mode)
-            # Or use Windows API if on Windows
-            import sys
-            if sys.platform.startswith('win'):
-                import ctypes
-                user32 = ctypes.windll.user32
-                def get_key_state(key_code):
-                    return user32.GetAsyncKeyState(key_code) & 0x8000 != 0
-            else:
-                # For non-Windows platforms, fallback to pygame
-                def get_key_state(key_code):
-                    pressed = pygame.key.get_pressed()
-                    return pressed[key_code] if key_code < len(pressed) else False
+                vk = pygame_to_vk.get(key_code)
+                if vk is None:
+                    return False
+                return user32.GetAsyncKeyState(vk) & 0x8000 != 0
+        else:
+            # For non-Windows platforms, use pygame key detection
+            def get_key_state(key_code):
+                pressed = pygame.key.get_pressed()
+                return pressed[key_code] if key_code < len(pressed) else False
         
         # Wait a bit for the game to initialize and enable rendering
         frames_waited = 0
@@ -267,6 +272,11 @@ class EmulatorWindow(BaseView):
     
     def __show_about(self, values) -> None:
         sg.popup(f'Nes Emulator\nVersion: {VERSION}\nAuthor: {AUTHOR}\n')
+    
+    def __open_keymap(self, values) -> None:
+        # Open keyboard settings in a separate thread to avoid blocking main window
+        keymap_window = KeyboardSettingWindow()
+        keymap_window.open()
 
 if __name__ == "__main__":
     emulator_window = EmulatorWindow()
