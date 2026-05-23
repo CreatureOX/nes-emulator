@@ -42,7 +42,7 @@ class EmulatorWindow(BaseView):
         ['Help', ['About',]],
     ]
 
-    __SIZE = ( 256 + 20, 240 + 20 )
+    __SIZE = ( 512 + 20, 480 + 20 )
 
     __RESIZABLE = True
 
@@ -80,9 +80,9 @@ class EmulatorWindow(BaseView):
         screen_layout = [
             [
                 sg.Graph(key = "-SCREEN-", 
-                         canvas_size = (256, 240), 
+                         canvas_size = (512, 480),  # Larger initial canvas size
                          graph_bottom_left = (0, 0), 
-                         graph_top_right = (256, 240), 
+                         graph_top_right = (512, 480), 
                          background_color = 'BLACK', 
                          expand_x = True, 
                          expand_y = True)
@@ -105,13 +105,24 @@ class EmulatorWindow(BaseView):
         # os.environ['SDL_VIDEODRIVER'] = 'windib'
         os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
 
+        # Get the actual canvas size from TKinter
+        canvas = self._window['-SCREEN-'].TKCanvas
+        canvas_width = canvas.winfo_width()
+        canvas_height = canvas.winfo_height()
+        
+        # If canvas size is not yet available, use default
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width = 512
+            canvas_height = 480
+
         # init pygame settings
         pygame.display.quit()  # Quit any existing display
         pygame.display.init()  # Reinitialize display
-        self.__game_screen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
+        # Set pygame display size to match the actual canvas size
+        self.__game_screen = pygame.display.set_mode((canvas_width, canvas_height), pygame.RESIZABLE)
 
         # Initialize resize dimensions
-        self.cur_w, self.cur_h = 256, 240
+        self.cur_w, self.cur_h = canvas_width, canvas_height
 
         # Initialize pygame font and event handling
         pygame.font.init()
@@ -160,16 +171,49 @@ class EmulatorWindow(BaseView):
             return
         self.__console.load_state(archive_path)
 
-    def __resize(self, original_image: np.ndarray) -> np.ndarray:
-        # Simplified resize that doesn't depend on pygame events
-        # Just return the original image resized to fixed dimensions
-        # Use consistent dimensions for better performance
-        resized_image = cv2.resize(original_image, (256, 240))
-        return resized_image   
+    def __resize(self, original_image: np.ndarray, display_width: int, display_height: int) -> tuple:
+        """
+        Resize image while maintaining 256:240 aspect ratio.
+        Uses floating-point scaling to fill the display as much as possible.
+        Returns: (resized_image, x_offset, y_offset) for centered rendering
+        """
+        # Original NES resolution
+        original_width = 256
+        original_height = 240
+        
+        # Calculate scale factor to fill display while maintaining aspect ratio
+        # Use floating-point scaling to maximize image size
+        scale_width = display_width / original_width
+        scale_height = display_height / original_height
+        scale_factor = min(scale_width, scale_height)
+        
+        # Ensure at least 1x scaling
+        scale_factor = max(1.0, scale_factor)
+        
+        # Calculate final dimensions with scaling
+        final_width = int(original_width * scale_factor)
+        final_height = int(original_height * scale_factor)
+        
+        # Calculate offsets to center the image
+        x_offset = (display_width - final_width) // 2
+        y_offset = (display_height - final_height) // 2
+        
+        # Resize the image using INTER_LINEAR for smooth scaling
+        resized_image = cv2.resize(original_image, (final_width, final_height), interpolation=cv2.INTER_LINEAR)
+        
+        return resized_image, x_offset, y_offset, final_width, final_height   
     
     def __run_file(self) -> None:
         # Initialize pygame clock for frame limiting
         clock = pygame.time.Clock()
+        
+        # Track previous window size for dynamic resizing
+        # Initialize with the pygame display size (512x480 from _after_open)
+        try:
+            initial_size = self.__game_screen.get_size()
+            last_width, last_height = initial_size[0], initial_size[1]
+        except:
+            last_width, last_height = 512, 480
         
         # Use Windows API for reliable key state detection
         import sys
@@ -206,6 +250,13 @@ class EmulatorWindow(BaseView):
         MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
         
         while not self.__stop.is_set():              
+            # Get current pygame display size for responsive resizing
+            try:
+                current_size = self.__game_screen.get_size()
+                current_width, current_height = current_size[0], current_size[1]
+            except:
+                current_width, current_height = last_width, last_height
+            
             # 从全局键位管理器获取最新的键位配置（每帧都检查，支持实时更新）
             keyboard = keyboard_manager.get_keyboard()
             
@@ -238,14 +289,24 @@ class EmulatorWindow(BaseView):
                 pygame.display.flip()
                 continue  # Skip rendering if screen is still black and we haven't waited enough
             
-            resized_image = self.__resize(original_image)
+            # Dynamically resize based on current pygame display size, maintaining aspect ratio
+            resized_image, x_offset, y_offset, final_width, final_height = self.__resize(original_image, current_width, current_height)
+            
+            # Clear the display with black background to avoid artifacts
+            self.__game_screen.fill((0, 0, 0))
+            
             # Ensure the array is in the right format for pygame surfarray
             resized_image = resized_image.astype(np.uint8)
             surf = pygame.surfarray.make_surface(resized_image)
-            self.__game_screen.blit(surf, (0, 0))
+            
+            # Blit the image at the calculated offset (centered)
+            self.__game_screen.blit(surf, (x_offset, y_offset))
             pygame.display.flip()
             clock.tick(60)  # Limit to 60 FPS for smooth gameplay
             frames_waited += 1
+            
+            # Update last size for next iteration
+            last_width, last_height = current_width, current_height
 
     def __run(self, values) -> None:
         success = self.__open_file()
