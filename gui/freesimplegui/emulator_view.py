@@ -100,15 +100,18 @@ class EmulatorWindow(BaseView):
 
     def _after_open(self) -> None:
         # bind Graph (key = "SCREEN") with pygame window
-        os.environ['SDL_VIDEODRIVER'] = 'windib'
+        # os.environ['SDL_VIDEODRIVER'] = 'windib'
         os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
 
         # init pygame settings
+        pygame.display.quit()  # Quit any existing display
+        pygame.display.init()  # Reinitialize display
         self.__game_screen = pygame.display.set_mode((256, 240), pygame.RESIZABLE)
         # self.__game_clock = pygame.time.Clock()
         # self.__fps = 60
 
-        pygame.display.init()
+        # Initialize resize dimensions
+        self.cur_w, self.cur_h = 256, 240
 
         self.__switch_to_english_input()
         
@@ -155,19 +158,30 @@ class EmulatorWindow(BaseView):
         self.__console.load_state(archive_path)
 
     def __resize(self, original_image: np.ndarray) -> np.ndarray:
-        with self.__lock:
-            for event in pygame.event.get():
-                if event.type == pygame.VIDEORESIZE:
-                    self.cur_w, self.cur_h = event.w, event.h
-                    self.__game_screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
-            resized_image = cv2.resize(original_image, (self.cur_h, self.cur_w))
+        # Simplified resize that doesn't depend on pygame events
+        # Just return the original image resized to fixed dimensions
+        # Use consistent dimensions for better performance
+        resized_image = cv2.resize(original_image, (256, 240))
         return resized_image   
     
     def __run_file(self) -> None:
+        print("Starting emulator thread...")
+        # Cache keyboard mapping to avoid file I/O on every frame
+        with open(KeyboardSettingWindow.keyboard_setting_path) as keyboard_setting:
+            keyboard = json.load(keyboard_setting)
+        print(f"Loaded keyboard mapping: {keyboard}")
+        
+        # Initialize pygame clock for frame limiting
+        clock = pygame.time.Clock()
+        print("Initialized pygame clock")
+        
+        # Wait a bit for the game to initialize and enable rendering
+        frames_waited = 0
+        MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
+        
+        print("Entering main emulation loop...")
         while not self.__stop.is_set():              
             pressed = pygame.key.get_pressed()
-            with open(KeyboardSettingWindow.keyboard_setting_path) as keyboard_setting:
-                keyboard = json.load(keyboard_setting)
             self.__console.control([
                 pressed[keyboard['SELECT']],
                 pressed[keyboard['START']],
@@ -178,12 +192,46 @@ class EmulatorWindow(BaseView):
                 pressed[keyboard['LEFT']],
                 pressed[keyboard['RIGHT']]
             ]) 
+            
+            # Run console and wait briefly for thread synchronization
+            print(f"Frame {frames_waited}: Running console...")
             self.__console.run()
-            original_image = np.swapaxes(self.__console.bus.ppu.screen(), 0, 1)
+            print(f"Frame {frames_waited}: Console run completed")
+            
+            # Get screen data - ensure we get a copy, not just a view
+            print(f"Frame {frames_waited}: Getting PPU screen data...")
+            ppu_screen = self.__console.bus.ppu.screen()
+            print(f"Frame {frames_waited}: Got PPU screen reference")
+            original_image = np.array(ppu_screen, copy=True)  # Force a copy to avoid potential view issues
+            print(f"Frame {frames_waited}: Converted to numpy array, shape: {original_image.shape}")
+            original_image = np.swapaxes(original_image, 0, 1)
+            print(f"Frame {frames_waited}: Swapped axes, shape: {original_image.shape}")
+            
+            # Check if screen is still black (all zeros), and if so, try to wait a bit more
+            is_black = np.all(original_image == 0)
+            print(f"Frame {frames_waited}: Screen is black: {is_black}")
+            if frames_waited < MAX_WAIT_FRAMES and is_black:
+                frames_waited += 1
+                print(f"Frame {frames_waited-1}: Screen still black, skipping render (waited {frames_waited}/{MAX_WAIT_FRAMES})")
+                # Still update the display to prevent hanging
+                pygame.display.flip()
+                continue  # Skip rendering if screen is still black and we haven't waited enough
+            
+            print(f"Frame {frames_waited}: Resizing image...")
             resized_image = self.__resize(original_image)
+            print(f"Frame {frames_waited}: Resize completed, shape: {resized_image.shape}")
+            # Ensure the array is in the right format for pygame surfarray
+            resized_image = resized_image.astype(np.uint8)
+            print(f"Frame {frames_waited}: Created surface from array...")
             surf = pygame.surfarray.make_surface(resized_image)
+            print(f"Frame {frames_waited}: Blitting surface to screen...")
             self.__game_screen.blit(surf, (0, 0))
+            print(f"Frame {frames_waited}: Flipping display...")
             pygame.display.flip()
+            print(f"Frame {frames_waited}: Ticking clock...")
+            clock.tick(60)  # Limit to 60 FPS for smooth gameplay
+            print(f"Frame {frames_waited}: Completed frame")
+            frames_waited += 1
 
     def __run(self, values) -> None:
         success = self.__open_file()

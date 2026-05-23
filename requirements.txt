@@ -1,6 +1,6 @@
-pygame==1.9.6
-FreeSimpleGUI
-numpy
-opencv-python==4.7.0.68
-Pillow==9.3.0
-Cython==3.0.10
+pygame>=2.5.0
+FreeSimpleGUI>=4.6.0
+numpy>=1.21.0
+opencv-python>=4.8.0.0
+Pillow>=9.3.0
+Cython>=3.0.6

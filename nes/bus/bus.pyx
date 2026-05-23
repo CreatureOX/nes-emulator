@@ -1,6 +1,3 @@
-import pygame
-
-
 cdef class CPUBus:
     def __init__(self, Cartridge cartridge) -> None:
         self.ram = [0x00] * 2 * 1024
@@ -133,7 +130,6 @@ cdef class CPUBus:
         # self.apu.clock(cycles)
 
     cpdef void run_frame(self):
-        _clock = pygame.time.Clock()
         for _ in range(262):
             for self.ppu.cycle in range(341):               
                 self.clock()
