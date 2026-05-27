@@ -55,19 +55,19 @@ cdef class Console:
         self.bus.controller[0] = 0x00
         if pressed[K_x]:
             self.bus.controller[0] |= 0x80
-        elif pressed[K_z]:
+        if pressed[K_z]:
             self.bus.controller[0] |= 0x40
-        elif pressed[K_a]:
+        if pressed[K_a]:
             self.bus.controller[0] |= 0x20
-        elif pressed[K_s]:
+        if pressed[K_s]:
             self.bus.controller[0] |= 0x10
-        elif pressed[K_UP]:
+        if pressed[K_UP]:
             self.bus.controller[0] |= 0x08
-        elif pressed[K_DOWN]:
+        if pressed[K_DOWN]:
             self.bus.controller[0] |= 0x04
-        elif pressed[K_LEFT]:
+        if pressed[K_LEFT]:
             self.bus.controller[0] |= 0x02
-        elif pressed[K_RIGHT]:
+        if pressed[K_RIGHT]:
             self.bus.controller[0] |= 0x01
 
     cpdef void save_state(self, str archive_path):
