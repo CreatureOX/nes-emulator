@@ -17,6 +17,7 @@ import time
 import sys
 import json
 import ctypes
+from gui.freesimplegui.audio_output import AudioOutput
 
 from pathlib import Path
 
@@ -115,9 +116,16 @@ class EmulatorWindow(BaseView):
         pygame.font.init()
         
         self.__switch_to_english_input()
+        # Prepare audio output (will be created when a ROM is opened)
+        self._audio = None
         
     def _before_exit(self, values = None) -> None:
         self.__stop.set()
+        try:
+            if getattr(self, '_audio', None) is not None:
+                self._audio.stop()
+        except Exception:
+            pass
 
     def __open_file(self) -> bool:
         file_path = sg.popup_get_file('File to open', file_types = (("NES Files", "*.nes"),), no_window = True)
@@ -128,6 +136,13 @@ class EmulatorWindow(BaseView):
         # run .nes file
         self.__console = Console(file_path)
         self.__console.power_up()
+
+        # Initialize audio output for this run; use bus.apu if available.
+        try:
+            self._audio = AudioOutput(sample_rate=44100, chunk_size=1024, max_queue=16)
+            self._audio.play_test_tone(frequency=440.0, duration=0.4, volume=0.4)
+        except Exception:
+            self._audio = None
 
         # update emulator window title
         filename_with_extension = os.path.basename(file_path)
@@ -291,6 +306,17 @@ class EmulatorWindow(BaseView):
             # Blit the image to fill the entire screen
             self.__game_screen.blit(surf, (0, 0))
             pygame.display.flip()
+
+            # Generate and enqueue audio for this frame from the bus APU
+            try:
+                if getattr(self, '_audio', None) is not None:
+                    apu = getattr(self.__console.bus, 'apu', None)
+                    if apu is not None:
+                        samples = apu.drain_samples()
+                        if isinstance(samples, np.ndarray) and samples.dtype == np.int16 and samples.size > 0:
+                            self._audio.enqueue(samples)
+            except Exception:
+                pass
             clock.tick(60)  # Limit to 60 FPS for smooth gameplay
             frames_waited += 1
 

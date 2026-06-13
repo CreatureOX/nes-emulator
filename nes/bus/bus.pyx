@@ -1,4 +1,7 @@
+from nes.apu import APU2A03
+
 cdef class CPUBus:
+
     def __init__(self, Cartridge cartridge) -> None:
         self.ram = [0x00] * 2 * 1024
         self.controller = [0x00,0x00]
@@ -14,7 +17,7 @@ cdef class CPUBus:
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
-        # self.apu = APU2A03()
+        self.apu = APU2A03()
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -34,8 +37,7 @@ cdef class CPUBus:
             data = self.ppu.readByCPU(addr & 0x0007, readOnly)
         elif addr == 0x4015:
             # $4015: APU Status
-            # data = self.apu.readByCPU(addr)
-            pass
+            data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:
             # $4016:  I/O registers Joystick 1 data
             # $4017:  I/O registers Joystick 2 data       
@@ -63,8 +65,7 @@ cdef class CPUBus:
             # $4010–$4013: DMC
             # $4015: Status
             # $4017: Frame Counter
-            # self.apu.writeByCPU(addr, data)
-            pass
+            self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
             # $4014: Copy 256 bytes from $xx00-$xxFF into OAM via OAMDATA ($2004)
             self.dma_page = data
@@ -79,7 +80,7 @@ cdef class CPUBus:
         self.cartridge.reset()
         self.cpu.reset()
         self.ppu.reset()
-        # self.apu.reset()
+        self.apu.reset()
         self.nSystemClockCounter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
@@ -91,6 +92,7 @@ cdef class CPUBus:
         self.cartridge.reset()
         self.cpu.power_up()
         self.ppu.reset()
+        self.apu.power_up()
         self.nSystemClockCounter = 0
         self.dma_page = 0x00
         self.dma_addr = 0x00
@@ -117,7 +119,8 @@ cdef class CPUBus:
                             self.dma_transfer = False
                             self.dma_dummy = True
             else:
-                cycles = self.cpu.clock()
+                self.cpu.clock()
+            self.apu.clock(1)
         if self.ppu.nmi:
             self.ppu.nmi = False
             self.cpu.nmi()
@@ -127,7 +130,6 @@ cdef class CPUBus:
             self.cpu.irq()
 
         self.nSystemClockCounter += 1
-        # self.apu.clock(cycles)
 
     cpdef void run_frame(self):
         for _ in range(262):

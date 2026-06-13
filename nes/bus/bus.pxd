@@ -21,7 +21,7 @@ cdef class CPUBus:
 
     cdef public CPU6502 cpu 
     cdef public PPU2C02 ppu
-    # cdef public APU2A03 apu
+    cdef public object apu
     cdef Cartridge cartridge
 
     cpdef uint8_t read(self, uint16_t, bint)
