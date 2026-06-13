@@ -7,6 +7,12 @@ from nes.mapper.mirror cimport HORIZONTAL, VERTICAL, ONESCREEN_LO, ONESCREEN_HI
 
 
 cdef class MapperMMC1(Mapper):
+    """
+    MMC1 mapper (mapper 1 /SxROM).
+    
+    Serial-shift register based mapper with PRG/CHR bankswitching,
+    32KB PRG RAM support, and multiple mirroring modes.
+    """
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "001"
@@ -18,6 +24,7 @@ cdef class MapperMMC1(Mapper):
         self.mirrormode = HORIZONTAL
 
     cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+        """Map CPU read to PRG ROM or SRAM."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
         if 0x6000 <= addr <= 0x7FFF:

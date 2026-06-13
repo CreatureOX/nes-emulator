@@ -1,8 +1,15 @@
 cdef class CPUDebugger:
+    """
+    Debug utilities for CPU inspection and disassembly.
+    
+    Provides methods to view CPU registers, status flags, RAM contents,
+    and disassemble machine code.
+    """
     def __init__(self, bus: CPUBus) -> None:
         self.bus = bus
 
     cpdef dict status(self):
+        """Get CPU status flags as a dictionary."""
         return {
             "N": self.bus.cpu.registers.status.bits.N,
             "V": self.bus.cpu.registers.status.bits.V,
@@ -14,6 +21,7 @@ cdef class CPUDebugger:
         }
 
     cpdef dict registers(self):
+        """Get CPU register values as a dictionary."""
         return {
             "PC":  self.bus.cpu.registers.PC,
              "A":  self.bus.cpu.registers.A,
@@ -23,6 +31,7 @@ cdef class CPUDebugger:
         }
 
     cpdef str ram(self, uint16_t start_addr, uint16_t end_addr):
+        """Get RAM contents as hex dump string."""
         hex_code = ""
         for addr in range(start_addr, end_addr, 16):
             code_group = ["{hex:02X}".format(hex = self.bus.read(_addr, True)) for _addr in range(addr, min(addr + 16, end_addr))]
@@ -30,6 +39,7 @@ cdef class CPUDebugger:
         return hex_code
 
     cpdef dict to_asm(self, uint16_t start_addr, uint16_t end_addr):
+        """Disassemble code in address range to instruction dictionary."""
         asm = {}
 
         addr: int = start_addr

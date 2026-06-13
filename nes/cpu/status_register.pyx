@@ -14,10 +14,22 @@ cdef extern from "status_register.h":
     cdef int STATUS_NEGATIVE
 
 cdef class StatusRegister:
-    """状态寄存器的Cython包装类，使用掩码操作而不是位字段"""
+    """
+    MOS 6502 Processor Status Register.
+    
+    8-bit register with individual flag bits:
+    - C (Carry): Set after arithmetic operations
+    - Z (Zero): Set when result is zero
+    - I (Interrupt): Interrupt disable flag
+    - D (Decimal): Decimal mode (NES unused)
+    - B (Break): Break command flag
+    - U (Unused): Always set
+    - V (Overflow): Set after signed arithmetic
+    - N (Negative): Set when result is negative
+    """
     
     def __init__(self):
-        """初始化状态寄存器为0"""
+        """Initialize status register to 0x20 (U bit always set)."""
         self.c_status.value = 0
     
     cdef StatusUnion get_union(self):
@@ -41,6 +53,7 @@ cdef class StatusRegister:
     
     @property
     def C(self):
+        """Carry flag - bit 0."""
         return (self.c_status.value >> 0) & 1
     
     @C.setter  
@@ -52,6 +65,7 @@ cdef class StatusRegister:
     
     @property
     def Z(self):
+        """Zero flag - bit 1."""
         return (self.c_status.value >> 1) & 1
     
     @Z.setter
@@ -63,6 +77,7 @@ cdef class StatusRegister:
     
     @property
     def I(self):
+        """Interrupt disable flag - bit 2."""
         return (self.c_status.value >> 2) & 1
     
     @I.setter
@@ -74,6 +89,7 @@ cdef class StatusRegister:
     
     @property
     def D(self):
+        """Decimal mode flag - bit 3 (unused on NES)."""
         return (self.c_status.value >> 3) & 1
     
     @D.setter
@@ -85,6 +101,7 @@ cdef class StatusRegister:
     
     @property
     def B(self):
+        """Break command flag - bit 4."""
         return (self.c_status.value >> 4) & 1
     
     @B.setter
@@ -96,6 +113,7 @@ cdef class StatusRegister:
     
     @property
     def U(self):
+        """Unused flag (always 1) - bit 5."""
         return (self.c_status.value >> 5) & 1
     
     @U.setter
@@ -107,6 +125,7 @@ cdef class StatusRegister:
     
     @property
     def V(self):
+        """Overflow flag - bit 6."""
         return (self.c_status.value >> 6) & 1
     
     @V.setter
@@ -118,6 +137,7 @@ cdef class StatusRegister:
     
     @property
     def N(self):
+        """Negative flag - bit 7."""
         return (self.c_status.value >> 7) & 1
     
     @N.setter

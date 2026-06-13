@@ -4,11 +4,18 @@ cimport numpy as np
 
 
 cdef class PPUDebugger:
+    """
+    Debug utilities for PPU visualization.
+    
+    Provides methods to extract pattern tables and palette data for debugging
+    and visualization of NES graphics.
+    """
     def __init__(self, PPU2C02 ppu):
         self.ppu = ppu
         self._pattern_table = [np.zeros((128,128,3)).astype(np.uint8),np.zeros((128,128,3)).astype(np.uint8)]
 
     cpdef uint8_t[:,:,:] palette(self):
+        """Get the palette data as a 4x16x3 RGB array."""
         _palette = np.zeros((4, 16, 3)).astype(np.uint8)
         for x in range(4):
             for y in range(16):
@@ -16,6 +23,13 @@ cdef class PPUDebugger:
         return _palette
 
     cpdef uint8_t[:,:,:] pattern_table(self, uint8_t i, uint8_t palette):
+        """
+        Render a pattern table (128x128 pixels) using specified palette.
+        
+        Args:
+            i: Pattern table index (0 or 1)
+            palette: Palette number to use for rendering
+        """
         cdef uint8_t tileY, tileX
         cdef uint8_t tile_lsb, tile_msb
         cdef uint8_t row, col

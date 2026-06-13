@@ -6,6 +6,12 @@ cimport numpy as np
 
 @cython.auto_pickle(True)
 cdef class PPUState:
+    """
+    PPU state snapshot for save/load functionality.
+    
+    Captures the complete state of the PPU including pattern tables,
+    nametables, palette data, registers, and rendering state.
+    """
     def __init__(self, PPU2C02 ppu):
         self._pattern_table = np.array(ppu._pattern_table, dtype = np.uint8).reshape((2, 64 * 64))
         self._nametable = np.array(ppu._nametable, dtype = np.uint8)

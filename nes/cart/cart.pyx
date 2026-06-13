@@ -4,26 +4,45 @@ from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping,
 
 
 cdef class Header:
+    """Base class for cartridge ROM header."""
     def __init__(self, bytes header_bytes) -> None:
         pass
 
 cdef class Cartridge:
+    """
+    Base cartridge class handling PRG/CHR ROM and mapper functionality.
+    
+    Acts as the bridge between the system bus and the mapper, which handles
+    address translation for bankswitching and mirroring.
+    """
     def __init__(self, filename) -> None:
         pass
 
     cdef void connect_bus(self, CPUBus bus):
+        """Connect the cartridge to the system bus."""
         self.bus = bus 
 
     cdef void reset(self):
+        """Reset the mapper state."""
         if self.mapper is None:
             return
         self.mapper.reset()
 
     cdef uint8_t mapper_no(self):
+        """Return the mapper number."""
         pass
 
     @staticmethod
     def nes_version(header_bytes: bytes) -> int:
+        """
+        Detect NES ROM format version from header.
+        
+        Args:
+            header_bytes: First 16 bytes of the ROM file
+            
+        Returns:
+            2 for NES2.0 format, 1 for iNES format, 0 if not recognized
+        """
         word = header_bytes[0:3].decode("UTF-8")
         is_ines_format = word == 'NES' and header_bytes[3] == 0x1A
         is_nes2_format = is_ines_format and header_bytes[7] & 0x0C == 0x08
@@ -34,6 +53,15 @@ cdef class Cartridge:
         return 0
 
     cdef (bint, uint8_t) readByCPU(self, uint16_t addr):
+        """
+        Read a byte from CPU address space via mapper translation.
+        
+        Args:
+            addr: 16-bit CPU address
+            
+        Returns:
+            Tuple of (success, data)
+        """
         cdef CPUReadMapping mapping = self.mapper.mapReadByCPU(addr)
 
         if mapping.success:
@@ -45,6 +73,16 @@ cdef class Cartridge:
             return (False, mapping.data)   
 
     cdef bint writeByCPU(self, uint16_t addr, uint8_t data):
+        """
+        Write a byte to CPU address space via mapper translation.
+        
+        Args:
+            addr: 16-bit CPU address
+            data: 8-bit data to write
+            
+        Returns:
+            True if write was handled by mapper, False otherwise
+        """
         cdef CPUWriteMapping mapping = self.mapper.mapWriteByCPU(addr, data)
 
         if mapping.success:
@@ -57,6 +95,15 @@ cdef class Cartridge:
             return False 
 
     cdef (bint, uint8_t) readByPPU(self, uint16_t addr):
+        """
+        Read a byte from PPU address space via mapper translation.
+        
+        Args:
+            addr: 14-bit PPU address
+            
+        Returns:
+            Tuple of (success, data)
+        """
         cdef PPUReadMapping mapping = self.mapper.mapReadByPPU(addr)
         cdef uint8_t data = 0x00
 
@@ -68,6 +115,16 @@ cdef class Cartridge:
         return (mapping.success, data)
 
     cdef bint writeByPPU(self, uint16_t addr, uint8_t data):
+        """
+        Write a byte to PPU address space via mapper translation.
+        
+        Args:
+            addr: 14-bit PPU address
+            data: 8-bit data to write
+            
+        Returns:
+            True if write was handled by mapper, False otherwise
+        """
         cdef PPUWriteMapping mapping = self.mapper.mapWriteByPPU(addr)
 
         if mapping.success:

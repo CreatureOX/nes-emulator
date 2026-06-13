@@ -751,6 +751,9 @@ cdef class CPU6502:
 
     cpdef uint8_t ROR(self):
         '''
+        Instruction: Rotate Right
+        Function:    C -> [ operand ] -> C (through carry)
+        Flags Out:   N, Z, C
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
@@ -766,6 +769,8 @@ cdef class CPU6502:
 
     cpdef uint8_t RTI(self):
         '''
+        Instruction: Return from Interrupt
+        Function:    Pull status and PC from stack
         Return:      Require additional 0 clock cycle
         '''
         self.registers.status.value = self.pull()
@@ -777,6 +782,8 @@ cdef class CPU6502:
 
     cpdef uint8_t RTS(self):
         '''
+        Instruction: Return from Subroutine
+        Function:    Pull PC from stack, PC = PC + 1
         Return:      Require additional 0 clock cycle
         '''
         self.registers.PC = self.pull_2_bytes()
@@ -1016,7 +1023,10 @@ cdef class CPU6502:
         
     cdef uint8_t clock(self) except *:
         '''
-        Perform one clock cycle
+        Perform one clock cycle of CPU execution.
+        
+        If no instruction is running (remaining_cycles == 0), fetch and decode
+        the next opcode. Then decrement the cycle counter.
         '''
         cdef Op op 
         cdef uint8_t op_cycles = 0
@@ -1024,14 +1034,18 @@ cdef class CPU6502:
         cdef uint8_t additional_cycle2 = 0
 
         if self.remaining_cycles == 0:
+            # Fetch next opcode from memory
             self.opcode = self.read(self.registers.PC)
             self.registers.status.bits.U = True
             self.registers.PC = self.registers.PC + 1
+            # Look up instruction details
             op = self.lookup[self.opcode]
             self.remaining_cycles = op.cycles
             op_cycles = op.cycles
+            # Execute addressing mode and instruction
             additional_cycle1 = op.addrmode()
             additional_cycle2 = op.operate()
+            # Add any conditional cycles based on branch/page-crossing
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.registers.status.bits.U = True
         self.clock_count += 1

@@ -6,6 +6,16 @@ from nes.cart.impl.cart_nes2 import Nes2Cart
 class FileLoader:
     @staticmethod
     def load(filename: str) -> Cartridge:
+        """
+        Load a NES cartridge from a file.
+        
+        Args:
+            filename: Path to the NES ROM file (.nes)
+            
+        Returns:
+            Cartridge instance (INesCart for iNES format, Nes2Cart for NES2.0 format)
+            Returns None if the file format is not recognized
+        """
         with open(filename, 'rb') as nes_file:
             nes_version = Cartridge.nes_version(nes_file.read(16))
         if nes_version == 2:

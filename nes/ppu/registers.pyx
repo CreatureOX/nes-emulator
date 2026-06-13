@@ -1,8 +1,19 @@
+"""
+PPU register structures for status, mask, control, and VRAM addressing.
+"""
+
 cdef class Status:
+    """
+    PPU Status Register ($2002).
+    
+    Contains VBL flag, sprite zero hit, and sprite overflow information.
+    Reading this register clears the VBL flag and address latch.
+    """
     def __init__(self) -> None:
         self.reset()
 
     cdef void reset(self):
+        """Reset all status flags."""
         self.unused = 0
         self.sprite_overflow = 0
         self.sprite_zero_hit = 0
@@ -10,6 +21,7 @@ cdef class Status:
 
     @property
     def value(self):
+        """Get raw register value."""
         return (self.vertical_blank << 7) | \
             (self.sprite_zero_hit << 6) | \
             (self.sprite_overflow << 5) | \
@@ -17,6 +29,7 @@ cdef class Status:
 
     @value.setter
     def value(self, long value):
+        """Set register value and parse individual flags."""
         value &= 0xFF
         self.unused = value & 0b11111
         self.sprite_overflow = (value & 0b100000) >> 5
@@ -24,10 +37,16 @@ cdef class Status:
         self.vertical_blank = (value & 0b10000000) >> 7
 
 cdef class Mask:
+    """
+    PPU Mask Register ($2001).
+    
+    Controls rendering of backgrounds, sprites, and color enhancement.
+    """
     def __init__(self) -> None:
         self.reset()
 
     cdef void reset(self):
+        """Reset all mask flags."""
         self.greyscale = 0
         self.render_background_left = 0
         self.render_sprites_left = 0
@@ -39,6 +58,7 @@ cdef class Mask:
 
     @property
     def value(self):
+        """Get raw register value."""
         return (self.enhance_blue << 7) | \
             (self.enhance_green << 6) | \
             (self.enhance_red << 5) | \
@@ -50,6 +70,7 @@ cdef class Mask:
 
     @value.setter
     def value(self, long value):
+        """Set register value and parse individual flags."""
         value &= 0xFFFF
         self.greyscale = value & 0b1
         self.render_background_left = (value & 0b10) >> 1
@@ -61,10 +82,17 @@ cdef class Mask:
         self.enhance_blue = (value & 0b10000000) >> 7 
 
 cdef class Controller:
+    """
+    PPU Control Register ($2000).
+    
+    Controls nametable selection, PPU address increment mode,
+    sprite and background pattern selection, and NMI generation.
+    """
     def __init__(self) -> None:
         self.reset()
 
     cdef void reset(self):
+        """Reset all control flags."""
         self.nametable_x = 0
         self.nametable_y = 0
         self.increment_mode = 0
@@ -76,6 +104,7 @@ cdef class Controller:
 
     @property
     def value(self):
+        """Get raw register value."""
         return (self.enable_nmi << 7) | \
             (self.slave_mode << 6) | \
             (self.sprite_size << 5) | \
@@ -87,6 +116,7 @@ cdef class Controller:
 
     @value.setter  
     def value(self, long value):
+        """Set register value and parse individual flags."""
         value &= 0xFF
         self.nametable_x = value & 0b1
         self.nametable_y = ((value & 0b10) >> 1) & 1
@@ -98,10 +128,17 @@ cdef class Controller:
         self.enable_nmi = ((value & 0b10000000) >> 7) & 1 
 
 cdef class LoopRegister:
+    """
+    PPU VRAM address register with automatic increment and looping.
+    
+    15-bit register used for both scrolling and VRAM access.
+    Composed of: unused(1) | fine_y(3) | nt_y(1) | nt_x(1) | coarse_y(5) | coarse_x(5)
+    """
     def __init__(self) -> None:
         self.reset()
 
     cdef void reset(self):
+        """Reset all VRAM address components."""
         self.coarse_x = 0b00000
         self.coarse_y = 0b00000
         self.nametable_x = 0
@@ -111,6 +148,7 @@ cdef class LoopRegister:
 
     @property
     def value(self):
+        """Get raw 15-bit VRAM address."""
         return (self.unused << 15) | \
             (self.fine_y << 12) | \
             (self.nametable_y << 11) | \
@@ -120,6 +158,7 @@ cdef class LoopRegister:
 
     @value.setter
     def value(self, long value):
+        """Set VRAM address and parse individual components."""
         value &= 0xFFFF
         self.coarse_x = value & 0b11111
         self.coarse_y = (value >> 5) & 0b11111
@@ -129,9 +168,15 @@ cdef class LoopRegister:
         self.unused = (value >> 15) & 0b1
 
 cdef class BackgroundShiftRegister:
+    """
+    16-bit shift register for background tile rendering.
+    
+    Used to shift out background tile pattern data during rendering.
+    """
     def __init__(self) -> None:
         self.reset()
 
     cdef void reset(self):
+        """Clear shift register contents."""
         self.low_bits = 0x0000
         self.high_bits = 0x0000

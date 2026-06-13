@@ -5,6 +5,11 @@ cimport numpy as np
 
 @cython.auto_pickle(True)
 cdef class CartridgeState:
+    """
+    Cartridge state snapshot for save/load functionality.
+    
+    Captures ROM/RAM contents and mapper state for persistence.
+    """
     def __init__(self, Cartridge cartridge) -> None:
         self.PRG_ROM_bytes = cartridge.PRG_ROM_bytes
         self.PRG_RAM_bytes = cartridge.PRG_RAM_bytes
@@ -33,4 +38,3 @@ cdef class CartridgeState:
         cartridge.PRG_RAM_data = self.PRG_RAM_data
         cartridge.CHR_ROM_data = self.CHR_ROM_data
         cartridge.CHR_RAM_data = self.CHR_RAM_data
-    
