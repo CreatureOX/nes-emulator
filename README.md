@@ -1,6 +1,6 @@
 <h1 align="center">
   FanNes<br/>
-  <img src="https://i.postimg.cc/SQ1nwcTW/full-icon.png"/>
+  <img src="https://i.postimg.cc/SQ1nwcTW/full-icon.png" width="256"/>
 </h1>
 
 | Donkey Kong (World) (Rev A).nes | Legend of Zelda, The (U) (PRG1) [!].nes | Mega Man (USA).nes |
