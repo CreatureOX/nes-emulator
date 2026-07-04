@@ -1,6 +1,3 @@
-cdef extern from "cpu_state.h":
-    pass
-
 from nes.cpu.cpu_state cimport CPUState
 from nes.ppu.ppu_state cimport PPUState
 from nes.cart.cart_state cimport CartridgeState

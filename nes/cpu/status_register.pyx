@@ -1,6 +1,6 @@
 from libc.stdint cimport uint32_t
 
-cdef extern from "status_register.h":
+cdef extern from "status_register.h" nogil:
     ctypedef union StatusUnion:
         uint32_t value
     

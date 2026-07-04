@@ -2,9 +2,6 @@ from libc.stdint cimport uint8_t, uint16_t
 import numpy as np
 cimport numpy as np
 
-cdef extern from "registers.h":
-    pass
-
 from nes.cpu.registers cimport Registers
 from nes.cpu.cpu cimport CPU6502
 

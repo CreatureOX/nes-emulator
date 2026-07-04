@@ -1,8 +1,5 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
-cdef extern from "cpu.h":
-    pass
-
 from nes.cart.cart cimport Cartridge
 from nes.cpu.cpu cimport CPU6502
 from nes.ppu.ppu cimport PPU2C02
