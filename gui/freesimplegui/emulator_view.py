@@ -32,14 +32,16 @@ from nes.console import Console
 
 try:
     _pyproject = toml.load(project_dir / "pyproject.toml")
+    APP_NAME = _pyproject["project"]["name"]
     VERSION = _pyproject["project"]["version"]
     AUTHOR = _pyproject["project"]["authors"][0]["name"]
 except Exception:
+    APP_NAME = "FanNes"
     VERSION = "0.0.1"
     AUTHOR = "Unknown"
 
 class EmulatorWindow(BaseView):
-    __TITLE = "NES Emulator"
+    __TITLE = APP_NAME
 
     __MENU_LAYOUT = [
         ['File', ['Open', 'Save', 'Load', 'Reset', 'Screenshot', 'Exit']],
@@ -346,7 +348,7 @@ class EmulatorWindow(BaseView):
         self.__console.reset()
     
     def __show_about(self, values) -> None:
-        sg.popup(f'Nes Emulator\nVersion: {VERSION}\nAuthor: {AUTHOR}\n')
+        sg.popup(f'{APP_NAME}\nVersion: {VERSION}\nAuthor: {AUTHOR}\n')
     
     def __open_keymap(self, values) -> None:
         # Open keyboard settings in a separate thread to avoid blocking main window

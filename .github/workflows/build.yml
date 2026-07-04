@@ -17,6 +17,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Download icon
+        run: |
+          New-Item -ItemType Directory -Force -Path images
+          curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -60,6 +65,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Download icon
+        run: |
+          mkdir -p images
+          curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
+          
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

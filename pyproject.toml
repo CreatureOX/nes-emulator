@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fannes"
-version = "1.0.0"
+name = "FanNes"
+version = "0.0.2"
 description = "FanNes - A NES/SNES Emulator"
 authors = [
-    {name = "CreatureOX", email = "example@example.com"}
+    {name = "CreatureOX", email = "creatureox0726@gmail.com"}
 ]
 readme = "README.md"
 license = "MIT"
