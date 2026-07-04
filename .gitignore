@@ -159,6 +159,7 @@ cython_debug/
 #.idea/
 
 *.h
+!nes/**/*.h
 *.c
 *.html
 *.pyd

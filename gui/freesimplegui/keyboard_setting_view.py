@@ -1,8 +1,11 @@
 import FreeSimpleGUI as sg
 from gui.freesimplegui.base_view import BaseView
+from gui.freesimplegui.keyboard_manager import keyboard_manager
 import pygame
 import json
 import os
+import sys
+from pathlib import Path
 
 
 class KeyboardSettingWindow(BaseView):
@@ -25,7 +28,10 @@ class KeyboardSettingWindow(BaseView):
         'A': pygame.K_z,        
     }
 
-    keyboard_setting_path = "keyboard.json"
+    # Use the global keyboard manager
+    @classmethod
+    def get_keyboard_setting_path(cls):
+        return keyboard_manager.get_keyboard_setting_path()
 
     __TITLE = "KEYMAP"
 
@@ -48,7 +54,13 @@ class KeyboardSettingWindow(BaseView):
         self._window[key].update(value)
 
     def __find_text(self, name: str) -> str:
-        return [k for k, v in self.__MAPPING.items() if v == self.__keyboard[name]][0]
+        key_code = self.__keyboard[name]
+        # First search in __MAPPING
+        for display_key, code in self.__MAPPING.items():
+            if code == key_code:
+                return display_key
+        # If not found, return default value
+        return 'Z'
 
     def _layout(self) -> list:
         return [
@@ -135,15 +147,19 @@ class KeyboardSettingWindow(BaseView):
             'B': self.__MAPPING[values['-B-']],
             'A': self.__MAPPING[values['-A-']],
         }
-        with open(self.keyboard_setting_path, 'w') as keyboard:
-            json.dump(self.__keyboard, keyboard)
+        # Use global keyboard manager to save, this will trigger all registered callbacks
+        if keyboard_manager.set_keyboard(self.__keyboard):
+            sg.popup('Keyboard settings saved!', title='Success')
+        else:
+            sg.popup('Failed to save keyboard settings!', title='Error')
 
     def __load(self) -> dict:
-        if not os.path.exists(self.keyboard_setting_path):
-            with open(self.keyboard_setting_path, 'w') as keyboard:
-                json.dump(self.__DEFAULT_KEYMAP, keyboard)
-        with open(self.keyboard_setting_path, 'r') as keyboard:
-            self.__keyboard = json.load(keyboard)
+        # Use global keyboard manager to load
+        self.__keyboard = keyboard_manager.get_keyboard()
+        if not self.__keyboard:
+            # If empty, use default config and save
+            self.__keyboard = self.__DEFAULT_KEYMAP
+            keyboard_manager.set_keyboard(self.__keyboard)
 
     def _after_open(self) -> None:
         for event_key in self.KEYMAP_EVENT_KEYS:

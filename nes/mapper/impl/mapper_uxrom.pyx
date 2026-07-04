@@ -4,6 +4,12 @@ from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping,
 
 
 cdef class MapperUxROM(Mapper):
+    """
+    UxROM mapper (mapper 2).
+    
+    Simple mapper where writes to $8000-$FFFF switch the lower 16KB PRG bank.
+    The upper 16KB bank is fixed to the last bank.
+    """
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "002"
@@ -11,6 +17,7 @@ cdef class MapperUxROM(Mapper):
         self.PRG_bank_select_lo, self.PRG_bank_select_hi = 0x00, 0x00
 
     cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+        """Map CPU read to PRG ROM with selectable lower bank."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
         if 0x8000 <= addr <= 0xBFFF:
@@ -22,6 +29,7 @@ cdef class MapperUxROM(Mapper):
         return mapping
 
     cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+        """Write to switch lower PRG bank."""
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
         if 0x8000 <= addr <= 0xFFFF:
@@ -29,6 +37,7 @@ cdef class MapperUxROM(Mapper):
         return mapping
 
     cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+        """Map PPU read to CHR ROM/RAM."""
         cdef PPUReadMapping mapping = PPUReadMapping()
 
         mapping.success = addr < 0x2000
@@ -36,6 +45,7 @@ cdef class MapperUxROM(Mapper):
         return mapping
 
     cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+        """Map PPU write to CHR RAM if no CHR ROM present."""
         cdef PPUWriteMapping mapping = PPUWriteMapping()
 
         mapping.success = addr < 0x2000 and self.CHR_banks == 0
@@ -43,4 +53,5 @@ cdef class MapperUxROM(Mapper):
         return mapping
 
     cdef void reset(self):
+        """Reset banks: lower=0, upper=last bank."""
         self.PRG_bank_select_lo, self.PRG_bank_select_hi = 0, self.PRG_banks - 1

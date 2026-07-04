@@ -5,8 +5,13 @@ from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping,
 from nes.mapper.mirror cimport HORIZONTAL, VERTICAL
 
 
-# TODO
 cdef class MapperMMC3(Mapper):
+    """
+    MMC3 mapper (mapper 4 /TxROM).
+    
+    Feature-rich mapper with 6-bit PRG bank select, 8-channel CHR banking,
+    scanline-based IRQ generation, and multiple mirroring options.
+    """
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "004"
@@ -29,6 +34,7 @@ cdef class MapperMMC3(Mapper):
         self.RAM_static = np.zeros(32 * 1024).astype(np.uint8)
 
     cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+        """Map CPU read to PRG ROM or SRAM."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
         if 0x6000 <= addr <= 0x7FFF:

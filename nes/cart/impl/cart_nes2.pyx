@@ -7,12 +7,17 @@ from nes.mapper.mirror cimport *
 
 
 cdef class Nes2Cart(Cartridge):
+    """
+    NES 2.0 format cartridge loader.
+    
+    NES 2.0 is an extended iNES format supporting larger ROM sizes,
+    NES 2.0 mappers (with mapper numbers > 255), and additional hardware info.
+    """
     def __init__(self, filename) -> None:
         with open(filename, 'rb') as nes2:
             self.header = Nes2Header(nes2.read(16))
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = nes2.read(512)
-            # ROM & RAM size
             if self.header.flags_9.PRG_ROM_size_MSB == 0xF:
                 multiplier = self.header.PRG_ROM_size_LSB & 0b11
                 exponent = (self.header.PRG_ROM_size_LSB & 0xFC) >> 2
@@ -29,12 +34,11 @@ cdef class Nes2Cart(Cartridge):
                 self.CHR_ROM_bytes = 8192 * ((self.header.flags_9.CHR_ROM_size_MSB << 8) | self.header.CHR_ROM_size_LSB)
             if self.header.flags_11.CHR_RAM_size_shift_count > 0:
                 self.CHR_RAM_bytes = 64 << self.header.flags_11.CHR_RAM_size_shift_count
-            # load ROM & RAM
             self.PRG_ROM_data = np.frombuffer(nes2.read(self.PRG_ROM_bytes), dtype = np.uint8).copy()
             if self.PRG_RAM_bytes > 0:
                 self.PRG_RAM_data = np.frombuffer(nes2.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()    
                 if len(self.PRG_RAM_data) == 0:
-                    self.PRG_RAM_data = np.zeros(self.PRG_RAM_bytes, dtype = np.uint8).copy()
+                    self.PRG_RAM_data = np.zeros(self.PRG_ROM_bytes, dtype = np.uint8).copy()
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(nes2.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_ROM_data) == 0:
@@ -43,17 +47,18 @@ cdef class Nes2Cart(Cartridge):
                 self.CHR_RAM_data = np.frombuffer(nes2.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_RAM_data) == 0:
                     self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
-            # mapper & mirror
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 
 
     cdef uint8_t mapper_no(self):
+        """Extract the full 12-bit mapper number from NES 2.0 header."""
         cdef uint8_t lower_part = self.header.flags_6.mapper_no_lower_part
         cdef uint8_t middle_part = self.header.flags_7.mapper_no_middle_part
         cdef uint8_t upper_part = self.header.flags_8.mapper_no_upper_part
         return (upper_part << 8) | (middle_part << 4) | lower_part  
         
 cdef class Nes2Header(Header):
+    """NES 2.0 header structure (16 bytes)."""
     def __init__(self, bytes header_bytes) -> None:
         self.constant = header_bytes[0:4]
         self.PRG_ROM_size_LSB = header_bytes[4]
@@ -70,6 +75,7 @@ cdef class Nes2Header(Header):
         self.flags_15 = Flags15(header_bytes[15])     
 
 cdef class Flags6:
+    """Flags byte 6: Nametable arrangement and mapper lower bits."""
     def __init__(self, uint8_t value) -> None:
         self.nametable_arrangement = value & 0b1
         self.present_persistent_memory = (value & 0b10) >> 1
@@ -78,46 +84,53 @@ cdef class Flags6:
         self.mapper_no_lower_part = (value & 0xF0) >> 4
 
 cdef class Flags7:
+    """Flags byte 7: Console type and NES 2.0 identifier."""
     def __init__(self, uint8_t value) -> None:
         self.console_type = value & 0b11
         self.is_nes2 = (value & 0b1100) >> 2
         self.mapper_no_middle_part = (value & 0xF0) >> 4
 
 cdef class Flags8:
+    """Flags byte 8: Mapper upper bits and submapper."""
     def __init__(self, uint8_t value) -> None:
         self.mapper_no_upper_part = value & 0x0F
         self.submapper_no = (value & 0xF0) >> 4
 
 cdef class Flags9:
+    """Flags byte 9: PRG and CHR ROM size MSB."""
     def __init__(self, uint8_t value) -> None:
         self.PRG_ROM_size_MSB = value & 0x0F
         self.CHR_ROM_size_MSB = (value & 0xF0) >> 4
 
 cdef class Flags10:
+    """Flags byte 10: PRG RAM and NVRAM shift counts."""
     def __init__(self, uint8_t value) -> None:
         self.PRG_RAM_shift_count = value & 0x0F
         self.PRG_NVRAM_or_EEPROM_shift_count = (value & 0xF0) >> 4
 
 cdef class Flags11:
+    """Flags byte 11: CHR RAM and NVRAM shift counts."""
     def __init__(self, uint8_t value) -> None:
         self.CHR_RAM_size_shift_count = value & 0x0F
         self.CHR_NVRAM_size_shift_count = (value & 0xF0) >> 4
 
 cdef class Flags12:
+    """Flags byte 12: Timing mode (NTSC/PAL/Dendy)."""
     def __init__(self, uint8_t value) -> None:
         self.timing_mode = value & 0b11
 
 cdef class Flags13:
+    """Flags byte 13: VS System hardware information."""
     def __init__(self, uint8_t value) -> None:
         self.VS_PPU_type = 0
         self.VS_hardware_type = 0
 
-        # self.extended_console_type = 0
-
 cdef class Flags14:
+    """Flags byte 14: Miscellaneous ROM count."""
     def __init__(self, uint8_t value) -> None:
         self.misc_ROM_number = value & 0b11
 
 cdef class Flags15:
+    """Flags byte 15: Default expansion device."""
     def __init__(self, uint8_t value) -> None:
         self.default_expansion_device = value & 0x3F

@@ -3,6 +3,12 @@ cimport numpy as np
 
 
 cdef class CPUState:
+    """
+    CPU state snapshot for save/load functionality.
+    
+    Captures the complete state of the 6502 CPU including registers,
+    RAM contents, and internal execution state.
+    """
     def __init__(self, CPU6502 cpu) -> None:
         self.registers = cpu.registers
         self.ram = np.array(cpu.ram, dtype=np.uint8)
@@ -14,6 +20,7 @@ cdef class CPUState:
         self.remaining_cycles = cpu.remaining_cycles
 
     cdef void load_to(self, CPU6502 cpu):
+        """Restore CPU state from this snapshot."""
         cpu.registers = self.registers
         cpu.ram = self.ram
         cpu.fetched = self.fetched

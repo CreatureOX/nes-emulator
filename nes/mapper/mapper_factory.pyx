@@ -16,7 +16,13 @@ mappers = {
 }
 
 cdef class MapperFactory:
+    """
+    Factory for creating mapper instances by mapper number.
+    
+    Supports mappers 0, 1, 2, 3, 4, and 66.
+    """
     @staticmethod
     cdef Mapper of(int mapper_no):
+        """Create a mapper instance by number."""
         mapper_name = "{:03d}".format(mapper_no)
         return <Mapper> mappers[mapper_name]
