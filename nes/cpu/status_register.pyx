@@ -40,7 +40,7 @@ cdef class StatusRegister:
     
     @property
     def bits(self):
-        """返回自己，支持 .bits.C, .bits.Z 等访问方式"""
+        """Returns self, supports .bits.C, .bits.Z access"""
         return self
     
     @property

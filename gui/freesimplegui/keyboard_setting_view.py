@@ -55,11 +55,11 @@ class KeyboardSettingWindow(BaseView):
 
     def __find_text(self, name: str) -> str:
         key_code = self.__keyboard[name]
-        # 先在 __MAPPING 中查找
+        # First search in __MAPPING
         for display_key, code in self.__MAPPING.items():
             if code == key_code:
                 return display_key
-        # 如果没找到，返回默认值
+        # If not found, return default value
         return 'Z'
 
     def _layout(self) -> list:
@@ -147,17 +147,17 @@ class KeyboardSettingWindow(BaseView):
             'B': self.__MAPPING[values['-B-']],
             'A': self.__MAPPING[values['-A-']],
         }
-        # 使用全局键位管理器保存，这会触发所有注册的回调
+        # Use global keyboard manager to save, this will trigger all registered callbacks
         if keyboard_manager.set_keyboard(self.__keyboard):
-            sg.popup('键位设置已保存！', title='成功')
+            sg.popup('Keyboard settings saved!', title='Success')
         else:
-            sg.popup('保存键位设置失败！', title='错误')
+            sg.popup('Failed to save keyboard settings!', title='Error')
 
     def __load(self) -> dict:
-        # 使用全局键位管理器加载
+        # Use global keyboard manager to load
         self.__keyboard = keyboard_manager.get_keyboard()
         if not self.__keyboard:
-            # 如果为空，使用默认配置并保存
+            # If empty, use default config and save
             self.__keyboard = self.__DEFAULT_KEYMAP
             keyboard_manager.set_keyboard(self.__keyboard)
 

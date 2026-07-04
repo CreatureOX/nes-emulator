@@ -5,7 +5,7 @@ from threading import Lock
 
 
 class KeyboardManager:
-    """全局键位配置管理器，支持实时加载最新的键位配置"""
+    """Global keyboard config manager, supports real-time loading of latest keyboard config"""
     
     _instance = None
     _lock = Lock()
@@ -24,21 +24,21 @@ class KeyboardManager:
         self._initialized = True
         self._keyboard_config = {}
         self._config_path = None
-        self._callbacks = []  # 键位变化时的回调函数列表
+        self._callbacks = []  # Callback list for keyboard change events
         self._reload()
     
     @staticmethod
     def get_keyboard_setting_path():
-        """获取键位配置文件路径"""
+        """Get keyboard config file path"""
         current_dir = Path(__file__).resolve().parent.parent.parent
         return str(current_dir / "keyboard.json")
     
     def set_config_path(self, path):
-        """设置配置文件路径"""
+        """Set config file path"""
         self._config_path = path
     
     def _reload(self):
-        """从文件重新加载键位配置"""
+        """Reload keyboard config from file"""
         path = self._config_path or self.get_keyboard_setting_path()
         try:
             if os.path.exists(path):
@@ -48,12 +48,12 @@ class KeyboardManager:
             print(f"[ERROR] Failed to load keyboard config: {e}")
     
     def get_keyboard(self):
-        """获取当前键位配置（每次都重新读取文件以支持实时更新）"""
+        """Get current keyboard config (read file each time for real-time updates)"""
         self._reload()
         return self._keyboard_config.copy()
     
     def set_keyboard(self, keyboard_config):
-        """设置并保存键位配置"""
+        """Set and save keyboard config"""
         path = self._config_path or self.get_keyboard_setting_path()
         self._keyboard_config = keyboard_config
         
@@ -61,7 +61,7 @@ class KeyboardManager:
             with open(path, 'w') as f:
                 json.dump(keyboard_config, f)
             
-            # 触发所有注册的回调函数
+            # Trigger all registered callback functions
             for callback in self._callbacks:
                 try:
                     callback(keyboard_config)
@@ -74,15 +74,15 @@ class KeyboardManager:
             return False
     
     def register_callback(self, callback):
-        """注册键位变化时的回调函数"""
+        """Register callback function for keyboard changes"""
         if callback not in self._callbacks:
             self._callbacks.append(callback)
     
     def unregister_callback(self, callback):
-        """取消注册回调函数"""
+        """Unregister callback function"""
         if callback in self._callbacks:
             self._callbacks.remove(callback)
 
 
-# 全局实例
+# Global instance
 keyboard_manager = KeyboardManager()

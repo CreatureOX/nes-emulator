@@ -52,7 +52,7 @@ class EmulatorWindow(BaseView):
     def __init__(self):
         super().__init__(title = self.__TITLE,
                          size = self.__SIZE,
-                         return_keyboard_events = False,  # 禁用键盘事件以修复菜单功能
+                         return_keyboard_events = False,  # Disable keyboard events to fix menu function
                          resizable = self.__RESIZABLE,
                          finalize = self.__FINALIZE)
         self.__lock = Lock()
@@ -246,7 +246,7 @@ class EmulatorWindow(BaseView):
             except:
                 canvas_width, canvas_height = last_canvas_width, last_canvas_height
             
-            # 从全局键位管理器获取最新的键位配置（每帧都检查，支持实时更新）
+            # Get latest keyboard config from global keyboard manager (check every frame, supports real-time updates)
             keyboard = keyboard_manager.get_keyboard()
             
             # Get keyboard state using cross-platform method
