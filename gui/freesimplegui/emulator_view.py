@@ -1,4 +1,6 @@
 import FreeSimpleGUI as sg
+import sys
+import os
 from gui.freesimplegui.base_view import BaseView
 from gui.freesimplegui.keyboard_setting_view import KeyboardSettingWindow
 from gui.freesimplegui.keyboard_manager import keyboard_manager
@@ -40,6 +42,13 @@ except Exception:
     VERSION = "0.0.1"
     AUTHOR = "Unknown"
 
+def get_resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base_path, relative_path)
+
 class EmulatorWindow(BaseView):
     __TITLE = APP_NAME
 
@@ -62,7 +71,7 @@ class EmulatorWindow(BaseView):
                          return_keyboard_events = False,  # Disable keyboard events to fix menu function
                          resizable = self.__RESIZABLE,
                          finalize = self.__FINALIZE,
-                         icon = 'images/icon.png')
+                         icon = get_resource_path('images/icon.png'))
         
         user32 = ctypes.WinDLL('user32', use_last_error = True)
         hkl = user32.GetKeyboardLayout(0)
@@ -115,6 +124,12 @@ class EmulatorWindow(BaseView):
         user32.LoadKeyboardLayoutW("00000409", 1)
 
     def _after_open(self) -> None:
+        icon_path = get_resource_path('images/icon.png')
+        if os.path.exists(icon_path):
+            with open(icon_path, 'rb') as f:
+                icon_data = f.read()
+            self._window.set_icon(icon_data)
+        
         # bind Graph (key = "SCREEN") with pygame window
         os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
 
