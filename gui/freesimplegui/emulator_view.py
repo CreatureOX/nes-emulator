@@ -20,6 +20,7 @@ import ctypes
 from gui.freesimplegui.audio_output import AudioOutput
 
 from pathlib import Path
+import toml
 
 current_dir = Path(__file__).resolve().parent.parent
 project_dir = current_dir.parent
@@ -29,9 +30,13 @@ if project_dir not in sys.path:
 
 from nes.console import Console
 
-
-VERSION = "0.0.1"
-AUTHOR = "CreatureOX"
+try:
+    _pyproject = toml.load(project_dir / "pyproject.toml")
+    VERSION = _pyproject["project"]["version"]
+    AUTHOR = _pyproject["project"]["authors"][0]["name"]
+except Exception:
+    VERSION = "0.0.1"
+    AUTHOR = "Unknown"
 
 class EmulatorWindow(BaseView):
     __TITLE = "NES Emulator"

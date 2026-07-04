@@ -1,57 +1,178 @@
-name: Build and Package
+name: Build FanNes
 
 on:
   push:
+    branches: [main, master]
     tags:
       - 'v*'
-  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+  release:
+    types: [published]
 
 jobs:
-  build-and-package:
+  build-windows:
     runs-on: windows-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.7
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.7'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-    - name: Install MSVC Build Tools
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~\AppData\Local\pip\Cache
-          **\node_modules
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyyaml==6.0.1 altgraph==0.17.4 importlib-metadata==6.7.0 ordered-set==4.1.0 packaging==24.0 pefile==2024.8.26 pip==20.1.1 psutil==7.0.0 pywin32-ctypes==0.2.3 setuptools==68.0.0 typing-extensions==4.7.1 zipp==3.15.0
+      - name: Build Cython extensions
+        run: |
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          Get-ChildItem -Recurse -Filter "*.c" | Remove-Item -Force
+          Get-ChildItem -Recurse -Filter "*.h" | Where-Object { $_.Name -ne "status_register.h" } | Remove-Item -Force
+          python setup.py build_ext --inplace
 
-        pip install pyinstaller==5.13.2 pyinstaller-hooks-contrib==2024.7 
+      - name: Build Windows EXE
+        run: |
+          pyinstaller nes-emulator.spec --noconfirm
 
-    - name: Install Visual C++ Redistributable
-      run: choco install -y vcredist2017
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fannes-windows
+          path: dist/FanNes
+          retention-days: 5
 
-    - name: Build Cython extensions
-      run: |
-        python setup.py build_ext --inplace
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Package with PyInstaller
-      run: |
-        pyinstaller .\nes-emulator.spec
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: nes-emulator
-        path: |
-          dist/
-        retention-days: 1
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Cython extensions
+        run: |
+          rm -rf build
+          find . -name "*.c" -delete
+          find . -name "*.h" -not -name "status_register.h" -delete
+          python setup.py build_ext --inplace
+
+      - name: Build macOS App
+        run: |
+          pyinstaller nes-emulator.spec --noconfirm
+
+      - name: Create macOS icon
+        run: |
+          mkdir -p FanNes.iconset
+          for size in 16 32 64 128 256 512 1024; do
+            sips -z $size $size images/icon.png --out "FanNes.iconset/icon_${size}x${size}.png"
+          done
+          for size in 32 64 128 256 512 1024; do
+            sips -z $size $size images/icon.png --out "FanNes.iconset/icon_$((size/2))x$((size/2))@2x.png"
+          done
+          iconutil -c icns FanNes.iconset -o images/FanNes.icns
+          rm -rf FanNes.iconset
+
+      - name: Create macOS app bundle
+        run: |
+          APP_PATH="dist/FanNes.app"
+          mkdir -p "$APP_PATH/Contents/MacOS"
+          mkdir -p "$APP_PATH/Contents/Resources"
+          mv "dist/FanNes" "$APP_PATH/Contents/MacOS/FanNes"
+          cp images/FanNes.icns "$APP_PATH/Contents/Resources/"
+          cat > "$APP_PATH/Contents/Info.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>FanNes</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.fannes.emulator</string>
+              <key>CFBundleName</key>
+              <string>FanNes</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>CFBundleIconFile</key>
+              <string>FanNes.icns</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.13</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fannes-macos
+          path: dist/FanNes.app
+          retention-days: 5
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fannes-windows
+          path: release/Windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fannes-macos
+          path: release/macOS
+
+      - name: Create ZIP archives
+        run: |
+          cd release/Windows
+          powershell -Command "Compress-Archive -Path '*' -DestinationPath '../FanNes-Windows.zip'"
+          cd ../macOS
+          zip -r ../FanNes-macOS.zip .
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/FanNes-Windows.zip
+            release/FanNes-macOS.zip
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

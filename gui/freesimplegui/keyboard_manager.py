@@ -1,7 +1,15 @@
 import json
 import os
+import sys
 from pathlib import Path
 from threading import Lock
+
+
+def get_base_path():
+    """Get the base path for the application (works in both development and packaged modes)"""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent.parent
 
 
 class KeyboardManager:
@@ -24,18 +32,32 @@ class KeyboardManager:
         self._initialized = True
         self._keyboard_config = {}
         self._config_path = None
-        self._callbacks = []  # Callback list for keyboard change events
+        self._callbacks = []
         self._reload()
     
     @staticmethod
     def get_keyboard_setting_path():
         """Get keyboard config file path"""
-        current_dir = Path(__file__).resolve().parent.parent.parent
-        return str(current_dir / "keyboard.json")
+        base_path = get_base_path()
+        user_config_path = Path.home() / "nes_emulator_keyboard.json"
+        if user_config_path.exists():
+            return str(user_config_path)
+        return str(base_path / "keyboard.json")
     
     def set_config_path(self, path):
         """Set config file path"""
         self._config_path = path
+    
+    DEFAULT_KEYBOARD = {
+        'UP': 273,
+        'DOWN': 274,
+        'LEFT': 276,
+        'RIGHT': 275,
+        'SELECT': 306,
+        'START': 118,
+        'B': 306,
+        'A': 122,
+    }
     
     def _reload(self):
         """Reload keyboard config from file"""
@@ -44,12 +66,14 @@ class KeyboardManager:
             if os.path.exists(path):
                 with open(path, 'r') as f:
                     self._keyboard_config = json.load(f)
+            else:
+                self._keyboard_config = self.DEFAULT_KEYBOARD.copy()
         except Exception as e:
             print(f"[ERROR] Failed to load keyboard config: {e}")
+            self._keyboard_config = self.DEFAULT_KEYBOARD.copy()
     
     def get_keyboard(self):
-        """Get current keyboard config (read file each time for real-time updates)"""
-        self._reload()
+        """Get current keyboard config"""
         return self._keyboard_config.copy()
     
     def set_keyboard(self, keyboard_config):

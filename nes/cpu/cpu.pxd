@@ -1,5 +1,8 @@
 from libc.stdint cimport uint8_t, uint16_t
 
+cdef extern from "registers.h":
+    pass
+
 from nes.bus.bus cimport CPUBus
 from nes.cpu.registers cimport Registers, StatusMask
     

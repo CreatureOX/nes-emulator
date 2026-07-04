@@ -1,5 +1,8 @@
 from libc.stdint cimport uint8_t
 
+cdef extern from "cpu_debug.h":
+    pass
+
 from nes.bus.bus cimport CPUBus
 
 from nes.cpu.cpu_debug cimport CPUDebugger

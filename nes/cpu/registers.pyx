@@ -1,3 +1,6 @@
+cdef extern from "status_register.h":
+    pass
+
 from nes.cpu.status_register cimport StatusRegister
 
 cdef class Registers:

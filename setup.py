@@ -19,21 +19,33 @@ class Clean(Command):
         walks = os.walk(r'.')
         for dirpath, dirnames, filenames in walks:
             for filename in filenames:
-                if filename.endswith(".pyd") \
-                    or filename.endswith(".c") \
-                    or filename.endswith(".h") \
-                    or filename.endswith(".html"):
-                    os.remove(dirpath + "\\" + filename)
+                if filename.endswith(".pyd") or \
+                   filename.endswith(".c") or \
+                   filename.endswith(".h") or \
+                   filename.endswith(".html"):
+                    os.remove(os.path.join(dirpath, filename))
 
 setup(
     name="nes",
     packages=['nes'],
     package_dir={'nes': 'nes'},
-    cmdclass = {
+    cmdclass={
         "clean": Clean
     },
-    ext_modules = cythonize(glob.glob('nes/**/*.pyx', recursive = True), 
-                          compiler_directives = {'language_level' : "3"}, 
-                          annotate = True),
-    include_dirs = [np.get_include(), 'nes/cpu']
+    ext_modules=cythonize(
+        glob.glob('nes/**/*.pyx', recursive=True),
+        compiler_directives={'language_level': "3"},
+        annotate=True,
+        include_path=['nes/cpu', 'nes/bus', 'nes/ppu', 'nes/cart', 'nes/mapper', 'nes/mapper/impl', 'nes']
+    ),
+    include_dirs=[
+        np.get_include(),
+        'nes/cpu',
+        'nes/bus',
+        'nes/ppu',
+        'nes/cart',
+        'nes/mapper',
+        'nes/mapper/impl',
+        'nes',
+    ]
 )
