@@ -61,7 +61,13 @@ class EmulatorWindow(BaseView):
                          size = self.__SIZE,
                          return_keyboard_events = False,  # Disable keyboard events to fix menu function
                          resizable = self.__RESIZABLE,
-                         finalize = self.__FINALIZE)
+                         finalize = self.__FINALIZE,
+                         icon = 'images/icon.png')
+        
+        user32 = ctypes.WinDLL('user32', use_last_error = True)
+        hkl = user32.GetKeyboardLayout(0)
+        self.__original_keyboard_layout = hkl & 0xFFFFFFFF
+        
         self.__lock = Lock()
         self.__stop = Event()
 
@@ -133,6 +139,15 @@ class EmulatorWindow(BaseView):
                 self._audio.stop()
         except Exception:
             pass
+        
+        user32 = ctypes.WinDLL('user32', use_last_error = True)
+        windll = ctypes.WinDLL('user32')
+        
+        HWND_BROADCAST = 0xFFFF
+        WM_INPUTLANGCHANGEREQUEST = 0x0050
+        
+        layout_id = self.__original_keyboard_layout & 0xFFFF
+        windll.PostMessageW(HWND_BROADCAST, WM_INPUTLANGCHANGEREQUEST, 0, layout_id)
 
     def __open_file(self) -> bool:
         file_path = sg.popup_get_file('File to open', file_types = (("NES Files", "*.nes"),), no_window = True)
@@ -154,7 +169,7 @@ class EmulatorWindow(BaseView):
         # update emulator window title
         filename_with_extension = os.path.basename(file_path)
         self.filename, extension = os.path.splitext(filename_with_extension)
-        self._window.TKroot.title('NES: ' + self.filename)
+        self._window.TKroot.title(APP_NAME + ': ' + self.filename)
 
         # bind events about console
         self._events["CPU"] = CPUDebugWindow(self.__console).open
