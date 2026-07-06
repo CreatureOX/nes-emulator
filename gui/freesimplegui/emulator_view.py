@@ -1,6 +1,8 @@
 import FreeSimpleGUI as sg
 import sys
 import os
+import ctypes
+import ctypes.wintypes
 from gui.freesimplegui.base_view import BaseView
 from gui.freesimplegui.keyboard_setting_view import KeyboardSettingWindow
 from gui.freesimplegui.keyboard_manager import keyboard_manager
@@ -73,10 +75,6 @@ class EmulatorWindow(BaseView):
                          finalize = self.__FINALIZE,
                          icon = get_resource_path('images/icon.png'))
         
-        user32 = ctypes.WinDLL('user32', use_last_error = True)
-        hkl = user32.GetKeyboardLayout(0)
-        self.__original_keyboard_layout = hkl & 0xFFFFFFFF
-        
         self.__lock = Lock()
         self.__stop = Event()
 
@@ -119,10 +117,6 @@ class EmulatorWindow(BaseView):
     def __open_nes_file_hint(self, values) -> None:
         sg.popup("Please select a nes file!")
 
-    def __switch_to_english_input(self):
-        user32 = ctypes.WinDLL('user32', use_last_error = True)
-        user32.LoadKeyboardLayoutW("00000409", 1)
-
     def _after_open(self) -> None:
         icon_path = get_resource_path('images/icon.png')
         if os.path.exists(icon_path):
@@ -143,7 +137,6 @@ class EmulatorWindow(BaseView):
         # Initialize pygame font and event handling
         pygame.font.init()
         
-        self.__switch_to_english_input()
         # Prepare audio output (will be created when a ROM is opened)
         self._audio = None
         
@@ -154,15 +147,6 @@ class EmulatorWindow(BaseView):
                 self._audio.stop()
         except Exception:
             pass
-        
-        user32 = ctypes.WinDLL('user32', use_last_error = True)
-        windll = ctypes.WinDLL('user32')
-        
-        HWND_BROADCAST = 0xFFFF
-        WM_INPUTLANGCHANGEREQUEST = 0x0050
-        
-        layout_id = self.__original_keyboard_layout & 0xFFFF
-        windll.PostMessageW(HWND_BROADCAST, WM_INPUTLANGCHANGEREQUEST, 0, layout_id)
 
     def __open_file(self) -> bool:
         file_path = sg.popup_get_file('File to open', file_types = (("NES Files", "*.nes"),), no_window = True)
@@ -361,7 +345,7 @@ class EmulatorWindow(BaseView):
         success = self.__open_file()
         if not success:
             return
-        async_runnable = Thread(target = self.__run_file)
+        async_runnable = Thread(target = self.__run_file, daemon = True)
         async_runnable.start()
 
     def __capture_screenshot(self, values) -> None:
