@@ -1,4 +1,8 @@
 import FreeSimpleGUI as sg
+import sys
+import os
+import ctypes
+import ctypes.wintypes
 from gui.freesimplegui.base_view import BaseView
 from gui.freesimplegui.keyboard_setting_view import KeyboardSettingWindow
 from gui.freesimplegui.keyboard_manager import keyboard_manager
@@ -40,6 +44,13 @@ except Exception:
     VERSION = "0.0.1"
     AUTHOR = "Unknown"
 
+def get_resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base_path, relative_path)
+
 class EmulatorWindow(BaseView):
     __TITLE = APP_NAME
 
@@ -61,7 +72,9 @@ class EmulatorWindow(BaseView):
                          size = self.__SIZE,
                          return_keyboard_events = False,  # Disable keyboard events to fix menu function
                          resizable = self.__RESIZABLE,
-                         finalize = self.__FINALIZE)
+                         finalize = self.__FINALIZE,
+                         icon = get_resource_path('images/icon.png'))
+        
         self.__lock = Lock()
         self.__stop = Event()
 
@@ -104,11 +117,13 @@ class EmulatorWindow(BaseView):
     def __open_nes_file_hint(self, values) -> None:
         sg.popup("Please select a nes file!")
 
-    def __switch_to_english_input(self):
-        user32 = ctypes.WinDLL('user32', use_last_error = True)
-        user32.LoadKeyboardLayoutW("00000409", 1)
-
     def _after_open(self) -> None:
+        icon_path = get_resource_path('images/icon.png')
+        if os.path.exists(icon_path):
+            with open(icon_path, 'rb') as f:
+                icon_data = f.read()
+            self._window.set_icon(icon_data)
+        
         # bind Graph (key = "SCREEN") with pygame window
         os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
 
@@ -122,7 +137,6 @@ class EmulatorWindow(BaseView):
         # Initialize pygame font and event handling
         pygame.font.init()
         
-        self.__switch_to_english_input()
         # Prepare audio output (will be created when a ROM is opened)
         self._audio = None
         
@@ -154,7 +168,7 @@ class EmulatorWindow(BaseView):
         # update emulator window title
         filename_with_extension = os.path.basename(file_path)
         self.filename, extension = os.path.splitext(filename_with_extension)
-        self._window.TKroot.title('NES: ' + self.filename)
+        self._window.TKroot.title(APP_NAME + ': ' + self.filename)
 
         # bind events about console
         self._events["CPU"] = CPUDebugWindow(self.__console).open
@@ -331,7 +345,7 @@ class EmulatorWindow(BaseView):
         success = self.__open_file()
         if not success:
             return
-        async_runnable = Thread(target = self.__run_file)
+        async_runnable = Thread(target = self.__run_file, daemon = True)
         async_runnable.start()
 
     def __capture_screenshot(self, values) -> None:

@@ -12,6 +12,16 @@ if "%1"=="clean" (
 
 echo Building FanNes for Windows...
 
+REM Download icon if not exists
+if not exist images mkdir images
+if not exist images/icon.png (
+    curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
+    if not exist images/icon.png (
+        echo Failed to download icon!
+        exit /b 1
+    )
+)
+
 REM Install dependencies
 pip install -r requirements.txt
 pip install pyinstaller
