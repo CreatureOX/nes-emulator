@@ -59,6 +59,7 @@ cdef class PPU2C02:
         self.eval_sprite0 = False
         self.render_sprite0 = False
         self.nmi = False
+        self.nmi_line = False
         self.frame_complete = False
 
         self.bus = bus
@@ -68,6 +69,17 @@ cdef class PPU2C02:
         """Connect the cartridge for PPU bus access."""
         self.cartridge = cartridge   
 
+    cdef void _update_nmi_line(self):
+        """Recompute the /NMI line level (A1 signal-line architecture).
+
+        The PPU drives the line as a pure level: asserted while
+        (VBL flag AND NMI-enable) is true. The CPU is responsible for
+        edge-detecting this line — the PPU never calls into the CPU.
+        Every place that changes vertical_blank or enable_nmi must call this.
+        """
+        self.nmi_line = (self.PPUSTATUS.vertical_blank == 1) and \
+                        (self.PPUCTRL.enable_nmi == 1)
+
     cpdef uint8_t[:,:,:] screen(self):
         """Get the rendered frame buffer."""
         return self._screen               
@@ -75,68 +87,50 @@ cdef class PPU2C02:
     cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
         data = 0x00
 
-        if readonly:
-            if addr == 0x0000:
-                # Control
-                data = self.PPUCTRL.value
-            elif addr == 0x0001:
-                # Mask
-                data = self.PPUMASK.value
-            elif addr == 0x0002:
-                # Status
-                data = self.PPUSTATUS.value
-            elif addr == 0x0003:
-                # OAM Address
-                pass
-            elif addr == 0x0004:
-                # OAM Data
-                pass
-            elif addr == 0x0005:
-                # Scroll
-                pass
-            elif addr == 0x0006:
-                # PPU Address
-                pass
-            elif addr == 0x0007:
-                # PPU Data
-                pass
-        else:
-            if addr == 0x0000:
-                # Control
-                pass
-            elif addr == 0x0001:
-                # Mask
-                pass
-            elif addr == 0x0002:
-                # Status
-                data = (self.PPUSTATUS.value & 0xE0) | (self.ppu_data_buffer & 0x1F)
-                self.PPUSTATUS.vertical_blank = 0
-                self.address_latch = 0
-            elif addr == 0x0003:
-                # OAM Address
-                pass
-            elif addr == 0x0004:
-                # OAM Data
-                data = self.OAM[self.OAMADDR // 4][self.OAMADDR % 4]
-            elif addr == 0x0005:
-                # Scroll
-                pass
-            elif addr == 0x0006:
-                # PPU Address
-                pass
-            elif addr == 0x0007:
-                # PPU Data
-                if self.VRAM_addr.value >= 0x3F00:
-                    self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x3FFF) - 0x1000)
-                    data = self.readByPPU(self.VRAM_addr.value)
-                else:
-                    data = self.ppu_data_buffer
-                    self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)    
-                if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
-                    self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
-                else:
-                    self._incr_coarseX()
-                    self._incr_Y()
+        # NOTE: readByCPU is only ever invoked for CPU *reads* (writes go through
+        # writeByCPU). The `readonly` flag is therefore always False from callers,
+        # so the read behaviour lives here directly. Reading $2002 clears VBL
+        # (bit7) and sprite-zero (bit6); reading it on the exact dot VBL is set
+        # suppresses VBL for that frame (the classic status-read race).
+        if addr == 0x0000:
+            # Control (write-only; reads return the open-bus latch, 0 here)
+            pass
+        elif addr == 0x0001:
+            # Mask (write-only)
+            pass
+        elif addr == 0x0002:
+            # Status register READ
+            if self.scanline == 241 and self.cycle == 1:
+                self.vbl_suppress = True
+            data = (self.PPUSTATUS.value & 0xE0) | (self.ppu_data_buffer & 0x1F)
+            self.PPUSTATUS.vertical_blank = 0
+            self._update_nmi_line()
+            self.address_latch = 0
+        elif addr == 0x0003:
+            # OAM Address (write-only)
+            pass
+        elif addr == 0x0004:
+            # OAM Data (read)
+            data = self.OAM[self.OAMADDR // 4][self.OAMADDR % 4]
+        elif addr == 0x0005:
+            # Scroll (write-only)
+            pass
+        elif addr == 0x0006:
+            # PPU Address (write-only)
+            pass
+        elif addr == 0x0007:
+            # PPU Data (read)
+            if self.VRAM_addr.value >= 0x3F00:
+                self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x2FFF))
+                data = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
+            else:
+                data = self.ppu_data_buffer
+                self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
+            if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
+                self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            else:
+                self._incr_coarseX()
+                self._incr_Y()
         return data
 
     cdef void writeByCPU(self, uint16_t addr, uint8_t data):
@@ -147,6 +141,9 @@ cdef class PPU2C02:
             self.PPUCTRL.value = data
             self.temp_VRAM_addr.nametable_x = self.PPUCTRL.nametable_x
             self.temp_VRAM_addr.nametable_y = self.PPUCTRL.nametable_y
+            # enable_nmi may have changed: re-drive the /NMI line. Writing 1
+            # while VBL is already set raises the line -> CPU sees a new edge.
+            self._update_nmi_line()
         elif addr == 0x0001:
             # PPU Mask Register ($2001)
             # Controls rendering of backgrounds, sprites, and color emphasis
@@ -191,7 +188,7 @@ cdef class PPU2C02:
         elif addr == 0x0007:
             # PPU Data Register ($2007)
             # Read/write VRAM at current VRAM address
-            self.writeByPPU(self.VRAM_addr.value, data)
+            self.writeByPPU(self.VRAM_addr.value & 0x3FFF, data)
             # Increment VRAM address (1 or 32 bytes based on increment mode)
             self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
 
@@ -236,6 +233,12 @@ cdef class PPU2C02:
                     data = self._nametable[1][addr & 0x03FF]
                 elif 0x0C00 <= addr <= 0x0FFF:
                     data = self._nametable[1][addr & 0x03FF]
+            elif self.cartridge.mirror_mode == ONESCREEN_LO:
+                # Single-screen mirroring: all nametables map to nametable 0
+                data = self._nametable[0][addr & 0x03FF]
+            elif self.cartridge.mirror_mode == ONESCREEN_HI:
+                # Single-screen mirroring: all nametables map to nametable 1
+                data = self._nametable[1][addr & 0x03FF]
         elif 0x3F00 <= addr <= 0x3FFF:
             # Palette RAM access with mirroring
             addr &= 0x001F
@@ -280,6 +283,12 @@ cdef class PPU2C02:
                     self._nametable[1][addr & 0x03FF] = data
                 if 0x0C00 <= addr <= 0x0FFF:
                     self._nametable[1][addr & 0x03FF] = data
+            elif self.cartridge.mirror_mode == ONESCREEN_LO:
+                # Single-screen mirroring: all nametables map to nametable 0
+                self._nametable[0][addr & 0x03FF] = data
+            elif self.cartridge.mirror_mode == ONESCREEN_HI:
+                # Single-screen mirroring: all nametables map to nametable 1
+                self._nametable[1][addr & 0x03FF] = data
         elif 0x3F00 <= addr <= 0x3FFF:
             addr &= 0x001F
             if addr == 0x0010:
@@ -307,6 +316,10 @@ cdef class PPU2C02:
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
         self.scanline, self.cycle  = 0, 0
+        self.odd_frame = False
+        self.odd_skip_pending = False
+        self.vbl_suppress = False
+        self.overflow_dot = 0
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
@@ -485,26 +498,96 @@ cdef class PPU2C02:
         memset(self.secondary_OAM, 0xFF, 8*4*sizeof(uint8_t))
         self._reset_sprite_shift_registers()
             
-        cdef uint8_t nOAMEntry = 0
-        for nOAMEntry in range(64):
-            # Calculate Y offset of sprite relative to scanline
-            y_offset = self.scanline - <int16_t> (self.OAM[nOAMEntry][Y])
-            # Check if sprite is visible on current scanline
-            if not (0 <= y_offset < sprite_height):
-                continue
-            # Mark sprite 0 for sprite-zero-hit detection
-            if nOAMEntry == 0:
-                self.eval_sprite0 = True
-            # If already evaluated 8 sprites, set overflow flag and stop
-            if self.sprite_count >= 8:
-                self.PPUSTATUS.sprite_overflow = 1
-                break
-            # Copy sprite to secondary OAM
-            self.secondary_OAM[self.sprite_count][Y] = self.OAM[nOAMEntry][Y]
-            self.secondary_OAM[self.sprite_count][ID] = self.OAM[nOAMEntry][ID]
-            self.secondary_OAM[self.sprite_count][ATTRIBUTES] = self.OAM[nOAMEntry][ATTRIBUTES]
-            self.secondary_OAM[self.sprite_count][X] = self.OAM[nOAMEntry][X]
-            self.sprite_count += 1
+        cdef uint8_t n = 0   # sprite index into primary OAM
+        cdef uint8_t m = 0   # byte index within the sprite (see overflow bug)
+
+        while n < 64:
+            if self.sprite_count < 8:
+                # Normal evaluation: byte 0 of the entry is the Y coordinate.
+                y_offset = self.scanline - <int16_t> (self.OAM[n][Y])
+                if 0 <= y_offset < sprite_height:
+                    # Mark sprite 0 for sprite-zero-hit detection
+                    if n == 0:
+                        self.eval_sprite0 = True
+                    # Copy sprite to secondary OAM
+                    self.secondary_OAM[self.sprite_count][Y] = self.OAM[n][Y]
+                    self.secondary_OAM[self.sprite_count][ID] = self.OAM[n][ID]
+                    self.secondary_OAM[self.sprite_count][ATTRIBUTES] = self.OAM[n][ATTRIBUTES]
+                    self.secondary_OAM[self.sprite_count][X] = self.OAM[n][X]
+                    self.sprite_count += 1
+                n += 1
+            else:
+                # Secondary OAM is full -- hardware sprite-overflow bug.
+                #
+                # A real 2C02 keeps scanning primary OAM looking for a 9th
+                # sprite on this scanline, but it fails to reset the byte
+                # index between entries: every time an entry is rejected BOTH
+                # the sprite index and the byte index advance. So the byte the
+                # PPU interprets as "Y" drifts through the entry:
+                #
+                #   9th sprite  -> byte 0 (correct)
+                #   10th        -> byte 1
+                #   11th        -> byte 2
+                #   12th        -> byte 3
+                #   13th        -> byte 0 (wraps)
+                #
+                # The scan stops as soon as one of these misread values lands
+                # inside the scanline (overflow set) or all 64 entries are
+                # exhausted. blargg's 4.Obscure tests exactly this drift.
+                #
+                # NOTE: the flag itself is NOT set here -- see
+                # _eval_sprite_overflow(), which reproduces this same walk but
+                # also tracks *when* during the scanline the flag is raised.
+                y_offset = self.scanline - <int16_t> (self.OAM[n][m])
+                if 0 <= y_offset < sprite_height:
+                    break
+                n += 1
+                m = (m + 1) & 0x03
+
+    cdef void _eval_sprite_overflow(self):
+        """Work out at which dot the sprite-overflow flag is raised.
+
+        Hardware evaluates primary OAM during dots 65-256 of the scanline,
+        two dots per OAM byte (odd dot reads primary OAM, even dot writes
+        secondary OAM):
+
+          * an out-of-range entry costs 2 dots -- only its Y byte is read;
+          * an in-range entry costs 8 dots -- Y plus the three data bytes
+            that get copied into secondary OAM.
+
+        The overflow flag goes up the moment the read that finds a 9th
+        in-range entry completes, so the dot it lands on depends on how many
+        sprites preceded it. Setting the flag in one lump at dot 257 (what we
+        used to do) is always too late -- blargg's 3.Timing measures this to
+        within a CPU clock or two.
+
+        The byte-index drift after secondary OAM fills up is the same
+        hardware bug documented in _eval_sprites.
+        """
+        cdef int16_t sprite_height = 16 if self.PPUCTRL.sprite_size == 1 else 8
+        cdef int16_t y_offset
+        cdef int dot = 65
+        cdef uint8_t n = 0, m = 0, count = 0
+
+        self.overflow_dot = 0        # 0 == no overflow this scanline
+
+        while n < 64 and dot <= 256:
+            if count < 8:
+                y_offset = self.scanline - <int16_t> (self.OAM[n][Y])
+                if 0 <= y_offset < sprite_height:
+                    count += 1
+                    dot += 8         # Y read + three data bytes copied
+                else:
+                    dot += 2         # Y read only
+                n += 1
+            else:
+                y_offset = self.scanline - <int16_t> (self.OAM[n][m])
+                dot += 2
+                if 0 <= y_offset < sprite_height:
+                    self.overflow_dot = dot if dot <= 256 else 256
+                    return
+                n += 1
+                m = (m + 1) & 0x03
 
     cdef void _fetch_sprites(self):
         for i in range(0, self.sprite_count):
@@ -670,7 +753,11 @@ cdef class PPU2C02:
         cdef bint vertical_blanking_lines = 241 <= self.scanline <= 260
 
         if pre_render_scanline:
-            # Pre-render scanline (261): Clear VBL flag, reset sprite evaluation
+            # Pre-render scanline (-1): Clear VBL flag, reset sprite evaluation
+            #
+            # NOTE: the odd-frame dot skip is NOT handled here -- see the
+            # end-of-line logic further down. Hardware jumps from (339, pre-render)
+            # straight to (0, 0), so PPUMASK is sampled at dot 339, not dot 0.
             if 1 <= self.cycle <= 256:
                 self._eval_background()
             elif self.cycle == 257:                
@@ -696,15 +783,15 @@ cdef class PPU2C02:
                 self.PPUSTATUS.vertical_blank = 0
                 self.PPUSTATUS.sprite_overflow = 0
                 self.PPUSTATUS.sprite_zero_hit = 0
+                self._update_nmi_line()
                 self._reset_sprite_shift_registers()
             elif 280 <= self.cycle <= 304:
                 # Transfer Y address during vertical blanking period
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:               
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._transfer_Y_address()
+
         elif visible_scanlines:
             # Visible scanlines (0-239): Render pixels to screen
-            if self.scanline == 0 and self.cycle == 0:
-                self.cycle = 1
 
             if 1 <= self.cycle <= 256:
                 self._eval_background()
@@ -728,15 +815,28 @@ cdef class PPU2C02:
             elif self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._fetch_sprites()        
+
+            # Sprite overflow is raised part-way through the OAM scan, not in
+            # one lump at its end. Plan the scan when it starts (dot 65) and
+            # raise the flag on the dot the scan actually reaches it.
+            if self.cycle == 65:
+                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
+                    self._eval_sprite_overflow()
+                else:
+                    self.overflow_dot = 0
+            elif self.overflow_dot != 0 and self.cycle == self.overflow_dot:
+                self.PPUSTATUS.sprite_overflow = 1
+                self.overflow_dot = 0
         elif post_render_scanline:
             # Scanline 240: Post-render, idle
             pass
         elif vertical_blanking_lines:            
             # Scanlines 241-260: Vertical blanking, set VBL flag
             if self.scanline == 241 and self.cycle == 1:
-                self.PPUSTATUS.vertical_blank = 1
-                if self.PPUCTRL.enable_nmi == 1:
-                    self.nmi = True
+                if not self.vbl_suppress:
+                    self.PPUSTATUS.vertical_blank = 1
+                    self._update_nmi_line()
+                self.vbl_suppress = False
 
         # Draw pixels for visible scanlines
         cdef uint8_t background_palette = 0x00, background_pixel = 0x00
@@ -758,6 +858,34 @@ cdef class PPU2C02:
 
         self.cycle += 1
 
+        # S1/R4 + A2: odd-frame short pre-render line.
+        #
+        # With rendering enabled the pre-render line is one dot shorter on odd
+        # frames: the PPU jumps directly from (339, pre-render) to (0, 0),
+        # i.e. dot 340 is dropped. Both dots 339 and 340 only perform the two
+        # garbage nametable fetches (their result is overwritten during
+        # scanline 0 before it is ever shifted out), so dropping one has no
+        # visual effect.
+        #
+        # A2 refinement (ppu_vbl_nmi 10-even_odd_timing #2/#3): the PPUMASK
+        # sample for the decision is taken at the START of dot 339 -- it sees
+        # register writes effective through dot 338, NOT through 339.
+        # Measured against the test's own write pairs (each test enables BG
+        # twice, ~3 frames apart, so exactly one of the two writes lands on an
+        # odd frame): test 2's writes (effective dot 338) must count, and
+        # test 3's first write (effective dot 339) must NOT, or X comes out 7
+        # instead of 8. Only a start-of-dot-339 sample satisfies both. The dot
+        # actually dropped stays 340, so the decision is decoupled from the
+        # drop through odd_skip_pending.
+        if pre_render_scanline and self.cycle == 339:
+            self.odd_skip_pending = self.odd_frame and \
+                (self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1)
+        elif pre_render_scanline and self.cycle == 340 and self.odd_skip_pending:
+            # Drop dot 340 at the same tick as the original inline check, so
+            # the frame shortens identically and dot 340's body never runs.
+            self.odd_skip_pending = False
+            self.cycle = 341
+
         if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
             if self.cycle == 260 and self.scanline < 240:
                 self.cartridge.mapper.scanline()
@@ -768,3 +896,4 @@ cdef class PPU2C02:
             if self.scanline >= 261:
                 self.scanline = -1
                 self.frame_complete = True
+                self.odd_frame = not self.odd_frame

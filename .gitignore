@@ -163,3 +163,15 @@ cython_debug/
 *.c
 *.html
 *.pyd
+
+# Local test outputs and scratch artefacts
+test_artifacts/
+
+# Local-only inputs, notes and tooling -- never committed.
+# `failed/` holds third-party blargg test ROMs downloaded from
+# https://github.com/christopherpow/nes-test-roms (not redistributable).
+failed/
+doc/
+build_artifacts/
+.workbuddy/
+.qoder/

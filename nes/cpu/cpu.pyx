@@ -3,7 +3,6 @@ from nes.cpu.cpu_op cimport Op
 import numpy as np
 cimport numpy as np
 
-
 cdef class CPU6502:    
     cdef uint8_t read(self, uint16_t addr):
         addr &= 0xFFFF
@@ -114,6 +113,19 @@ cdef class CPU6502:
         self.set_addr_abs((hi << 8) | lo)
         return 0
 
+    cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr):
+        # >>> HARDWARE QUIRK: page-cross dummy read <<<
+        # On a page-crossing access (ABX/ABY/IZY) a real 6502 performs a dummy
+        # read at the (wrong) high byte combined with the new low byte BEFORE
+        # the real access. This drives hardware side effects (e.g. reading
+        # $2002 clears VBL) at the correct point -- blargg cpu_dummy_reads
+        # depends on it. Returns True when a cross occurred (so the caller adds
+        # the extra cycle).
+        if (addr & 0xFF00) != (base & 0xFF00):
+            self.read((base & 0xFF00) | (addr & 0x00FF))
+            return True
+        return False
+
     cpdef uint8_t ABX(self):
         '''
         Address Mode: Absolute with X Offset
@@ -122,10 +134,18 @@ cdef class CPU6502:
         self.registers.PC = self.registers.PC + 1
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        
-        self.set_addr_abs(<uint16_t> (hi << 8 | lo) + self.registers.X)
-                
-        return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
+
+        cdef uint16_t base = (hi << 8) | lo
+        cdef uint16_t addr = (<uint16_t> base) + self.registers.X
+        self.set_addr_abs(addr)
+        # A2 dummy read: on page cross a real 6502 performs a dummy read at
+        # the (wrong) high byte combined with the new low byte BEFORE the real
+        # access. This drives hardware side effects (e.g. reading $2002 clears
+        # VBL) at the correct point -- blargg cpu_dummy_reads depends on it.
+        if (addr & 0xFF00) != (base & 0xFF00):
+            self.read((base & 0xFF00) | (addr & 0x00FF))
+            return 1
+        return 0
 
     cpdef uint8_t ABY(self):
         '''
@@ -135,10 +155,15 @@ cdef class CPU6502:
         self.registers.PC = self.registers.PC + 1
         cdef uint8_t hi = self.read(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        
-        self.set_addr_abs(<uint16_t> (hi << 8 | lo) + self.registers.Y)
-        
-        return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
+
+        cdef uint16_t base = (hi << 8) | lo
+        cdef uint16_t addr = (<uint16_t> base) + self.registers.Y
+        self.set_addr_abs(addr)
+        # A2 dummy read: see ABX.
+        if (addr & 0xFF00) != (base & 0xFF00):
+            self.read((base & 0xFF00) | (addr & 0x00FF))
+            return 1
+        return 0
 
     cpdef uint8_t IND(self):
         '''
@@ -179,9 +204,15 @@ cdef class CPU6502:
         
         cdef uint8_t lo = self.read(t & 0x00FF)
         cdef uint8_t hi = self.read((t + 1) & 0x00FF)
-        self.set_addr_abs(((hi << 8) | lo) + self.registers.Y)
-
-        return 1 if (self.addr_abs & 0xFF00) != (hi << 8) else 0
+        cdef uint16_t base = (hi << 8) | lo
+        cdef uint16_t addr = (<uint16_t> base) + self.registers.Y
+        self.set_addr_abs(addr)
+        # A2 dummy read: on page cross the 6502 reads the (wrong) high byte
+        # with the new low byte before the real access. See ABX.
+        if (addr & 0xFF00) != (base & 0xFF00):
+            self.read((base & 0xFF00) | (addr & 0x00FF))
+            return 1
+        return 0
 
     cdef void set_temp(self, uint16_t temp):
         self.temp = temp & 0xFFFF
@@ -381,16 +412,30 @@ cdef class CPU6502:
         Function:    Program Sourced Interrupt
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.PC = self.registers.PC + 1
-    
-        self.registers.status.bits.I = True
-        self.push_2_bytes(self.registers.PC)
+        # Real 6502 BRK is 2 bytes (opcode + padding byte). By the time
+        # this operate() runs, the dispatch already advanced PC past the
+        # opcode and the IMM addressing mode advanced it past the padding
+        # byte -- so PC == BRK_addr + 2, which is exactly the return
+        # address a real 6502 pushes. Push it directly; do NOT add another
+        # +1 (that would push BRK_addr + 3 and skip an instruction on RTI).
 
-        self.registers.status.bits.B = True
-        self.push(self.registers.status.value)
-        self.registers.status.bits.B = False
-        
-        self.registers.PC = self.read(0xFFFE) | self.read(0xFFFF) << 8
+        # Push order and flag timing follow the real 6502 interrupt
+        # sequence (see nesdev "CPU interrupts"):
+        #   cycle 3/4 -- push PCH, push PCL
+        #   cycle 5   -- push P with B=1 and U=1
+        #   cycle 6   -- fetch vector low byte AND set the I flag
+        # The I flag is therefore set *after* the status byte is pushed,
+        # so the pushed byte carries the pre-BRK value of I. Setting I
+        # first would push 0x34 where hardware pushes 0x30.
+        # B is not a physically stored flag, so the live status register
+        # is never mutated for it -- the bit is only forced in the copy
+        # that goes on the stack.
+        cdef uint8_t pushed_p = <uint8_t>(self.registers.status.value | 0x10 | 0x20)
+        self.push_2_bytes(self.registers.PC)
+        self.push(pushed_p)
+
+        self.registers.status.bits.I = True
+        self.registers.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
         return 0
 
     cpdef uint8_t BVC(self):
@@ -707,9 +752,8 @@ cdef class CPU6502:
         Function:    status -> stack
         Return:      Require additional 0 clock cycle
         '''
-        self.push(self.registers.status.value | StatusMask.B | StatusMask.U)
-        self.registers.status.bits.B = False
-        self.registers.status.bits.U = False
+        # PHP always pushes with B and U forced to 1.
+        self.push(<uint8_t>(self.registers.status.value | StatusMask.B | StatusMask.U))
         return 0
 
     cpdef uint8_t PLA(self):
@@ -730,7 +774,11 @@ cdef class CPU6502:
         Function:    Status <- stack
         Return:      Require additional 0 clock cycle
         '''
+        # Real 6502 PLP loads the 6 real flags but IGNORES the B flag
+        # (bit 4 is not affected) and forces U (bit 5) to 1.
+        cdef uint8_t prev_b = self.registers.status.bits.B
         self.registers.status.value = self.pull()
+        self.registers.status.bits.B = prev_b
         self.registers.status.bits.U = True
         return 0
 
@@ -773,10 +821,13 @@ cdef class CPU6502:
         Function:    Pull status and PC from stack
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.value = self.pull()
-        self.registers.status.value &= ~StatusMask.B
-        self.registers.status.value &= ~StatusMask.U
-
+        # Real 6502 RTI loads the 6 real flags, ignores B (bit 4), and
+        # forces U (bit 5) to 1.
+        cdef uint8_t prev_b = self.registers.status.bits.B
+        cdef uint8_t pulled_p = self.pull()
+        self.registers.status.value = pulled_p
+        self.registers.status.bits.B = prev_b
+        self.registers.status.bits.U = True
         self.registers.PC = self.pull_2_bytes()
         return 0
 
@@ -980,19 +1031,73 @@ cdef class CPU6502:
         
         self.remaining_cycles = 8    
 
+        # A1: /NMI signal line state
+        self.nmi_line = False
+        self.nmi_prev_phi2_level = False
+        self.nmi_pending = False
+        # A1: /IRQ signal line state (level-triggered, no latch)
+        self.irq_line = False
+        # A2: no instruction is mid-flight after a reset
+        self.pending_execute = False
+        # S2: nothing polled yet, and the reset sequence counts as an
+        # interrupt sequence (no polling while it drains).
+        self.nmi_latch_dot = -1
+        self.irq_latch_dot = -1
+        self.in_interrupt = True
+
+    cdef void set_nmi_line(self, bint level):
+        """Drive the /NMI input line (called by the bus every system clock).
+
+        The 6502 NMI input is edge-sensitive: a low->high transition of the
+        internal signal (here modeled as False->True) latches a pending NMI,
+        which is serviced at the next instruction boundary. The PPU only
+        drives the level; it never reaches into the CPU.
+
+        S2: the edge is detected SYNCHRONOUSLY, by sampling the line level at
+        phi2 (bus dot % 3 == 2, one dot after the CPU's cycle tick) and
+        comparing against the previous phi2 sample. A pulse that rises and
+        falls entirely between two phi2 instants is never seen (6.nmi_disable:
+        disabling NMI 0-1 PPU clocks after VBL must NOT fire, 3-4 clocks
+        after MUST fire). The pending flag stays latched once set, so a
+        sustained high line produces exactly one NMI.
+        """
+        if self.bus.nSystemClockCounter % 3 == 2:
+            if level and not self.nmi_prev_phi2_level:
+                self.nmi_pending = True
+                self.nmi_latch_dot = self.bus.nSystemClockCounter
+            self.nmi_prev_phi2_level = level
+        self.nmi_line = level
+
+    cdef void set_irq_line(self, bint level):
+        """Drive the /IRQ input line (called by the bus every system clock).
+
+        Unlike NMI, the 6502 IRQ input is level-sensitive: there is no edge
+        latch. The CPU simply samples the current level at each instruction
+        boundary and services it when the I flag is clear. The asserting
+        device must hold the line until it is acknowledged through its own
+        registers (MMC3 $E000, APU $4015 read, ...); the bus never
+        force-clears it on service.
+        """
+        if level and not self.irq_line:
+            self.irq_latch_dot = self.bus.nSystemClockCounter
+        self.irq_line = level
+
     cdef void irq(self):
         '''
         Interrupt Request
         '''
         cdef uint8_t lo, hi 
 
+        cdef uint8_t pushed_p
+
         if (self.registers.status.bits.I == 0):
             self.push_2_bytes(self.registers.PC)
-            
-            self.registers.status.bits.B = False
-            self.registers.status.bits.U = True
+
+            # Hardware IRQ pushes P with B=0 and U=1; the I flag is only
+            # set afterwards (cycle 6), so the pushed byte still has I=0.
+            pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
+            self.push(pushed_p)
             self.registers.status.bits.I = True
-            self.push(self.registers.status.value)
 
             self.addr_abs = 0xFFFE
             lo = self.read(self.addr_abs + 0)
@@ -1005,21 +1110,24 @@ cdef class CPU6502:
         '''
         Non-Maskable Interrupt Request
         '''
-        cdef uint8_t lo, hi 
+        cdef uint8_t lo, hi
+        cdef uint8_t pushed_p
 
         self.push_2_bytes(self.registers.PC)
 
-        self.registers.status.bits.B = False
-        self.registers.status.bits.U = True
+        # Same as IRQ: push P with B=0, U=1 and only then set I.
+        pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
+        self.push(pushed_p)
         self.registers.status.bits.I = True
-        self.push(self.registers.status.value)
 
         self.addr_abs = 0xFFFA
         lo = self.read(self.addr_abs + 0)
         hi = self.read(self.addr_abs + 1)
         self.registers.PC = hi << 8 | lo
 
-        self.remaining_cycles = 8
+        # A real 6502 NMI sequence is 7 cycles (like IRQ); an 8 here is a
+        # one-cycle (3-dot) latency error that throws the NMI timing tests.
+        self.remaining_cycles = 7
         
     cdef uint8_t clock(self) except *:
         '''
@@ -1034,7 +1142,48 @@ cdef class CPU6502:
         cdef uint8_t additional_cycle2 = 0
 
         if self.remaining_cycles == 0:
-            # Fetch next opcode from memory
+            # Instruction boundary. A real 6502 samples its interrupt inputs at
+            # the END of the final cycle of the current instruction (phi2 of the
+            # last cycle); if an interrupt is pending there it is taken and the
+            # NMI/IRQ sequence begins on the very next cycle -- i.e. THIS
+            # boundary. We therefore poll HERE, not one cycle earlier:
+            # polling at the penultimate cycle deferred any edge that arrived
+            # during the final cycle (or that the PPU raised a dot later) to
+            # the NEXT instruction, which is exactly the "1 instruction too
+            # late" that breaks 7.nmi_timing's align1 subtest.
+            #
+            # NMI is edge-triggered: self.nmi_pending is latched by the rising
+            # edge in set_nmi_line() and cleared when the NMI is taken, so a
+            # single edge produces exactly one NMI. IRQ is level-triggered: we
+            # read the live line and gate on the I flag.
+            #
+            # S2: a 6502 samples its interrupt inputs at phi2 of the
+            # SECOND-TO-LAST cycle of the current instruction (the last cycle
+            # is reserved for the final bus operation and cannot be
+            # preempted). Each CPU cycle spans three PPU dots and phi2 is the
+            # middle dot, i.e. one dot AFTER the cycle's tick dot; with the
+            # boundary at bus dot D, the sample lands at D-5. An edge that
+            # arrives after that sample (latch dot >= D-4, i.e. anywhere in
+            # the second-to-last cycle's tail or the last cycle) is deferred
+            # to the next instruction's end. Without this, an NMI whose edge
+            # lands in those dots fires a full instruction early
+            # (7.nmi_timing's align subtests).
+            if not self.in_interrupt and self.nmi_pending and self.nmi_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
+                self.nmi_pending = False
+                self.in_interrupt = True
+                self.nmi()
+                self.clock_count += 1
+                self.remaining_cycles -= 1
+                return 0
+            if not self.in_interrupt and self.irq_line and self.registers.status.bits.I == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
+                self.in_interrupt = True
+                self.irq()
+                self.clock_count += 1
+                self.remaining_cycles -= 1
+                return 0
+            # No interrupt: fetch the next opcode. This is cycle 1 of the
+            # instruction, which really does happen first on hardware.
+            self.in_interrupt = False
             self.opcode = self.read(self.registers.PC)
             self.registers.status.bits.U = True
             self.registers.PC = self.registers.PC + 1
@@ -1042,14 +1191,29 @@ cdef class CPU6502:
             op = self.lookup[self.opcode]
             self.remaining_cycles = op.cycles
             op_cycles = op.cycles
-            # Execute addressing mode and instruction
+            # A2: do NOT execute the instruction yet. On a real 6502 the data
+            # access of an instruction happens on its LAST cycle (e.g. the
+            # $2002 read of a 4-cycle `LDA abs` lands on cycle 4). Executing
+            # everything up-front made every PPU-register access up to
+            # 3*(N-1) dots early, which is fatal for the VBL/NMI timing tests.
+            # Latch the work and perform it when the last cycle arrives.
+            self.pending_execute = True
+
+        if self.pending_execute and self.remaining_cycles == 1:
+            # Last cycle of the instruction: run addressing mode + operation
+            # so that all bus traffic lands at the correct dot.
+            self.pending_execute = False
+            op = self.lookup[self.opcode]
+            op_cycles = op.cycles
             additional_cycle1 = op.addrmode()
             additional_cycle2 = op.operate()
             # Add any conditional cycles based on branch/page-crossing
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
             self.registers.status.bits.U = True
+
         self.clock_count += 1
         self.remaining_cycles -= 1
+
         return op_cycles + additional_cycle1 + additional_cycle2
 
     cpdef bint complete(self):
