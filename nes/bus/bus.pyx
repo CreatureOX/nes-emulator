@@ -23,6 +23,8 @@ cdef class CPUBus:
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
         self.apu = APU2A03()
+        # Let the DMC channel DMA-fetch samples from CPU memory.
+        self.apu.bus_ref = self
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
@@ -115,7 +117,7 @@ cdef class CPUBus:
         self.dma_addr = 0x00
         self.dma_data = 0x00
         self.dma_dummy = True
-        self.dma_transfer = False    
+        self.dma_transfer = False
 
     cpdef void clock(self):
         """
@@ -126,20 +128,38 @@ cdef class CPUBus:
         NMI is generated at start of VBLANK when enabled.
         """
         cdef uint8_t cycles = 0
+        cdef unsigned long long cpu_cycle = 0
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
-        if self.nSystemClockCounter % 3 == 0:
+        # A1: propagate the /NMI and /IRQ line levels from the devices to the
+        # CPU every tick. The CPU edge-detects NMI and level-samples IRQ; both
+        # are serviced only at instruction boundaries, never injected
+        # mid-instruction. The mapper holds its /IRQ line asserted until the
+        # game acknowledges it (MMC3 $E000) -- the bus no longer force-clears
+        # it on service, matching real hardware level-triggered behaviour.
+        # (When APU frame/DMC IRQ lands, OR its level in here.)
+        self.cpu.set_nmi_line(self.ppu.nmi_line)
+        self.cpu.set_irq_line(self.cartridge.mapper.IRQ_state())
+        # S3 (phase calibration): a CPU cycle spans three PPU dots. The 6502
+        # samples its interrupt inputs at phi2, i.e. the MIDDLE dot of the
+        # three (dots 1,4,7,...), not the first. Clocking the CPU on
+        # `counter % 3 == 0` observed the bus one dot too early, which pushed
+        # NMI recognition a full CPU cycle off for 7.nmi_timing's align1
+        # subtests. Sampling on `% 3 == 1` puts the observation point at the
+        # middle dot, matching hardware.
+        if self.nSystemClockCounter % 3 == 1:
             # This is a CPU cycle
+            cpu_cycle = <unsigned long long>(self.nSystemClockCounter // 3)
             if self.dma_transfer:
                 # OAM DMA transfer: takes 512 cycles (2 per byte transferred)
                 if self.dma_dummy:
                     # Odd cycle of dummy read - wait
-                    if self.nSystemClockCounter % 2 == 1:
+                    if cpu_cycle % 2 == 1:
                         self.dma_dummy = False
                 else:
                     # Even cycle: read byte from PRG ROM
-                    if self.nSystemClockCounter % 2 == 0:
+                    if cpu_cycle % 2 == 0:
                         self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
                         # Odd cycle: write byte to PPU OAM ($2004)
@@ -154,20 +174,16 @@ cdef class CPUBus:
                 self.cpu.clock()
             # Clock APU (1 CPU cycle)
             self.apu.clock(1)
-        # Check for VBLANK NMI from PPU
-        if self.ppu.nmi:
-            self.ppu.nmi = False
-            self.cpu.nmi()
-
-        # Check for cartridge mapper IRQ
-        if self.cartridge.mapper.IRQ_state():
-            self.cartridge.mapper.IRQ_clear()
-            self.cpu.irq()
 
         self.nSystemClockCounter += 1
 
     cpdef void run_frame(self):
-        """Execute a complete video frame (262 scanlines, 341 cycles each)."""
-        for _ in range(262):
-            for self.ppu.cycle in range(341):               
-                self.clock()
+        """Execute a complete video frame.
+
+        The PPU fully owns its cycle/scanline bookkeeping (including the
+        odd-frame idle-dot skip). The bus merely clocks the system until the
+        PPU reports the frame is complete — it must never write ppu.cycle.
+        """
+        self.ppu.frame_complete = False
+        while not self.ppu.frame_complete:
+            self.clock()

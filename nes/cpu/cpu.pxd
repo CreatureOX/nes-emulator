@@ -110,6 +110,43 @@ cdef class CPU6502:
     cdef void irq(self)
     cdef void nmi(self)
 
+    # A1: /NMI signal line (level driven by PPU, edge detected by CPU)
+    cdef bint nmi_line
+    # /NMI line level as of the last phi2 sample; the edge detector compares
+    # the current phi2 sample against this to detect a low->high transition.
+    cdef bint nmi_prev_phi2_level
+    cdef bint nmi_pending
+    cdef void set_nmi_line(self, bint level)
+
+    # A1: /IRQ signal line (level driven by mapper/APU, sampled by CPU at
+    # instruction boundaries and masked by the I flag; no edge latch)
+    cdef bint irq_line
+    cdef void set_irq_line(self, bint level)
+
+    # HARDWARE QUIRK method: page-cross dummy read (see doc/13-quirk-method-extraction.md)
+    cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr)
+
+    # A2: instruction execution is deferred to the LAST cycle of the
+    # instruction's cycle budget, so that bus accesses (PPU registers in
+    # particular) land at the right dot instead of up to N-1 CPU cycles early.
+    cdef bint pending_execute
+
+    # S2: bus dot (nSystemClockCounter) at the moment the /NMI edge latched or
+    # the /IRQ line went high. A 6502 samples its interrupt inputs at phi2 of
+    # the SECOND-TO-LAST cycle of the instruction in progress (the last cycle
+    # is reserved for the instruction's final bus operation and cannot be
+    # preempted). Each CPU cycle spans three PPU dots; phi2 is the middle dot,
+    # one dot after the cycle's tick dot. So with the boundary at bus dot D
+    # the sample lands at D-5, and an edge that arrives after it (latch dot
+    # >= D-4) is deferred to the NEXT instruction's end. The CPU services a
+    # pending interrupt at its boundary iff latch_dot <= D-5.
+    cdef long long nmi_latch_dot
+    cdef long long irq_latch_dot
+    # True while the 7/8-cycle interrupt sequence itself is running. Hardware
+    # does not poll during that sequence, which guarantees at least one handler
+    # instruction executes before another interrupt can be taken.
+    cdef bint in_interrupt
+
     cdef int clock_count
     
     cdef uint8_t clock(self) except *

@@ -50,8 +50,16 @@ cdef class PPU2C02:
     cdef Cartridge cartridge
 
     cdef public bint nmi
+    cdef public bint nmi_line
 
     cdef public bint frame_complete
+    cdef bint odd_frame
+    # Odd-frame skip: the PPUMASK sample for the decision is taken at the
+    # START of pre-render dot 339 (visible writes through dot 338); the dot
+    # actually dropped is still 340, one dot later -- hence the pending flag.
+    cdef bint odd_skip_pending
+    cdef bint vbl_suppress
+    cdef int overflow_dot
 
     cdef CPUBus bus
 
@@ -75,6 +83,7 @@ cdef class PPU2C02:
     cdef void _transfer_Y_address(self)
     cdef void _load_background_shifters(self)
     cdef void _reset_sprite_shift_registers(self)
+    cdef void _update_nmi_line(self)
 
     cdef void _update_background_shifters(self)
     cdef void _update_sprite_shifters(self)
@@ -86,6 +95,7 @@ cdef class PPU2C02:
     cdef uint8_t _fetch_background_attribute(self)
 
     cdef void _eval_sprites(self)
+    cdef void _eval_sprite_overflow(self)
     cdef void _fetch_sprites(self)
     cdef void _fetch_sprite(self, int)
     

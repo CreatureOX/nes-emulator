@@ -3,12 +3,12 @@
 
 #include <stdint.h>
 
-/* StatusUnion - 使用uint32_t而不是位字段，避免MSVC编译问题 */
+/* StatusUnion - uses uint32_t instead of a bitfield to avoid MSVC issues */
 typedef union {
     uint32_t value;
 } StatusUnion;
 
-/* 标志位掩码 */
+/* Status flag masks */
 #define STATUS_CARRY    0x01  /* C */
 #define STATUS_ZERO     0x02  /* Z */
 #define STATUS_INTERRUPT 0x04 /* I */
