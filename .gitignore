@@ -175,3 +175,10 @@ doc/
 build_artifacts/
 .workbuddy/
 .qoder/
+
+# Build backups (.c/.pyd/.html renamed by the safe-delete hook) and the
+# ad-hoc _* diagnostic scripts produced during debugging -- never committed.
+*.oldA
+*.oldB
+_*
+screenshots/
