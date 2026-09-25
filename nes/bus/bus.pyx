@@ -1,4 +1,4 @@
-from nes.apu import APU2A03
+from nes.apu.apu import APU2A03
 
 cdef class CPUBus:
     """

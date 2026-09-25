@@ -15,7 +15,7 @@ import os
 import sys
 
 sys.path.insert(0, os.getcwd())
-from nes.apu import APU2A03  # noqa: E402
+from nes.apu.apu import APU2A03  # noqa: E402
 
 
 def new_apu():
