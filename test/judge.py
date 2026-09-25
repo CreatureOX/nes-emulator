@@ -1,6 +1,6 @@
 """
-Reliable blargg result judge — reads PPU nametable text via the $2007 port
-and prints a PASS/FAIL/#N verdict for each ROM, so we don't depend on
+Reliable blargg result judge -- reads the PPU nametable text via the $2007
+port and prints a PASS/FAIL/#N verdict for each ROM, so we don't depend on
 screenshot OCR.
 
 IMPORTANT: runs through console.run() (== bus.run_frame() == the SAME path
@@ -11,25 +11,54 @@ Blargg renders text with a font whose tile index equals the ASCII code, so
 the nametable bytes ARE the screen text. We try two decodings (raw and +0x20)
 and pick whichever yields recognizable result keywords.
 
-Runs the ROMs in parallel across processes -- serially the full sweep takes
-~10 minutes, which is far too slow to sit through after every rebuild.
+ROMs are described by test/regression.toml (id -> path/frames/detector).
+The `path` is canonical inside the nes-test-roms submodule; if that file is
+absent we fall back to a local failed/<basename>.nes copy so the suite still
+runs before the submodule is initialised.
 
 Usage (from repo root):
-    python test/judge.py            # judge all ROMs
-    python test/judge.py <name>     # single ROM
-    python test/judge.py <name> <N> # single ROM, N frames
-    python test/judge.py all <N>    # all ROMs, N frames
+    python test/judge.py            # judge every active ROM in regression.toml
+    python test/judge.py <id>       # single ROM (looked up in regression.toml)
+    python test/judge.py <id> <N>   # single ROM, N frames
+    python test/judge.py all <N>    # every active ROM, N frames
 """
 import os
 import sys
-import glob
+import re
 import multiprocessing as mp
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - python < 3.11
+    tomllib = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 FRAMES = 1200
-PER_ROM = {"official_only": 5400}
+SETTINGS = {"frames": FRAMES, "detector": "blargg"}
+
+
+def _default_settings():
+    return {"frames": FRAMES, "detector": "blargg"}
+
+
+def load_regression():
+    """Load test/regression.toml.
+
+    Returns (settings dict, list of test entries). Missing file or missing
+    tomllib degrades gracefully to an empty suite so the legacy
+    `failed/<id>.nes` path still works.
+    """
+    if tomllib is None:
+        return _default_settings(), []
+    path = os.path.join(ROOT, "test", "regression.toml")
+    if not os.path.exists(path):
+        return _default_settings(), []
+    with open(path, "rb") as f:
+        cfg = tomllib.load(f)
+    settings = dict(_default_settings(), **cfg.get("settings", {}))
+    return settings, cfg.get("tests", [])
 
 
 def decode(rows_bytes):
@@ -53,17 +82,40 @@ def read_nametable(bus):
     return [bus.read(0x2007, False) for _ in range(960)]
 
 
-def judge_one(args):
-    """Run one ROM and return (tag, verdict, detail, status).
+def resolve_rom(entry):
+    """Return an existing ROM path for an entry, or None.
 
-    Takes a single tuple so it can be handed straight to Pool.imap_unordered.
+    Prefers the configured `path` (canonical = inside the nes-test-roms
+    submodule); falls back to a local `failed/<basename>.nes` copy so the
+    suite still runs before the submodule is initialised.
     """
-    tag, frames = args
+    rel = entry.get("path", "")
+    if rel:
+        cand = os.path.join(ROOT, rel)
+        if os.path.exists(cand):
+            return cand
+    base = os.path.basename(entry.get("path", entry["id"] + ".nes"))
+    fb = os.path.join(ROOT, "failed", base)
+    if os.path.exists(fb):
+        return fb
+    return None
+
+
+def run_one(entry):
+    """Run a single ROM entry and return a result dict.
+
+    entry keys: id, path, frames (optional), detector (optional).
+    Returns {id, verdict, detail, status, path}.
+    """
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-    sys.path.insert(0, ROOT)
+    frames = int(entry.get("frames") or SETTINGS.get("frames", FRAMES))
+    detector = entry.get("detector") or SETTINGS.get("detector", "blargg")
+    rom = resolve_rom(entry)
+    if rom is None:
+        return {"id": entry["id"], "verdict": "MISSING",
+                "detail": " ROM not found", "status": "--", "path": None}
     try:
         from nes.console import Console
-        rom = os.path.join(ROOT, "failed", f"{tag}.nes")
         console = Console(rom)
         console.power_up()
         for f in range(frames):
@@ -73,64 +125,100 @@ def judge_one(args):
 
         nt = read_nametable(console.bus)
         raw, off = decode(nt)
-        # Merge both decodings into lines and look for result keywords.
         verdict = "RUNNING/blank"
         detail = ""
-        blob = raw + "\n" + off
-        low = blob.lower()
-        if "pass" in low and "fail" not in low:
-            verdict = "PASS"
-        elif "fail" in low:
-            verdict = "FAIL"
-            # try to extract the failure number
-            import re
-            m = re.search(r"fail(?:ed)?[^0-9]*#?\s*(\d+)", low)
-            if m:
-                detail = f" #N={m.group(1)}"
-            else:
-                # capture a snippet around 'fail'
-                idx = low.find("fail")
-                snippet = blob[max(0, idx - 20): idx + 30].replace("\n", " ")
-                detail = f" ({snippet.strip()})"
+        if detector == "blargg":
+            blob = raw + "\n" + off
+            low = blob.lower()
+            if "pass" in low and "fail" not in low:
+                verdict = "PASS"
+            elif "fail" in low:
+                verdict = "FAIL"
+                m = re.search(r"fail(?:ed)?[^0-9]*#?\s*(\d+)", low)
+                if m:
+                    detail = f" #N={m.group(1)}"
+                else:
+                    idx = low.find("fail")
+                    snippet = blob[max(0, idx - 20): idx + 30].replace("\n", " ")
+                    detail = f" ({snippet.strip()})"
         status = console.bus.read(0x6000, True)
-        return (tag, verdict, detail, f"0x{status:02X}")
+        return {"id": entry["id"], "verdict": verdict, "detail": detail,
+                "status": f"0x{status:02X}", "path": rom}
     except Exception as e:
-        return (tag, "ERROR", f" {e!r}", "--")
+        return {"id": entry["id"], "verdict": "ERROR", "detail": f" {e!r}",
+                "status": "--", "path": rom}
+
+
+def normalize(entry):
+    """Fill in default frames/detector so run_one has everything it needs."""
+    e = dict(entry)
+    e["frames"] = int(entry.get("frames") or SETTINGS.get("frames", FRAMES))
+    e["detector"] = entry.get("detector") or SETTINGS.get("detector", "blargg")
+    return e
+
+
+def judge_one(args):
+    """Pool-compatible wrapper: args = (entry_dict,)."""
+    entry, = args
+    return run_one(entry)
+
+
+def _find_entry(tests, tag):
+    for t in tests:
+        if t.get("id") == tag:
+            return t
+    return None
 
 
 def main(argv):
-    rom_dir = os.path.join(ROOT, "failed")
-    roms = sorted(glob.glob(os.path.join(rom_dir, "*.nes")))
-    names = [os.path.basename(r)[:-4] for r in roms]
+    global SETTINGS
+    SETTINGS, tests = load_regression()
+    active = [t for t in tests if t.get("expected") != "skip"]
 
     custom = None
+    single = None
     if len(argv) > 1 and argv[1] != "all":
-        names = [argv[1]]
-        custom = int(argv[2]) if len(argv) > 2 else None
-    elif len(argv) > 2:
-        custom = int(argv[2])
+        single = argv[1]
+        entry = _find_entry(tests, single)
+        if entry is None:
+            # legacy: build a synthetic entry from failed/<tag>.nes
+            entry = {"id": single, "path": os.path.join("failed", f"{single}.nes"),
+                     "expected": "skip"}
+        jobs = [normalize(entry)]
+        if len(argv) > 2:
+            custom = int(argv[2])
+            jobs[0]["frames"] = custom
+    else:
+        if len(argv) > 1 and argv[1] == "all" and len(argv) > 2:
+            custom = int(argv[2])
+        jobs = [normalize(t) for t in active]
+        if custom is not None:
+            for j in jobs:
+                j["frames"] = custom
 
-    jobs = [(tag, custom or PER_ROM.get(tag, FRAMES)) for tag in names]
+    if not jobs:
+        print("No active ROMs configured in test/regression.toml.")
+        return
+
     print(f"=== judge {len(jobs)} ROM(s) ===\n", flush=True)
 
     if len(jobs) == 1:
-        results = [judge_one(jobs[0])]
+        results = [run_one(jobs[0])]
     else:
-        # The heavy ROMs dominate the wall clock, so start them first.
-        jobs.sort(key=lambda j: -j[1])
+        jobs.sort(key=lambda j: -j["frames"])
         workers = min(len(jobs), mp.cpu_count())
         with mp.Pool(workers) as pool:
             results = []
-            for r in pool.imap_unordered(judge_one, jobs):
-                print(f"  {r[0]:28s}  {r[1]}{r[2]:14s}  $6000={r[3]}", flush=True)
+            for r in pool.imap_unordered(judge_one, [(j,) for j in jobs]):
+                print(f"  {r['id']:28s}  {r['verdict']}{r['detail']:14s}  $6000={r['status']}", flush=True)
                 results.append(r)
-        results.sort(key=lambda r: r[0])
-        n_pass = sum(1 for r in results if r[1] == "PASS")
+        results.sort(key=lambda r: r["id"])
+        n_pass = sum(1 for r in results if r["verdict"] == "PASS")
         print(f"\n=== {n_pass} PASS / {len(results) - n_pass} not-pass ===")
         return
 
     for r in results:
-        print(f"  {r[0]:28s}  {r[1]}{r[2]:14s}  $6000={r[3]}")
+        print(f"  {r['id']:28s}  {r['verdict']}{r['detail']:14s}  $6000={r['status']}")
     print("\n=== done ===")
 
 

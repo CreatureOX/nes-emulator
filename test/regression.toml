@@ -1,0 +1,51 @@
+# NES emulator regression suite configuration.
+#
+# Consumed by test/run_regression.py (gated runner) and test/judge.py (manual
+# single-ROM judge). Generated/extended by test/gen_config.py from the
+# nes-test-roms submodule's status.txt.
+#
+# [settings]
+#   frames   : default frame count when a test omits it
+#   detector : default detector -- "blargg" reads the nametable PASS/FAIL text
+#
+# [[tests]]
+#   id       : stable key, also accepted by `python test/judge.py <id>`
+#   path     : ROM location relative to repo root (canonical = inside the
+#              nes-test-roms submodule; falls back to failed/<basename>.nes)
+#   frames   : optional override of the default frame count
+#   expected : "pass" | "fail" | "skip"
+#              pass/fail gate CI; skip means "not yet validated by this build"
+#   detector : "blargg" | "none"
+#   reference: result reported by reference emulators in status.txt (informational)
+#   note     : optional free text
+
+[settings]
+frames = 1200
+detector = "blargg"
+
+# --- Verified passing (regression baseline) -------------------------------
+[[tests]]
+id = "apu_test"
+path = "nes-test-roms/apu_test/apu_test.nes"
+expected = "pass"
+reference = "PASS"
+
+[[tests]]
+id = "03-dummy_reads"
+path = "nes-test-roms/instr_misc/rom_singles/03-dummy_reads.nes"
+expected = "pass"
+reference = "PASS"
+
+[[tests]]
+id = "04-dummy_reads_apu"
+path = "nes-test-roms/instr_misc/rom_singles/04-dummy_reads_apu.nes"
+expected = "pass"
+reference = "PASS"
+
+# --- Known failing (tracked, not yet fixed) -------------------------------
+[[tests]]
+id = "10-even_odd_timing"
+path = "nes-test-roms/ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes"
+expected = "fail"
+reference = "FAIL"
+note = "Known failing (#3). Emulator drops the wrong cycle on odd frames."
