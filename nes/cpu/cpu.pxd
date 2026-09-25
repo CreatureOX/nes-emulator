@@ -33,6 +33,8 @@ cdef class CPU6502:
     cpdef uint8_t REL(self)
     cpdef uint8_t ABS(self)
     cpdef uint8_t ABX(self)
+    cpdef uint8_t ABX_RMW(self)
+    cpdef uint16_t get_pc(self)
     cpdef uint8_t ABY(self)
     cpdef uint8_t IND(self)
     cpdef uint8_t IZX(self)
@@ -102,6 +104,7 @@ cdef class CPU6502:
     cpdef uint8_t TXS(self)
     cpdef uint8_t TYA(self)
     cpdef uint8_t XXX(self)
+    cpdef uint8_t UNOFF(self)
     
     cdef list lookup
     

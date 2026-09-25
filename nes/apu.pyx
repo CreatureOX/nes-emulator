@@ -214,7 +214,9 @@ cdef class APU2A03:
             if self.dmc_irq_flag:
                 status |= 0x80
             # Bit 6: frame interrupt flag (read acknowledges it, but NOT the
-            # DMC flag).
+            # DMC flag). NOTE: blargg's apu_test (3-irq_flag / 4-jitter) and
+            # dummy_reads_apu both expect the frame interrupt here at bit 6,
+            # so this placement is intentional and must not be moved to bit 5.
             if self.frame_irq_flag:
                 status |= 0x40
             self.frame_irq_flag = 0
@@ -322,7 +324,11 @@ cdef class APU2A03:
                 else:
                     self.channel_enabled[channel] = 0
                     self.length_counter[channel] = 0
-            # Writing $4015 clears the DMC interrupt flag.
+            # Writing $4015 clears the DMC interrupt flag (bit 7) only. The
+            # frame-interrupt flag (bit 6) is NOT cleared by a write -- only by
+            # reading $4015. blargg 04-dummy_reads_apu clears it through the
+            # page-cross *dummy read* that lands on $4015 (a read), not a write,
+            # so this matches real hardware and keeps apu_test's red line intact.
             self.dmc_irq_flag = 0
             if data & 0x10:
                 self.arm_dmc_sample()
