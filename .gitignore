@@ -178,6 +178,8 @@ doc/
 .qoder/
 
 # Build backups (.c/.pyd/.html renamed by the safe-delete hook) and the
-# ad-hoc _* diagnostic scripts produced during debugging -- never committed.
+# ad-hoc _* diagnostic scripts / scratch files produced during debugging --
+# never committed.
+_*
 screenshots/
 saves/
