@@ -74,11 +74,11 @@ def _run_one(entry):
     """
     r = rom_runner.run_one(entry)
     retry = entry.get("retry_frames")
-    if retry and r["verdict"] != "PASS" and int(entry.get("frames", 0)) < retry:
+    if retry and r["verdict"] != "PASSED" and int(entry.get("frames", 0)) < retry:
         again = dict(entry)
         again["frames"] = retry
         r2 = rom_runner.run_one(again)
-        if r2["verdict"] == "PASS":
+        if r2["verdict"] == "PASSED":
             return r2
     return r
 
@@ -89,7 +89,7 @@ def _print_progress(done, total, rid, verdict, pass_n, fail_n):
     and a carriage-return progress bar renders poorly in the web UI).
     """
     print(f"[{done:>3}/{total}] {rid:42s} {verdict:9s} "
-          f"PASS={pass_n} FAIL={fail_n}", flush=True)
+          f"PASSED={pass_n} FAIL={fail_n}", flush=True)
 
 
 def _parallel(total, jobs):
@@ -124,14 +124,14 @@ def _parallel(total, jobs):
     with mp.Pool(workers) as pool:
         for r in pool.imap_unordered(_run_one, jobs):
             done += 1
-            if r["verdict"] == "PASS":
+            if r["verdict"] == "PASSED":
                 pass_n += 1
             else:
                 fail_n += 1
             _print_progress(done, total, r["id"], r["verdict"], pass_n, fail_n)
             results.append(r)
     results.sort(key=lambda r: r["id"])
-    print(f"Done: {done}/{total}  PASS={pass_n} FAIL={fail_n}", flush=True)
+    print(f"Done: {done}/{total}  PASSED={pass_n} FAIL={fail_n}", flush=True)
     return results
 
 
@@ -193,10 +193,10 @@ def format_rows(rows, with_path=False):
 def _classify(label, verdict):
     """Bucket a result row for the Markdown report.
 
-    PASS -> pass ; TIMEOUT -> timeout ; a gated expectation that diverged ->
+    PASSED -> pass ; TIMEOUT -> timeout ; a gated expectation that diverged ->
     fail ; everything else (ERROR / MISSING / OBSERVE_* / SKIP) -> other.
     """
-    if label == "PASS":
+    if label == "PASSED":
         return "pass"
     if verdict == "TIMEOUT":
         return "timeout"
@@ -344,7 +344,7 @@ def main():
         for j in jobs:
             r = _run_one_timeout(j, args.timeout)
             done += 1
-            if r["verdict"] == "PASS":
+            if r["verdict"] == "PASSED":
                 pass_n += 1
             else:
                 fail_n += 1
@@ -353,8 +353,8 @@ def main():
     elif len(jobs) == 1:
         r = rom_runner.run_one(jobs[0])
         _print_progress(1, 1, jobs[0]["id"], r["verdict"],
-                        1 if r["verdict"] == "PASS" else 0,
-                        0 if r["verdict"] == "PASS" else 1)
+                        1 if r["verdict"] == "PASSED" else 0,
+                        0 if r["verdict"] == "PASSED" else 1)
         results = [r]
     else:
         results = _parallel(len(jobs), jobs)

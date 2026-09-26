@@ -164,9 +164,7 @@ def verdict_from_screen(console, detector):
     if detector == "blargg":
         blob = raw + "\n" + off
         low = blob.lower()
-        if "pass" in low and "fail" not in low:
-            verdict = "PASS"
-        elif "fail" in low:
+        if "fail" in low:
             verdict = "FAIL"
             m = re.search(r"fail(?:ed)?[^0-9]*#?\s*(\d+)", low)
             if m:
@@ -175,6 +173,22 @@ def verdict_from_screen(console, detector):
                 idx = low.find("fail")
                 snippet = blob[max(0, idx - 20): idx + 30].replace("\n", " ")
                 detail = f" ({snippet.strip()})"
+        elif "pass" in low:
+            verdict = "PASSED"
+        else:
+            # blargg result code (blargg_apu_2005.07.30 / blargg_ppu_tests_*):
+            # the suite prints only a leading "$NN" (tile 0x24 = '$'), where
+            # code 1 == all tests passed and >1 == that sub-test failed.
+            # Start-anchored so a mid-screen hex address like "$2007" in a
+            # prose failure message is not mistaken for a result code.
+            m = re.match(r"\s*[$#]\s*(\d{1,2})", raw)
+            if m:
+                code = int(m.group(1))
+                if code == 1:
+                    verdict = "PASSED"
+                else:
+                    verdict = "FAIL"
+                    detail = f" #N={code}"
     return verdict, detail
 
 

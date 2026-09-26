@@ -236,9 +236,9 @@ def evaluate(result, entry):
             return "FAIL_MISSING", True   # claimed pass but ROM can't be found
         return "MISSING", False
     if expected == "pass":
-        return ("PASS", False) if v == "PASS" else ("REGRESSION", True)
+        return ("PASSED", False) if v == "PASSED" else ("REGRESSION", True)
     if expected == "fail":
-        if v == "PASS":
+        if v == "PASSED":
             return "UNEXPECTED_PASS", False   # improved -- good news
         if v == "FAIL":
             return "EXPECTED_FAIL", False
