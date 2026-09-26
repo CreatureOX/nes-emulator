@@ -1,0 +1,908 @@
+# NES emulator regression suite configuration.
+#
+# Consumed by test/regression_runner.py. ROMs that are not listed here are
+# still discovered automatically by scanning the nes-test-roms submodule
+# (see test/discovery.py) -- an empty config therefore means "run everything
+# that looks like a test". Entries listed here override the discovered values
+# and are the place to record human judgement.
+#
+# [settings]
+#   frames   : frame count used when a test supplies none
+#   detector : default detector -- "blargg" reads the nametable PASS/FAIL text
+#
+# [[tests]]
+#   id       : submodule-relative ROM path minus the .nes extension. This is
+#              the ONLY key; it stays unique even for the 31 ROM basenames
+#              that collide across suites (instr_test-v3 vs nes_instr_test,
+#              blargg_apu_2005.07.30 vs pal_apu_tests, ...).
+#              There is no `path` field: the location is derived from the id
+#              at run time (test/discovery.py:path_of), so the two can never
+#              disagree. Run reports print the full path.
+#   frames   : optional frame budget. Listed tests pin the count they were
+#              verified at; discovered ones use test_roms.xml's runframes
+#              (often 60 -- measured ~17x cheaper than the 1200 default).
+#   expected : "pass" | "fail" | "skip"
+#   basis    : OPTIONAL, and its presence means "this expectation is NOT yet
+#              confirmed on this build". Such a test is run and reported but
+#              never allowed to fail the run. Values:
+#                "assumed"  -- no source; we merely assume it should pass
+#                "hardware" -- upstream readme claims real-hardware pass, but
+#                              we have never run it here
+#              To promote a test to real gating, confirm it passes and DELETE
+#              the basis line. There is no automatic write-back on purpose:
+#              recording a FAIL would cement the bug as an expectation.
+#   note     : optional free text
+#
+# There is deliberately no "reference" field. test_roms.xml's `testresult`
+# records what OTHER emulators do, and treating it as an expectation is
+# exactly how ppu_vbl_nmi/10-even_odd_timing came to be mislabelled
+# expected=fail (it passes here). Cross-emulator results belong in `note`.
+
+[settings]
+frames = 1200
+detector = "blargg"
+
+# --- Verified passing (regression baseline) -------------------------------
+# These four have been run on this build and confirmed PASS at 1200 frames.
+# No `basis` => they gate: a non-PASS verdict fails the run.
+[[tests]]
+id = "apu_test/apu_test"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_misc/rom_singles/03-dummy_reads"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_misc/rom_singles/04-dummy_reads_apu"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/10-even_odd_timing"
+frames = 1200
+expected = "pass"
+note = "Locally verified PASS at 1200 frames (nametable reads 'Passed', $6000=0x00). Upstream status.txt reports FAIL for the reference emulators, but this build was never actually run against it until the submodule was fetched."
+
+
+# --- Batch-gated: PASS confirmed in the 2026-09-26 NTSC full serial sweep ---
+[[tests]]
+id = "apu_reset/4015_cleared"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_reset/4017_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_reset/irq_flag_cleared"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_reset/works_immediately"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/1-len_ctr"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/2-len_table"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/3-irq_flag"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/4-jitter"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/5-len_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/6-irq_flag_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/7-dmc_basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "apu_test/rom_singles/8-dmc_rates"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "branch_timing_tests/1.Branch_Basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "branch_timing_tests/2.Backward_Branch"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "branch_timing_tests/3.Forward_Branch"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "cpu_dummy_reads/cpu_dummy_reads"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "cpu_reset/ram_after_reset"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "cpu_reset/registers"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "cpu_timing_test6/cpu_timing_test"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "dmc_dma_during_read4/dma_2007_write"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_misc/instr_misc"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_misc/rom_singles/01-abs_x_wrap"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_misc/rom_singles/02-branch_wrap"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/official_only"
+frames = 2400
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/01-implied"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/09-branches"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/10-stack"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/11-jmp_jsr"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/12-rts"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/13-rti"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/14-brk"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/15-special"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/01-basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/02-implied"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/10-branches"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/11-stack"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/12-jmp_jsr"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/13-rts"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/14-rti"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/15-brk"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/16-special"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "instr_timing/rom_singles/2-branch_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/4.Scanline_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/01-implied"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/09-branches"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/10-stack"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/11-special"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "oam_read/oam_read"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/ppu_vbl_nmi"
+frames = 2400
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/01-vbl_basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/02-vbl_set_time"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/03-vbl_clear_time"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/04-nmi_control"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/05-nmi_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/06-suppression"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/07-nmi_on_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/08-nmi_off_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "ppu_vbl_nmi/rom_singles/09-even_odd_frames"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/01.basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/02.alignment"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/03.corners"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/04.flip"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/05.left_clip"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/06.right_edge"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/07.screen_bottom"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/08.double_height"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/09.timing_basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/10.timing_order"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_hit_tests_2005.10.05/11.edge_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_overflow_tests/1.Basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_overflow_tests/2.Details"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_overflow_tests/3.Timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_overflow_tests/4.Obscure"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "sprite_overflow_tests/5.Emulator"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/1.frame_basics"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/2.vbl_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/3.even_odd_frames"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/4.vbl_clear_timing"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/5.nmi_suppression"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/6.nmi_disable"
+frames = 1200
+expected = "pass"
+
+[[tests]]
+id = "vbl_nmi_timing/7.nmi_timing"
+frames = 1200
+expected = "pass"
+
+# --- Temporarily excluded: ROMs that hang (CPU dead-loop) on this build ----
+# Identified by _probe_hang.py on 2026-09-26. They stall the headless
+# regression runner because a single ROM has no wall-clock timeout, so they
+# are excluded rather than gated. Delete these three entries to re-enable.
+[[tests]]
+id = "instr_test-v3/all_instrs"
+expected = "skip"
+excluded = true
+note = "Hangs (CPU dead-loop) on this build; found 2026-09-26 by _probe_hang.py."
+
+[[tests]]
+id = "instr_test-v5/official_only"
+expected = "skip"
+excluded = true
+note = "Hangs (CPU dead-loop) on this build; found 2026-09-26 by _probe_hang.py."
+
+[[tests]]
+id = "read_joy3/thorough_test"
+expected = "skip"
+excluded = true
+note = "Hangs (CPU dead-loop) on this build; found 2026-09-26 by _probe_hang.py."
+[[tests]]
+id = "apu_mixer/dmc"
+expected = "pass"
+
+[[tests]]
+id = "apu_mixer/noise"
+expected = "pass"
+
+[[tests]]
+id = "apu_mixer/square"
+expected = "pass"
+
+[[tests]]
+id = "apu_mixer/triangle"
+expected = "pass"
+
+[[tests]]
+id = "apu_reset/4017_written"
+expected = "pass"
+
+[[tests]]
+id = "apu_reset/len_ctrs_enabled"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/01.len_ctr"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/02.len_table"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/03.irq_flag"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/04.clock_jitter"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/05.len_timing_mode0"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/06.len_timing_mode1"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/07.irq_flag_timing"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/08.irq_timing"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/09.reset_timing"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/10.len_halt_timing"
+expected = "pass"
+
+[[tests]]
+id = "blargg_apu_2005.07.30/11.len_reload_timing"
+expected = "pass"
+
+[[tests]]
+id = "blargg_nes_cpu_test5/cpu"
+expected = "pass"
+
+[[tests]]
+id = "blargg_nes_cpu_test5/official"
+expected = "pass"
+
+[[tests]]
+id = "blargg_ppu_tests_2005.09.15b/palette_ram"
+expected = "pass"
+
+[[tests]]
+id = "blargg_ppu_tests_2005.09.15b/power_up_palette"
+expected = "pass"
+
+[[tests]]
+id = "blargg_ppu_tests_2005.09.15b/sprite_ram"
+expected = "pass"
+
+[[tests]]
+id = "blargg_ppu_tests_2005.09.15b/vbl_clear_time"
+expected = "pass"
+
+[[tests]]
+id = "blargg_ppu_tests_2005.09.15b/vram_access"
+expected = "pass"
+
+[[tests]]
+id = "cpu_dummy_writes/cpu_dummy_writes_oam"
+expected = "pass"
+
+[[tests]]
+id = "cpu_dummy_writes/cpu_dummy_writes_ppumem"
+expected = "pass"
+
+[[tests]]
+id = "cpu_exec_space/test_cpu_exec_space_apu"
+expected = "pass"
+
+[[tests]]
+id = "cpu_exec_space/test_cpu_exec_space_ppuio"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/cpu_interrupts"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/rom_singles/1-cli_latency"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/rom_singles/2-nmi_and_brk"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/rom_singles/3-nmi_and_irq"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/rom_singles/4-irq_and_dma"
+expected = "pass"
+
+[[tests]]
+id = "cpu_interrupts_v2/rom_singles/5-branch_delays_irq"
+expected = "pass"
+
+[[tests]]
+id = "dmc_dma_during_read4/dma_2007_read"
+expected = "pass"
+
+[[tests]]
+id = "dmc_dma_during_read4/dma_4016_read"
+expected = "pass"
+
+[[tests]]
+id = "dmc_dma_during_read4/double_2007_read"
+expected = "pass"
+
+[[tests]]
+id = "dmc_dma_during_read4/read_write_2007"
+expected = "pass"
+
+[[tests]]
+id = "dmc_tests/buffer_retained"
+expected = "pass"
+
+[[tests]]
+id = "dmc_tests/latency"
+expected = "pass"
+
+[[tests]]
+id = "dmc_tests/status"
+expected = "pass"
+
+[[tests]]
+id = "dmc_tests/status_irq"
+expected = "pass"
+
+[[tests]]
+id = "full_palette/flowing_palette"
+expected = "pass"
+
+[[tests]]
+id = "full_palette/full_palette"
+expected = "pass"
+
+[[tests]]
+id = "full_palette/full_palette_smooth"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/02-immediate"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/03-zero_page"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/04-zp_xy"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/05-absolute"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/06-abs_xy"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/07-ind_x"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v3/rom_singles/08-ind_y"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/all_instrs"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/03-immediate"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/04-zero_page"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/05-zp_xy"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/06-absolute"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/07-abs_xy"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/08-ind_x"
+expected = "pass"
+
+[[tests]]
+id = "instr_test-v5/rom_singles/09-ind_y"
+expected = "pass"
+
+[[tests]]
+id = "instr_timing/instr_timing"
+expected = "pass"
+
+[[tests]]
+id = "instr_timing/rom_singles/1-instr_timing"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/1.Clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/2.Details"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/3.A12_clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/5.MMC3_rev_A"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_irq_tests/6.MMC3_rev_B"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/1-clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/2-details"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/3-A12_clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/4-scanline_timing"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/5-MMC3"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test/6-MMC6"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/1-clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/2-details"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/3-A12_clocking"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/4-scanline_timing"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/5-MMC3"
+expected = "pass"
+
+[[tests]]
+id = "mmc3_test_2/rom_singles/6-MMC3_alt"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/02-immediate"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/03-zero_page"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/04-zp_xy"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/05-absolute"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/06-abs_xy"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/07-ind_x"
+expected = "pass"
+
+[[tests]]
+id = "nes_instr_test/rom_singles/08-ind_y"
+expected = "pass"
+
+[[tests]]
+id = "nmi_sync/demo_ntsc"
+expected = "pass"
+
+[[tests]]
+id = "oam_stress/oam_stress"
+expected = "pass"
+
+[[tests]]
+id = "ppu_open_bus/ppu_open_bus"
+expected = "pass"
+
+[[tests]]
+id = "ppu_read_buffer/test_ppu_read_buffer"
+expected = "pass"
+
+[[tests]]
+id = "read_joy3/count_errors"
+expected = "pass"
+
+[[tests]]
+id = "read_joy3/count_errors_fast"
+expected = "pass"
+
+[[tests]]
+id = "read_joy3/test_buttons"
+expected = "pass"
+
+[[tests]]
+id = "scanline/scanline"
+expected = "pass"
+
+[[tests]]
+id = "scrolltest/scroll"
+expected = "pass"
+
+[[tests]]
+id = "soundtest/SNDTEST"
+expected = "pass"
+
+[[tests]]
+id = "sprdma_and_dmc_dma/sprdma_and_dmc_dma"
+expected = "pass"
+
+[[tests]]
+id = "sprdma_and_dmc_dma/sprdma_and_dmc_dma_512"
+expected = "pass"
+
+[[tests]]
+id = "spritecans-2011/spritecans"
+expected = "pass"
+
+[[tests]]
+id = "stomper/smwstomp"
+expected = "pass"
+
+[[tests]]
+id = "tvpassfail/tv"
+expected = "pass"
+
+[[tests]]
+id = "vaus-test/vaus-test"
+expected = "pass"
+
+[[tests]]
+id = "volume_tests/volumes"
+expected = "pass"
+

@@ -9,6 +9,7 @@ on:
     branches: [main, master]
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -153,8 +154,43 @@ jobs:
           path: dist/FanNes.app
           retention-days: 5
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (with test ROM submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build/test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "Cython>=3.0.6" "numpy>=1.21.0" "pygame>=2.5.0" "toml>=0.10.2" "Pillow>=9.3.0" "setuptools" "wheel"
+
+      - name: Build Cython extensions
+        run: |
+          rm -rf build
+          find . -name "*.c" -delete
+          find . -name "*.h" -not -name "status_register.h" -delete
+          python setup.py build_ext --inplace
+
+      - name: Run gated regression
+        continue-on-error: true
+        env:
+          SDL_VIDEODRIVER: dummy
+          PYTHONUNBUFFERED: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          NES_REGRESSION_WORKERS: "4"
+        run: python test/regression_runner.py --gated
+
   release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, test]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:

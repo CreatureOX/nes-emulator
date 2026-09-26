@@ -163,15 +163,23 @@ cython_debug/
 *.c
 *.html
 *.pyd
+*.ps1
 
-# Local test outputs and scratch artefacts
-test_artifacts/
+# Generated run output -- never committed (test/regression.toml is the single
+# source of truth). test/regression_runner.py writes its report here
+# (latest.txt only; no timestamped history).
+test/reports/
 
 # Local-only inputs, notes and tooling -- never committed.
 # `failed/` holds third-party blargg test ROMs downloaded from
 # https://github.com/christopherpow/nes-test-roms (not redistributable).
-failed/
 doc/
-build_artifacts/
 .workbuddy/
 .qoder/
+
+# Build backups (.c/.pyd/.html renamed by the safe-delete hook) and the
+# ad-hoc _* diagnostic scripts / scratch files produced during debugging --
+# never committed.
+_*
+screenshots/
+saves/

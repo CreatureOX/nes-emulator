@@ -59,7 +59,7 @@ a = Analysis(
         'nes.ppu.ppu_sprite',
         'nes.ppu.registers',
         'nes.bus.bus',
-        'nes.apu',
+        'nes.apu.apu',
         'nes.console',
         'nes.state',
         'nes.mapper.mapper',
