@@ -620,6 +620,20 @@ cdef class APU2A03:
             self.dmc_first_fetch = 1
             self.dmc_dma_pending = 0
 
+    cpdef bint irq_level(self):
+        """
+        Current level of the APU's interrupt outputs to the CPU.
+
+        Bit 6 of $4015 (frame interrupt) and bit 7 (DMC interrupt) are both
+        level-triggered /IRQ sources. The flag bits stay set until $4015 is
+        read (frame) or the enable is cleared (DMC), so OR-ing them in here is
+        exactly what the bus must drive onto the CPU's /IRQ line. Previously
+        these were never wired up, so the APU could set its flag yet the CPU
+        never took the interrupt (blargg 08.irq_timing reported "Never
+        occurred", and cpu_interrupts_v2's frame-IRQ subtests failed).
+        """
+        return self.frame_irq_flag != 0 or self.dmc_irq_flag != 0
+
     cpdef void clock(self, int cycles):
         """
         Clock the APU for a number of cycles.
