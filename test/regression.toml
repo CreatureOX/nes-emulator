@@ -1,51 +1,67 @@
 # NES emulator regression suite configuration.
 #
-# Consumed by test/run_regression.py (gated runner) and test/judge.py (manual
-# single-ROM judge). Generated/extended by test/gen_config.py from the
-# nes-test-roms submodule's status.txt.
+# Consumed by test/regression_runner.py. ROMs that are not listed here are
+# still discovered automatically by scanning the nes-test-roms submodule
+# (see test/discovery.py) -- an empty config therefore means "run everything
+# that looks like a test". Entries listed here override the discovered values
+# and are the place to record human judgement.
 #
 # [settings]
-#   frames   : default frame count when a test omits it
+#   frames   : frame count used when a test supplies none
 #   detector : default detector -- "blargg" reads the nametable PASS/FAIL text
 #
 # [[tests]]
-#   id       : stable key, also accepted by `python test/judge.py <id>`
-#   path     : ROM location relative to repo root (canonical = inside the
-#              nes-test-roms submodule; falls back to failed/<basename>.nes)
-#   frames   : optional override of the default frame count
+#   id       : submodule-relative ROM path minus the .nes extension. This is
+#              the ONLY key; it stays unique even for the 31 ROM basenames
+#              that collide across suites (instr_test-v3 vs nes_instr_test,
+#              blargg_apu_2005.07.30 vs pal_apu_tests, ...).
+#              There is no `path` field: the location is derived from the id
+#              at run time (test/discovery.py:path_of), so the two can never
+#              disagree. Run reports print the full path.
+#   frames   : optional frame budget. Listed tests pin the count they were
+#              verified at; discovered ones use test_roms.xml's runframes
+#              (often 60 -- measured ~17x cheaper than the 1200 default).
 #   expected : "pass" | "fail" | "skip"
-#              pass/fail gate CI; skip means "not yet validated by this build"
-#   detector : "blargg" | "none"
-#   reference: result reported by reference emulators in status.txt (informational)
+#   basis    : OPTIONAL, and its presence means "this expectation is NOT yet
+#              confirmed on this build". Such a test is run and reported but
+#              never allowed to fail the run. Values:
+#                "assumed"  -- no source; we merely assume it should pass
+#                "hardware" -- upstream readme claims real-hardware pass, but
+#                              we have never run it here
+#              To promote a test to real gating, confirm it passes and DELETE
+#              the basis line. There is no automatic write-back on purpose:
+#              recording a FAIL would cement the bug as an expectation.
 #   note     : optional free text
+#
+# There is deliberately no "reference" field. test_roms.xml's `testresult`
+# records what OTHER emulators do, and treating it as an expectation is
+# exactly how ppu_vbl_nmi/10-even_odd_timing came to be mislabelled
+# expected=fail (it passes here). Cross-emulator results belong in `note`.
 
 [settings]
 frames = 1200
 detector = "blargg"
 
 # --- Verified passing (regression baseline) -------------------------------
+# These four have been run on this build and confirmed PASS at 1200 frames.
+# No `basis` => they gate: a non-PASS verdict fails the run.
 [[tests]]
-id = "apu_test"
-path = "nes-test-roms/apu_test/apu_test.nes"
+id = "apu_test/apu_test"
+frames = 1200
 expected = "pass"
-reference = "PASS"
 
 [[tests]]
-id = "03-dummy_reads"
-path = "nes-test-roms/instr_misc/rom_singles/03-dummy_reads.nes"
+id = "instr_misc/rom_singles/03-dummy_reads"
+frames = 1200
 expected = "pass"
-reference = "PASS"
 
 [[tests]]
-id = "04-dummy_reads_apu"
-path = "nes-test-roms/instr_misc/rom_singles/04-dummy_reads_apu.nes"
+id = "instr_misc/rom_singles/04-dummy_reads_apu"
+frames = 1200
 expected = "pass"
-reference = "PASS"
 
-# --- Known failing (tracked, not yet fixed) -------------------------------
 [[tests]]
-id = "10-even_odd_timing"
-path = "nes-test-roms/ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes"
-expected = "fail"
-reference = "FAIL"
-note = "Known failing (#3). Emulator drops the wrong cycle on odd frames."
+id = "ppu_vbl_nmi/rom_singles/10-even_odd_timing"
+frames = 1200
+expected = "pass"
+note = "Locally verified PASS at 1200 frames (nametable reads 'Passed', $6000=0x00). Upstream status.txt reports FAIL for the reference emulators, but this build was never actually run against it until the submodule was fetched."
