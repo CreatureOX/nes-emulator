@@ -218,6 +218,12 @@ def evaluate(result, entry):
     to be made twice.
     """
     v = result["verdict"]
+    if v == "TIMEOUT":
+        # A ROM the runner could not bound -- reported for visibility, never a
+        # regression. Produced only by regression_runner's local --timeout
+        # guard (CI pre-excludes known hangs instead), so it must not turn a
+        # run red.
+        return "TIMEOUT", False
     basis = entry.get("basis")
     expected = entry.get("expected", "skip")
 

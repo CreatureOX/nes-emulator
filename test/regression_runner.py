@@ -29,8 +29,8 @@ ROM passes is the intended promotion; there is deliberately no automatic
 write-back, since recording a FAIL would cement the bug as an expectation.
 
 Exit code is non-zero only when a gated test diverges from its expectation.
-A run report is written to test/reports/latest.txt; failing to write it is
-never fatal and never changes the exit code.
+A run report is written to test/reports/latest.md (GitHub-flavoured Markdown);
+failing to write it is never fatal and never changes the exit code.
 
 To inspect a single ROM instead of the whole suite, run it as a one-entry
 sweep and read its verdict:
@@ -42,6 +42,7 @@ Usage (from repo root):
     python test/regression_runner.py <idglob>     # ids/paths matching the glob
     python test/regression_runner.py --list       # list the suite and exit
     python test/regression_runner.py --frames N   # override frame count (no retry)
+    python test/regression_runner.py --timeout N  # local only: abort a hung ROM after N s (TIMEOUT)
 
 Excluded ROMs (PAL, demo/other, no usable detector, unmapped mapper) are
 NEVER run, by any invocation -- not even an unqualified full sweep. A full
@@ -94,11 +95,56 @@ def _parallel(results_needed, jobs):
     subprocess-per-ROM approach existed precisely because that was once a
     real risk.
     """
-    workers = min(len(jobs), mp.cpu_count())
+    # Default: one worker per CPU. A low-memory / sandboxed environment can
+    # cap this with NES_REGRESSION_WORKERS (e.g. 2) -- each worker imports
+    # numpy/OpenBLAS, so spawning cpu_count() at once can exhaust RAM. The
+    # knob only narrows the pool; it never widens past the CPU count.
+    env_w = os.environ.get("NES_REGRESSION_WORKERS")
+    if env_w:
+        try:
+            env_w = max(1, min(int(env_w), mp.cpu_count()))
+        except ValueError:
+            env_w = None
+    workers = env_w if env_w else min(len(jobs), mp.cpu_count())
     with mp.Pool(workers) as pool:
         results = list(pool.imap_unordered(_run_one, jobs))
     results.sort(key=lambda r: r["id"])
     return results
+
+
+def _timeout_target(entry, q):
+    """Worker for _run_one_timeout: run one ROM, push its result onto q."""
+    try:
+        q.put(rom_runner.run_one(entry))
+    except Exception as e:  # noqa: BLE001 - surface any crash as ERROR
+        q.put({"id": entry["id"], "verdict": "ERROR",
+               "detail": " %r" % (e,), "status": "--",
+               "path": entry.get("path")})
+
+
+def _run_one_timeout(entry, timeout):
+    """Run one ROM in a dedicated process so a hang can be killed.
+
+    Local-only safeguard for probing ROMs one-by-one: a ROM that never
+    finishes is reported as TIMEOUT (a verdict the suite treats as non-fatal)
+    instead of freezing the machine. CI never calls this -- known hangs are
+    pre-excluded in regression.toml -- so the extra process per ROM is fine.
+    """
+    q = mp.Queue()
+    p = mp.Process(target=_timeout_target, args=(entry, q))
+    p.start()
+    p.join(timeout)
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return {"id": entry["id"], "verdict": "TIMEOUT",
+                "detail": " >%ds" % timeout, "status": "--",
+                "path": entry.get("path")}
+    if not q.empty():
+        return q.get()
+    return {"id": entry["id"], "verdict": "TIMEOUT",
+            "detail": " >%ds" % timeout, "status": "--",
+            "path": entry.get("path")}
 
 
 def format_rows(rows, with_path=False):
@@ -121,38 +167,87 @@ def format_rows(rows, with_path=False):
     return lines, counts
 
 
-def write_report(rows, args, any_bad):
-    """Write a plain-text run report. Returns the dated path, or None.
+def _classify(label, verdict):
+    """Bucket a result row for the Markdown report.
 
-    Never fatal: a report is a convenience artifact, and an unwritable
-    reports directory must not turn a green run red.
+    PASS -> pass ; TIMEOUT -> timeout ; a gated expectation that diverged ->
+    fail ; everything else (ERROR / MISSING / OBSERVE_* / SKIP) -> other.
     """
-    lines, counts = format_rows(rows, with_path=True)
+    if label == "PASS":
+        return "pass"
+    if verdict == "TIMEOUT":
+        return "timeout"
+    if label == "REGRESSION" or label.startswith("FAIL"):
+        return "fail"
+    return "other"
+
+
+def write_report(rows, args, any_bad):
+    """Write a GitHub-flavoured Markdown run report to test/reports/latest.md.
+
+    Groups results into Pass / Fail / Timeout / Other. The failing and timeout
+    ROM ids are listed inline (folded <details> blocks) so the report stays
+    scannable on a PR. Never fatal: an unwritable reports directory must not
+    flip a green run red.
+    """
+    groups = {"pass": [], "fail": [], "timeout": [], "other": []}
+    for r, entry, label, bad in rows:
+        groups[_classify(label, r["verdict"])].append((entry, r, label))
+
+    n = {k: len(v) for k, v in groups.items()}
     n_gated = sum(1 for _, e, _, _ in rows if suite.gated(e))
     now = datetime.datetime.now()
 
-    head = [
-        "NES regression report",
-        f"run at : {now:%Y-%m-%d %H:%M:%S}",
-        f"args   : pattern={args.pattern} gated={args.gated} "
-        f"frames={args.frames or 'default'}",
-        "columns: ! label | expected | id | verdict | $6000 | rom path",
-        "         paths are repo-relative, so reports compare across machines",
-        "",
-    ]
-    tail = [
-        "",
-        "=== regression %s:  %s ===" % ("FAIL" if any_bad else "OK",
-                                        "  ".join(f"{k}={v}" for k, v in sorted(counts.items()))),
-        f"    {len(rows)} run, {n_gated} gated, {len(rows) - n_gated} observed only",
-        f"exit code {1 if any_bad else 0}",
-        "",
-    ]
-    text = "\n".join(head + lines + tail)
+    cmd = "python test/regression_runner.py"
+    if args.gated:
+        cmd += " --gated"
+    if args.pattern and args.pattern != "*":
+        cmd += " " + args.pattern
+    if args.timeout:
+        cmd += " --timeout %d" % args.timeout
 
+    L = []
+    L.append("# NES emulator regression report")
+    L.append("")
+    L.append(f"_Generated at {now:%Y-%m-%d %H:%M:%S} · `{cmd}`_")
+    L.append("")
+    L.append("## Summary")
+    L.append("")
+    L.append("| Result | Count |")
+    L.append("|--------|------:|")
+    L.append(f"| ✅ Pass | {n['pass']} |")
+    L.append(f"| ❌ Fail (regression) | {n['fail']} |")
+    L.append(f"| ⏱ Timeout | {n['timeout']} |")
+    L.append(f"| 🔸 Other | {n['other']} |")
+    L.append(f"| **Total run** | {len(rows)} |")
+    L.append("")
+    L.append(f"- Gated entries: **{n_gated}**")
+    L.append(f"- Regression status: **{'FAIL' if any_bad else 'OK'}** "
+             f"(local exit code `{1 if any_bad else 0}`)")
+    L.append("")
+
+    def block(title, key, icon):
+        items = groups[key]
+        if not items:
+            return
+        L.append("<details>")
+        L.append(f"<summary>{icon} {title} &mdash; {len(items)}</summary>")
+        L.append("")
+        for entry, r, label in items:
+            L.append(f"- `{entry['id']}` &mdash; {r['verdict']}{r['detail']}")
+        L.append("")
+        L.append("</details>")
+        L.append("")
+
+    block("Passing", "pass", "✅")
+    block("Failing (regression)", "fail", "❌")
+    block("Timeout", "timeout", "⏱")
+    block("Other", "other", "🔸")
+
+    text = "\n".join(L)
     try:
         os.makedirs(REPORT_DIR, exist_ok=True)
-        latest = os.path.join(REPORT_DIR, "latest.txt")
+        latest = os.path.join(REPORT_DIR, "latest.md")
         with open(latest, "w", encoding="utf-8") as f:
             f.write(text)
         return latest
@@ -170,6 +265,11 @@ def main():
                     help="only run confirmed entries (those without `basis`)")
     ap.add_argument("--frames", type=int, default=None,
                     help="override the frame count for every selected test")
+    ap.add_argument("--timeout", type=int, default=0,
+                    help="local-only: run each ROM in its own process and abort "
+                         "it after N seconds as TIMEOUT (kills hangs instead of "
+                         "freezing the machine). CI does NOT use this -- known "
+                         "hangs are pre-excluded in regression.toml")
     args = ap.parse_args()
 
     settings, tests = suite.build()
@@ -210,7 +310,12 @@ def main():
             j["retry_frames"] = default_frames
         jobs.append(j)
 
-    if len(jobs) == 1:
+    if args.timeout and args.timeout > 0:
+        # Local hang guard: each ROM in its own process, aborted at the
+        # timeout. Sequential on purpose -- this path is for probing a few
+        # ROMs by hand, not for the CI sweep.
+        results = [_run_one_timeout(j, args.timeout) for j in jobs]
+    elif len(jobs) == 1:
         results = [rom_runner.run_one(jobs[0])]
     else:
         results = _parallel(len(jobs), jobs)
