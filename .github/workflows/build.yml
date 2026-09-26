@@ -183,6 +183,10 @@ jobs:
         continue-on-error: true
         env:
           SDL_VIDEODRIVER: dummy
+          PYTHONUNBUFFERED: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          NES_REGRESSION_WORKERS: "4"
         run: python test/regression_runner.py --gated
 
   release:

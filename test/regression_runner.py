@@ -83,17 +83,27 @@ def _run_one(entry):
     return r
 
 
-def _parallel(results_needed, jobs):
-    """Run *jobs* across a process pool.
+def _print_progress(done, total, rid, verdict, pass_n, fail_n):
+    """One line of live progress. Newline-per-ROM and flush=True so it shows
+    up in CI logs in real time (GitHub Actions block-buffers stdout otherwise,
+    and a carriage-return progress bar renders poorly in the web UI).
+    """
+    print(f"[{done:>3}/{total}] {rid:42s} {verdict:9s} "
+          f"PASS={pass_n} FAIL={fail_n}", flush=True)
+
+
+def _parallel(total, jobs):
+    """Run *jobs* across a process pool, streaming a progress line per ROM.
+
+    Results arrive via imap_unordered as each worker finishes, so the log
+    shows real progress instead of one blob at the end. Only the parent
+    prints, which keeps the lines ordered and free of worker interleaving.
 
     Workers are reused across jobs (no maxtasksperchild), which is safe here:
     the only module-level state in the nes/*.pyx extensions is four read-only
     lookup tables (apu LENGTH_TABLE / DMC_RATE_TABLE / DUTY_PATTERNS, and
     mapper_factory.mappers) -- all mutable state lives in the Console
-    instance each job builds for itself. Re-verify this if anyone ever adds a
-    module-level mutable global to the extension modules; the old
-    subprocess-per-ROM approach existed precisely because that was once a
-    real risk.
+    instance each job builds for itself.
     """
     # Default: one worker per CPU. A low-memory / sandboxed environment can
     # cap this with NES_REGRESSION_WORKERS (e.g. 2) -- each worker imports
@@ -106,9 +116,22 @@ def _parallel(results_needed, jobs):
         except ValueError:
             env_w = None
     workers = env_w if env_w else min(len(jobs), mp.cpu_count())
+    print(f"Running {total} ROMs across {workers} workers...", flush=True)
+    results = []
+    done = 0
+    pass_n = 0
+    fail_n = 0
     with mp.Pool(workers) as pool:
-        results = list(pool.imap_unordered(_run_one, jobs))
+        for r in pool.imap_unordered(_run_one, jobs):
+            done += 1
+            if r["verdict"] == "PASS":
+                pass_n += 1
+            else:
+                fail_n += 1
+            _print_progress(done, total, r["id"], r["verdict"], pass_n, fail_n)
+            results.append(r)
     results.sort(key=lambda r: r["id"])
+    print(f"Done: {done}/{total}  PASS={pass_n} FAIL={fail_n}", flush=True)
     return results
 
 
@@ -314,9 +337,25 @@ def main():
         # Local hang guard: each ROM in its own process, aborted at the
         # timeout. Sequential on purpose -- this path is for probing a few
         # ROMs by hand, not for the CI sweep.
-        results = [_run_one_timeout(j, args.timeout) for j in jobs]
+        results = []
+        done = 0
+        pass_n = 0
+        fail_n = 0
+        for j in jobs:
+            r = _run_one_timeout(j, args.timeout)
+            done += 1
+            if r["verdict"] == "PASS":
+                pass_n += 1
+            else:
+                fail_n += 1
+            _print_progress(done, len(jobs), j["id"], r["verdict"], pass_n, fail_n)
+            results.append(r)
     elif len(jobs) == 1:
-        results = [rom_runner.run_one(jobs[0])]
+        r = rom_runner.run_one(jobs[0])
+        _print_progress(1, 1, jobs[0]["id"], r["verdict"],
+                        1 if r["verdict"] == "PASS" else 0,
+                        0 if r["verdict"] == "PASS" else 1)
+        results = [r]
     else:
         results = _parallel(len(jobs), jobs)
 
