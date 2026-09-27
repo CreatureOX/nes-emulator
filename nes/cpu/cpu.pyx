@@ -52,6 +52,40 @@ cdef class CPU6502:
         cdef uint16_t hi = <uint16_t> self.pull()
         return hi << 8 | lo
 
+    cdef void set_i_flag(self, bint value, bint deferred):
+        '''
+        Single choke point for every write to the I flag.
+
+        The interrupt-detection logic does not read the live I flag; it reads
+        a latched copy (irq_i_latched) that is refreshed at every instruction
+        boundary. On real silicon a CLI/SEI/PLP does not update that copy
+        until the boundary AFTER the next instruction, so the I change they
+        make is invisible to the mask for one whole instruction: a lone CLI
+        leaves the next instruction masked, and a CLI/SEI pair still admits
+        exactly one IRQ just after the SEI. RTI, BRK, reset and the interrupt
+        sequences instead adopt the new I immediately.
+
+        deferred=True   freeze on the value I holds RIGHT NOW (i.e. before
+                        the change) for one boundary, so the mask keeps using
+                        it while the live flag already holds `value`. Must be
+                        called BEFORE the flag is written.
+        deferred=False  adopt `value` at once: refresh the latch immediately
+                        and clear any pending freeze.
+        '''
+        if deferred:
+            # The capture must be explicit. It is NOT safe to assume the latch
+            # already holds the old value: the boundary that consumes a
+            # previous freeze deliberately SKIPS the refresh, so for
+            # back-to-back flag changes (CLI followed by SEI) the latch would
+            # still hold the value from before the FIRST one. The SEI has to
+            # freeze on the intermediate I that CLI produced.
+            self.irq_i_latched = self.registers.status.bits.I
+            self.irq_defer_i = True
+        else:
+            self.irq_i_latched = value
+            self.irq_defer_i = False
+        self.registers.status.bits.I = value
+
     cpdef uint8_t IMP(self):
         '''
         Address Mode: Implied
@@ -476,7 +510,7 @@ cdef class CPU6502:
         self.push_2_bytes(self.registers.PC)
         self.push(pushed_p)
 
-        self.registers.status.bits.I = True
+        self.set_i_flag(True, False)
         self.registers.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
         return 0
 
@@ -536,7 +570,10 @@ cdef class CPU6502:
         Function:    I = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.I = False
+        # The I change is not honored by the interrupt mask until one
+        # instruction later (see set_i_flag): freeze the mask's latched copy
+        # so the next instruction is still masked by the OLD I.
+        self.set_i_flag(False, True)
         return 0
 
     cpdef uint8_t CLV(self):
@@ -819,7 +856,14 @@ cdef class CPU6502:
         # Real 6502 PLP loads the 6 real flags but IGNORES the B flag
         # (bit 4 is not affected) and forces U (bit 5) to 1.
         cdef uint8_t prev_b = self.registers.status.bits.B
-        self.registers.status.value = self.pull()
+        cdef uint8_t pulled_p = self.pull()
+        # PLP can change the I flag; like CLI/SEI it freezes the mask's copy
+        # for one instruction (see set_i_flag). set_i_flag captures the I that
+        # is live AT CALL TIME, so it must run BEFORE the new status is
+        # loaded -- otherwise it would freeze on the post-PLP value instead of
+        # the pre-PLP one.
+        self.set_i_flag(<bint>((pulled_p >> 2) & 1), True)
+        self.registers.status.value = pulled_p
         self.registers.status.bits.B = prev_b
         self.registers.status.bits.U = True
         return 0
@@ -870,6 +914,9 @@ cdef class CPU6502:
         self.registers.status.value = pulled_p
         self.registers.status.bits.B = prev_b
         self.registers.status.bits.U = True
+        # RTI restores I immediately: unlike CLI/SEI/PLP there is no
+        # one-instruction latency, so the mask adopts the restored value now.
+        self.set_i_flag(self.registers.status.bits.I, False)
         self.registers.PC = self.pull_2_bytes()
         return 0
 
@@ -908,7 +955,10 @@ cdef class CPU6502:
         Function:    I = 1
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.I = True
+        # Same one-instruction latency as CLI (see set_i_flag): the mask
+        # keeps using the OLD I, so an already-pending IRQ is still admitted
+        # at the end of this instruction -- exactly one, then masked.
+        self.set_i_flag(True, True)
         return 0
 
     cpdef uint8_t STA(self):
@@ -1034,6 +1084,9 @@ cdef class CPU6502:
     def __init__(self, CPUBus bus):
         self.registers = Registers()        
         self.registers.status.value = 0x34
+        # Keep the interrupt mask's latched copy in step with the live flag
+        # from power-up (see set_i_flag).
+        self.set_i_flag(self.registers.status.bits.I, False)
         self.registers.SP = 0xFD
         
         self.ram = np.array([0x00] * 2 * 1024, dtype = np.uint8)
@@ -1086,7 +1139,9 @@ cdef class CPU6502:
         self.registers.PC = hi << 8 | lo
 
         self.registers.SP -= 3
-        self.registers.status.bits.I = True
+        # Adopted immediately: reset is not a flag-change instruction, so
+        # there is no one-instruction latency on the mask.
+        self.set_i_flag(True, False)
         
         self.remaining_cycles = 8    
 
@@ -1102,6 +1157,8 @@ cdef class CPU6502:
         # interrupt sequence (no polling while it drains).
         self.nmi_latch_dot = -1
         self.irq_latch_dot = -1
+        self.irq_i_latched = True
+        self.irq_defer_i = False
         self.in_interrupt = True
 
     cdef void set_nmi_line(self, bint level):
@@ -1149,21 +1206,32 @@ cdef class CPU6502:
 
         cdef uint8_t pushed_p
 
-        if (self.registers.status.bits.I == 0):
-            self.push_2_bytes(self.registers.PC)
+        # The decision to take this IRQ (I flag clear, line asserted) is made
+        # by the polling logic in clock() against the *latched* I value, which
+        # honors the CLI/SEI/PLP one-instruction delay. We therefore execute
+        # the vector unconditionally here: re-checking the live I flag would
+        # wrongly veto an IRQ whose latched I is 0 but whose live I has since
+        # been re-set by a following SEI -- the CLI/SEI "one IRQ just after
+        # SEI" case (subtest 5). We push the *live* status, then set I
+        # internally.
+        self.push_2_bytes(self.registers.PC)
 
-            # Hardware IRQ pushes P with B=0 and U=1; the I flag is only
-            # set afterwards (cycle 6), so the pushed byte still has I=0.
-            pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
-            self.push(pushed_p)
-            self.registers.status.bits.I = True
+        # Hardware IRQ pushes P with B=0 and U=1. The I bit pushed is whatever
+        # the live status holds at the vector moment (0 if I was genuinely
+        # clear, 1 if a just-executed SEI had already set it) -- both are what
+        # the real silicon pushes and what the tests check (subtest 6 expects
+        # I=1 in the saved status for the CLI/SEI case). I is then set
+        # internally for the duration of the handler.
+        pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
+        self.push(pushed_p)
+        self.set_i_flag(True, False)
 
-            self.addr_abs = 0xFFFE
-            lo = self.read(self.addr_abs + 0)
-            hi = self.read(self.addr_abs + 1)
-            self.registers.PC = hi << 8 | lo
+        self.addr_abs = 0xFFFE
+        lo = self.read(self.addr_abs + 0)
+        hi = self.read(self.addr_abs + 1)
+        self.registers.PC = hi << 8 | lo
 
-            self.remaining_cycles = 7
+        self.remaining_cycles = 7
 
     cdef void nmi(self):
         '''
@@ -1177,7 +1245,7 @@ cdef class CPU6502:
         # Same as IRQ: push P with B=0, U=1 and only then set I.
         pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
         self.push(pushed_p)
-        self.registers.status.bits.I = True
+        self.set_i_flag(True, False)
 
         self.addr_abs = 0xFFFA
         lo = self.read(self.addr_abs + 0)
@@ -1227,6 +1295,17 @@ cdef class CPU6502:
             # to the next instruction's end. Without this, an NMI whose edge
             # lands in those dots fires a full instruction early
             # (7.nmi_timing's align subtests).
+            # CLI/SEI/PLP one-instruction I-flag latency: the mask reads
+            # self.irq_i_latched, never the live flag, and a flag-change
+            # instruction FREEZES that copy's refresh for one boundary
+            # (self.irq_defer_i, set by set_i_flag). While frozen the mask
+            # keeps the OLD value, so the new I is not honored until the
+            # instruction AFTER the next one.
+            if self.irq_defer_i:
+                self.irq_defer_i = False
+            else:
+                self.irq_i_latched = self.registers.status.bits.I
+
             if not self.in_interrupt and self.nmi_pending and self.nmi_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
                 self.nmi_pending = False
                 self.in_interrupt = True
@@ -1234,7 +1313,7 @@ cdef class CPU6502:
                 self.clock_count += 1
                 self.remaining_cycles -= 1
                 return 0
-            if not self.in_interrupt and self.irq_line and self.registers.status.bits.I == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
+            if not self.in_interrupt and self.irq_line and self.irq_i_latched == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
                 self.in_interrupt = True
                 self.irq()
                 self.clock_count += 1

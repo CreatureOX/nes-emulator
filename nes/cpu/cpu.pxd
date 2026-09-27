@@ -25,6 +25,13 @@ cdef class CPU6502:
     cdef void push_2_bytes(self, uint16_t)
     cdef uint16_t pull_2_bytes(self)
 
+    # Single choke point for EVERY write to the I flag. The interrupt mask
+    # reads a latched copy of I (irq_i_latched), never the live flag;
+    # CLI/SEI/PLP freeze that copy's refresh for one instruction boundary
+    # (deferred=True) while RTI/BRK/reset and the interrupt sequences adopt
+    # the new value immediately (deferred=False). See cpu.pyx.
+    cdef void set_i_flag(self, bint value, bint deferred)
+
     cpdef uint8_t IMP(self)
     cpdef uint8_t IMM(self)
     cpdef uint8_t ZP0(self)
@@ -149,6 +156,22 @@ cdef class CPU6502:
     # does not poll during that sequence, which guarantees at least one handler
     # instruction executes before another interrupt can be taken.
     cdef bint in_interrupt
+
+    # CLI/SEI/PLP change the I flag, but the change is not honored by the
+    # interrupt MASK until the instruction AFTER the next one ("effective I
+    # lags one instruction"). The mask therefore never reads the live flag:
+    # it reads irq_i_latched, a copy refreshed at every instruction boundary.
+    # A flag-change instruction FREEZES that copy on the value I held just
+    # before the change, for one boundary (irq_defer_i), so the mask keeps
+    # using the OLD value while the live flag already holds the new one. The
+    # capture is explicit because a boundary that consumes a freeze skips the
+    # refresh, so back-to-back CLI/SEI must freeze on the intermediate value.
+    # This handles both a lone CLI (next
+    # instruction still masked) and a CLI/SEI pair (exactly one IRQ just
+    # after the SEI). RTI/BRK/reset and the interrupt sequences adopt the
+    # new I immediately (no freeze). Every write goes through set_i_flag().
+    cdef bint irq_i_latched
+    cdef bint irq_defer_i
 
     cdef int clock_count
     
