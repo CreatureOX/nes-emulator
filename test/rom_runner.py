@@ -46,8 +46,10 @@ DETECTOR = "blargg"
 DEFAULT_SETTINGS = {"frames": FRAMES, "detector": DETECTOR}
 
 # A few ROMs need far longer than the default budget to print anything.
-# Measured: official_only is a 16-instruction serial test needing ~90s.
-PER_ROM_FRAMES = {"official_only": 5400}
+# Measured: the *_singles ROMs split one suite into per-addressing-mode parts,
+# while official_only and all_instrs run the whole suite serially in one go and
+# need roughly 90s of emulated time to reach their verdict.
+PER_ROM_FRAMES = {"official_only": 5400, "all_instrs": 5400}
 
 # How often (in frames) the nametable is inspected while a ROM is running, to
 # look for the "Press RESET" prompt.

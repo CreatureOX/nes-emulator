@@ -31,6 +31,7 @@ cdef class CPU6502:
     # (deferred=True) while RTI/BRK/reset and the interrupt sequences adopt
     # the new value immediately (deferred=False). See cpu.pyx.
     cdef void set_i_flag(self, bint value, bint deferred)
+    cdef void store_and_hi(self, uint8_t value, uint8_t index)
 
     cpdef uint8_t IMP(self)
     cpdef uint8_t IMM(self)
@@ -111,7 +112,28 @@ cdef class CPU6502:
     cpdef uint8_t TXS(self)
     cpdef uint8_t TYA(self)
     cpdef uint8_t XXX(self)
-    cpdef uint8_t UNOFF(self)
+
+    # Unofficial ("illegal") opcodes. Each is a real instruction with exact
+    # semantics -- see cpu.pyx for the block comment and per-opcode docs.
+    cpdef uint8_t SLO(self)
+    cpdef uint8_t RLA(self)
+    cpdef uint8_t SRE(self)
+    cpdef uint8_t RRA(self)
+    cpdef uint8_t DCP(self)
+    cpdef uint8_t ISC(self)
+    cpdef uint8_t SAX(self)
+    cpdef uint8_t LAX(self)
+    cpdef uint8_t ANC(self)
+    cpdef uint8_t ALR(self)
+    cpdef uint8_t ARR(self)
+    cpdef uint8_t SBX(self)
+    cpdef uint8_t LXA(self)
+    cpdef uint8_t ANE(self)
+    cpdef uint8_t LAS(self)
+    cpdef uint8_t SHA(self)
+    cpdef uint8_t TAS(self)
+    cpdef uint8_t SHY(self)
+    cpdef uint8_t SHX(self)
     
     cdef list lookup
     
