@@ -9,6 +9,10 @@ from nes.ppu.ppu_sprite cimport *
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
 
+# Open-bus decay window, in frames. Real PPU open bus leaks to 0 after ~600 ms;
+# at NTSC ~60 fps that is ~36 frames. A refresh older than this reads back as 0.
+DEF DECAY_FRAMES = 36
+
 cdef class PPU2C02:
     """
     Picture Processing Unit (PPU) emulation for the 2C02 chip.
@@ -82,50 +86,101 @@ cdef class PPU2C02:
 
     cpdef uint8_t[:,:,:] screen(self):
         """Get the rendered frame buffer."""
-        return self._screen               
+        return self._screen
+
+    cdef uint8_t _open_bus_decayed(self):
+        """Value the PPU's undefined bits read back as, after open-bus decay.
+
+        Each bit is only refreshed by an explicit write/read; a bit that has not
+        been refreshed for DECAY_FRAMES frames has leaked away and reads 0.
+        """
+        cdef int i
+        cdef uint8_t value = self.open_bus
+        for i in range(8):
+            if (value >> i) & 1 and \
+                    self.frame_count - self.open_bus_frame[i] > DECAY_FRAMES:
+                value &= <uint8_t>(~(1 << i))
+        return value
+
+    cdef void _open_bus_refresh(self, uint8_t data, uint8_t mask):
+        """Refresh the open-bus bits selected by `mask` with the bits of `data`.
+
+        A write to any PPU register (mask 0xFF) refreshes all eight bits; a read
+        refreshes only the bits the register actually drives.
+        """
+        cdef int i
+        for i in range(8):
+            if (mask >> i) & 1:
+                if (data >> i) & 1:
+                    self.open_bus |= <uint8_t>(1 << i)
+                else:
+                    self.open_bus &= <uint8_t>(~(1 << i))
+                self.open_bus_frame[i] = self.frame_count
 
     cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
-        data = 0x00
+        cdef uint8_t data = 0x00
+        cdef uint8_t palette
 
         # NOTE: readByCPU is only ever invoked for CPU *reads* (writes go through
-        # writeByCPU). The `readonly` flag is therefore always False from callers,
-        # so the read behaviour lives here directly. Reading $2002 clears VBL
-        # (bit7) and sprite-zero (bit6); reading it on the exact dot VBL is set
-        # suppresses VBL for that frame (the classic status-read race).
+        # writeByCPU). The `readonly` flag is therefore always False from callers.
+        # Reading $2002 clears VBL (bit7) and sprite-zero (bit6); reading it on
+        # the exact dot VBL is set suppresses VBL for that frame (the classic
+        # status-read race).
+        #
+        # Open-bus model: write-only registers ($2000/$2001/$2003/$2005/$2006)
+        # return the decaying latch; $2002's low 5 bits and a palette $2007's
+        # high 2 bits come from it too. Reading a register never refreshes the
+        # bits it does *not* drive, so the latch keeps decaying.
         if addr == 0x0000:
-            # Control (write-only; reads return the open-bus latch, 0 here)
-            pass
+            # Control (write-only): reads return the open-bus latch.
+            data = self._open_bus_decayed()
         elif addr == 0x0001:
             # Mask (write-only)
-            pass
+            data = self._open_bus_decayed()
         elif addr == 0x0002:
             # Status register READ
             if self.scanline == 241 and self.cycle == 1:
                 self.vbl_suppress = True
-            data = (self.PPUSTATUS.value & 0xE0) | (self.ppu_data_buffer & 0x1F)
+            # Bits 7-5 are real status; bits 4-0 are the open-bus latch and are
+            # NOT refreshed by reading $2002 (ppu_open_bus test 6/7).
+            data = (self.PPUSTATUS.value & 0xE0) | (self._open_bus_decayed() & 0x1F)
             self.PPUSTATUS.vertical_blank = 0
             self._update_nmi_line()
             self.address_latch = 0
         elif addr == 0x0003:
             # OAM Address (write-only)
-            pass
+            data = self._open_bus_decayed()
         elif addr == 0x0004:
-            # OAM Data (read)
+            # OAM Data (read). The third byte of each sprite (the attribute
+            # byte) has bits 2-4 not wired to the read path and always reads
+            # back as 0 (ppu_open_bus test 10); the whole byte refreshes the
+            # open-bus latch (ppu_open_bus test 11).
             data = self.OAM[self.OAMADDR // 4][self.OAMADDR % 4]
+            if self.OAMADDR % 4 == 2:
+                data &= 0xE3
+            self._open_bus_refresh(data, 0xFF)
         elif addr == 0x0005:
             # Scroll (write-only)
-            pass
+            data = self._open_bus_decayed()
         elif addr == 0x0006:
             # PPU Address (write-only)
-            pass
+            data = self._open_bus_decayed()
         elif addr == 0x0007:
             # PPU Data (read)
             if self.VRAM_addr.value >= 0x3F00:
+                # Palette read: return the 6-bit palette value in the low bits
+                # and the open-bus latch in the high 2 bits. A palette read does
+                # NOT refresh the latch (ppu_open_bus test 8/9).
+                palette = self.readByPPU(self.VRAM_addr.value & 0x3FFF) & 0x3F
+                data = <uint8_t>(palette | (self._open_bus_decayed() & 0xC0))
                 self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x2FFF))
-                data = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
             else:
                 data = self.ppu_data_buffer
                 self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
+                # A VRAM read refreshes the open-bus latch with the value the
+                # CPU actually received (the returned buffer), not the byte
+                # just fetched into it (ppu_open_bus test 4).
+                self._open_bus_refresh(data, 0xFF)
             if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
                 self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
             else:
@@ -135,6 +190,10 @@ cdef class PPU2C02:
 
     cdef void writeByCPU(self, uint16_t addr, uint8_t data):
         """Write to PPU registers ($2000-$2007)."""
+        # A write to any PPU register refreshes the open-bus latch with the
+        # written value (ppu_open_bus test 2). The $2007 read buffer is a
+        # separate latch and is never touched here.
+        self._open_bus_refresh(data, 0xFF)
         if addr == 0x0000:
             # PPU Control Register ($2000)
             # Sets nametable base, increment mode, sprite/backgroun pattern location
@@ -320,6 +379,10 @@ cdef class PPU2C02:
         self.odd_skip_pending = False
         self.vbl_suppress = False
         self.overflow_dot = 0
+        self.open_bus = 0x00
+        self.frame_count = 0
+        for i in range(8):
+            self.open_bus_frame[i] = 0
         self.background_next_tile_id = 0x00
         self.background_next_tile_attribute = 0x00
         self.background_next_tile_lsb, self.background_next_tile_msb = 0x00, 0x00
@@ -897,3 +960,4 @@ cdef class PPU2C02:
                 self.scanline = -1
                 self.frame_complete = True
                 self.odd_frame = not self.odd_frame
+                self.frame_count += 1
