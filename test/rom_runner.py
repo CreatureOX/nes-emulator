@@ -164,6 +164,20 @@ def verdict_from_screen(console, detector):
     if detector == "blargg":
         blob = raw + "\n" + off
         low = blob.lower()
+        # blargg multi-ROM suites (blargg_nes_cpu_test5 cpu/official) run 11
+        # sub-test groups and finish with "All tests complete". They never
+        # print a Passed/Failed line, and a failure is reported as
+        # "Errors: N" (count of failed groups), so the generic checks below
+        # never fire for them. Substring "error" (not "errors:") is matched
+        # because the scrolling terminal can wrap a row mid-word.
+        if "all tests complete" in low:
+            if "error" in low:
+                verdict = "FAIL"
+                m = re.search(r"errors?\s*:?\s*(\d+)", low)
+                detail = f" #N={m.group(1)}" if m else " (Errors)"
+            else:
+                verdict = "PASSED"
+            return verdict, detail
         if "fail" in low:
             verdict = "FAIL"
             m = re.search(r"fail(?:ed)?[^0-9]*#?\s*(\d+)", low)
