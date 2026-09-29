@@ -52,6 +52,40 @@ cdef class CPU6502:
         cdef uint16_t hi = <uint16_t> self.pull()
         return hi << 8 | lo
 
+    cdef void set_i_flag(self, bint value, bint deferred):
+        '''
+        Single choke point for every write to the I flag.
+
+        The interrupt-detection logic does not read the live I flag; it reads
+        a latched copy (irq_i_latched) that is refreshed at every instruction
+        boundary. On real silicon a CLI/SEI/PLP does not update that copy
+        until the boundary AFTER the next instruction, so the I change they
+        make is invisible to the mask for one whole instruction: a lone CLI
+        leaves the next instruction masked, and a CLI/SEI pair still admits
+        exactly one IRQ just after the SEI. RTI, BRK, reset and the interrupt
+        sequences instead adopt the new I immediately.
+
+        deferred=True   freeze on the value I holds RIGHT NOW (i.e. before
+                        the change) for one boundary, so the mask keeps using
+                        it while the live flag already holds `value`. Must be
+                        called BEFORE the flag is written.
+        deferred=False  adopt `value` at once: refresh the latch immediately
+                        and clear any pending freeze.
+        '''
+        if deferred:
+            # The capture must be explicit. It is NOT safe to assume the latch
+            # already holds the old value: the boundary that consumes a
+            # previous freeze deliberately SKIPS the refresh, so for
+            # back-to-back flag changes (CLI followed by SEI) the latch would
+            # still hold the value from before the FIRST one. The SEI has to
+            # freeze on the intermediate I that CLI produced.
+            self.irq_i_latched = self.registers.status.bits.I
+            self.irq_defer_i = True
+        else:
+            self.irq_i_latched = value
+            self.irq_defer_i = False
+        self.registers.status.bits.I = value
+
     cpdef uint8_t IMP(self):
         '''
         Address Mode: Implied
@@ -476,7 +510,7 @@ cdef class CPU6502:
         self.push_2_bytes(self.registers.PC)
         self.push(pushed_p)
 
-        self.registers.status.bits.I = True
+        self.set_i_flag(True, False)
         self.registers.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
         return 0
 
@@ -536,7 +570,10 @@ cdef class CPU6502:
         Function:    I = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.I = False
+        # The I change is not honored by the interrupt mask until one
+        # instruction later (see set_i_flag): freeze the mask's latched copy
+        # so the next instruction is still masked by the OLD I.
+        self.set_i_flag(False, True)
         return 0
 
     cpdef uint8_t CLV(self):
@@ -819,7 +856,14 @@ cdef class CPU6502:
         # Real 6502 PLP loads the 6 real flags but IGNORES the B flag
         # (bit 4 is not affected) and forces U (bit 5) to 1.
         cdef uint8_t prev_b = self.registers.status.bits.B
-        self.registers.status.value = self.pull()
+        cdef uint8_t pulled_p = self.pull()
+        # PLP can change the I flag; like CLI/SEI it freezes the mask's copy
+        # for one instruction (see set_i_flag). set_i_flag captures the I that
+        # is live AT CALL TIME, so it must run BEFORE the new status is
+        # loaded -- otherwise it would freeze on the post-PLP value instead of
+        # the pre-PLP one.
+        self.set_i_flag(<bint>((pulled_p >> 2) & 1), True)
+        self.registers.status.value = pulled_p
         self.registers.status.bits.B = prev_b
         self.registers.status.bits.U = True
         return 0
@@ -870,6 +914,9 @@ cdef class CPU6502:
         self.registers.status.value = pulled_p
         self.registers.status.bits.B = prev_b
         self.registers.status.bits.U = True
+        # RTI restores I immediately: unlike CLI/SEI/PLP there is no
+        # one-instruction latency, so the mask adopts the restored value now.
+        self.set_i_flag(self.registers.status.bits.I, False)
         self.registers.PC = self.pull_2_bytes()
         return 0
 
@@ -908,7 +955,10 @@ cdef class CPU6502:
         Function:    I = 1
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.I = True
+        # Same one-instruction latency as CLI (see set_i_flag): the mask
+        # keeps using the OLD I, so an already-pending IRQ is still admitted
+        # at the end of this instruction -- exactly one, then masked.
+        self.set_i_flag(True, True)
         return 0
 
     cpdef uint8_t STA(self):
@@ -1014,26 +1064,317 @@ cdef class CPU6502:
         '''
         return 0
 
-    cpdef uint8_t UNOFF(self):
-        '''
-        Unofficial-opcode handler used by blargg 04-dummy_reads_apu.
+    # ------------------------------------------------------------------
+    # Unofficial ("illegal") opcodes.
+    #
+    # A 6502 decodes all 256 opcodes: the undocumented ones are not random,
+    # they are the result of two operations being wired onto the same
+    # microcode, so each has exact, well-defined semantics. They are written
+    # here as first-class instructions -- same shape as the official ones
+    # (fetch, operate, write back) -- so the decode table below is a complete
+    # map rather than "everything else falls through to a stub".
+    #
+    # Two families explain most of the table:
+    #
+    #   * RMW+ALU: SLO/RLA/SRE/RRA/DCP/ISC shift, rotate, decrement or
+    #     increment the operand IN MEMORY and then feed the result to
+    #     ORA/AND/EOR/ADC/CMP/SBC.
+    #
+    #   * NOP-with-operand (DOP/TOP/SKW): a real read at the operand address
+    #     and nothing else. These MUST consume their operand byte. Treating
+    #     them as implied NOPs leaves PC pointing at the operand, so the next
+    #     decode reads data as an opcode -- that is what hung the
+    #     instr_test-v3 / nes_instr_test rom_singles.
+    #
+    # A handful ($8B ANE, $AB LXA) OR in "magic" bits because the internal
+    # bus value is unstable; 0xEE is the value real NES hardware settles on.
+    # ------------------------------------------------------------------
 
-        That test only verifies the instruction's (page-cross) memory access
-        lands on $4015: it polls bit 6 of $4015 (the frame-interrupt flag, which
-        our APU clears on any $4015 read), so a dummy/read/write touching $4015
-        clears the flag and the test passes. This handler therefore performs a
-        single real bus read at the effective address computed by the addressing
-        mode -- sufficient to clear the flag -- without attempting the
-        bus-conflict-dependent ALU semantics of each unofficial opcode. Correct
-        operation of those opcodes is out of scope for this test and can be
-        refined later; implementing the address access is what makes 04 pass.
+    cpdef uint8_t SLO(self):
         '''
-        self.read(self.addr_abs)
+        Instruction: ASL memory, then ORA into A (unofficial)
+        Function:    M = M << 1; A = A | M
+        Flags Out:   C from the shift; N, Z from A
+        '''
+        self.fetch()
+        cdef uint16_t shifted = <uint16_t> self.fetched << 1
+        self.registers.status.bits.C = shifted & 0xFF00 > 0
+        cdef uint8_t value = <uint8_t> (shifted & 0x00FF)
+        self.write(self.addr_abs, value)
+        self.registers.A |= value
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t RLA(self):
+        '''
+        Instruction: ROL memory, then AND into A (unofficial)
+        Function:    M = ROL M; A = A & M
+        Flags Out:   C from the rotate; N, Z from A
+        '''
+        self.fetch()
+        cdef uint16_t rotated = <uint16_t> ((self.fetched << 1) | <uint16_t> self.registers.status.bits.C)
+        self.registers.status.bits.C = rotated & 0xFF00 > 0
+        cdef uint8_t value = <uint8_t> (rotated & 0x00FF)
+        self.write(self.addr_abs, value)
+        self.registers.A &= value
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t SRE(self):
+        '''
+        Instruction: LSR memory, then EOR into A (unofficial)
+        Function:    M = M >> 1; A = A ^ M
+        Flags Out:   C = old bit 0; N, Z from A
+        '''
+        self.fetch()
+        self.registers.status.bits.C = self.fetched & 0x01
+        cdef uint8_t value = <uint8_t> (self.fetched >> 1)
+        self.write(self.addr_abs, value)
+        self.registers.A ^= value
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t RRA(self):
+        '''
+        Instruction: ROR memory, then ADC into A (unofficial)
+        Function:    M = ROR M; A = A + M + C
+        Flags Out:   C, V, N, Z (from the ADC; C is set by the rotate first)
+        '''
+        self.fetch()
+        cdef uint8_t carry_in = self.registers.status.bits.C
+        self.registers.status.bits.C = self.fetched & 0x01
+        cdef uint8_t value = <uint8_t> ((self.fetched >> 1) | (carry_in << 7))
+        self.write(self.addr_abs, value)
+        cdef uint16_t t = <uint16_t> self.registers.A + <uint16_t> value + <uint16_t> self.registers.status.bits.C
+        self.registers.status.bits.C = t > 255
+        self.registers.status.bits.Z = (t & 0x00FF) == 0
+        self.registers.status.bits.V = (~(self.registers.A ^ value) & (self.registers.A ^ t)) & 0x0080 > 0
+        self.registers.status.bits.N = t & 0x80 > 0
+        self.registers.A = <uint8_t> (t & 0x00FF)
+        return 0
+
+    cpdef uint8_t DCP(self):
+        '''
+        Instruction: DEC memory, then CMP with A (unofficial)
+        Function:    M = M - 1; flags = A - M
+        Flags Out:   C, N, Z
+        '''
+        self.fetch()
+        cdef uint8_t value = <uint8_t> ((self.fetched - 1) & 0xFF)
+        self.write(self.addr_abs, value)
+        cdef uint16_t diff = <uint16_t> self.registers.A - <uint16_t> value
+        self.registers.status.bits.C = self.registers.A >= value
+        self.registers.status.bits.Z = self.registers.A == value
+        self.registers.status.bits.N = diff & 0x80 > 0
+        return 0
+
+    cpdef uint8_t ISC(self):
+        '''
+        Instruction: INC memory, then SBC from A (unofficial)
+        Function:    M = M + 1; A = A - M - (1 - C)
+        Flags Out:   C, V, N, Z
+        '''
+        self.fetch()
+        cdef uint8_t value = <uint8_t> ((self.fetched + 1) & 0xFF)
+        self.write(self.addr_abs, value)
+        cdef uint16_t inv = <uint16_t> (value ^ 0x00FF)
+        cdef uint16_t t = <uint16_t> self.registers.A + inv + <uint16_t> self.registers.status.bits.C
+        self.registers.status.bits.C = t & 0xFF00 > 0
+        self.registers.status.bits.Z = (t & 0x00FF) == 0
+        self.registers.status.bits.V = (t ^ <uint16_t> self.registers.A) & (t ^ inv) & 0x0080 > 0
+        self.registers.status.bits.N = t & 0x0080 > 0
+        self.registers.A = <uint8_t> (t & 0x00FF)
+        return 0
+
+    cpdef uint8_t SAX(self):
+        '''
+        Instruction: Store A AND X (unofficial, also AAX)
+        Function:    M = A & X
+        '''
+        self.write(self.addr_abs, self.registers.A & self.registers.X)
+        return 0
+
+    cpdef uint8_t LAX(self):
+        '''
+        Instruction: Load A and X from memory (unofficial)
+        Function:    A = X = M
+        Flags Out:   N, Z
+        '''
+        self.fetch()
+        self.registers.A = self.fetched
+        self.registers.X = self.fetched
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t ANC(self):
+        '''
+        Instruction: AND immediate, then copy N into C (unofficial, also AAC)
+        Function:    A = A & imm; C = N
+        Flags Out:   N, Z, C
+        '''
+        self.fetch()
+        self.registers.A &= self.fetched
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.bits.C = self.registers.status.bits.N
+        return 0
+
+    cpdef uint8_t ALR(self):
+        '''
+        Instruction: AND immediate, then LSR A (unofficial, also ASR)
+        Function:    A = (A & imm) >> 1
+        Flags Out:   C = bit 0 of the AND result; N, Z
+        '''
+        self.fetch()
+        self.registers.A &= self.fetched
+        self.registers.status.bits.C = self.registers.A & 0x01
+        self.registers.A >>= 1
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t ARR(self):
+        '''
+        Instruction: AND immediate, then a ROR-like rotate (unofficial)
+
+        Unlike a plain ROR the flags do not come from the shifter: C is bit 6
+        of the result and V is bit 6 XOR bit 5, which is the (unused on the
+        NES) decimal-mode adjust logic leaking through.
+        '''
+        self.fetch()
+        cdef uint8_t carry_in = self.registers.status.bits.C
+        cdef uint8_t value = <uint8_t> (self.registers.A & self.fetched)
+        cdef uint8_t result = <uint8_t> ((value >> 1) | (carry_in << 7))
+        self.registers.A = result
+        self.registers.status.bits.Z = result == 0x00
+        self.registers.status.bits.N = result & 0x80 > 0
+        self.registers.status.bits.C = result & 0x40 > 0
+        self.registers.status.bits.V = ((result >> 6) ^ (result >> 5)) & 0x01 > 0
+        return 0
+
+    cpdef uint8_t SBX(self):
+        '''
+        Instruction: X = (A AND X) - immediate (unofficial, also AXS)
+        Flags Out:   C = no borrow; N, Z from X
+        '''
+        self.fetch()
+        cdef uint8_t t = <uint8_t> (self.registers.A & self.registers.X)
+        self.registers.status.bits.C = t >= self.fetched
+        self.registers.X = <uint8_t> ((t - self.fetched) & 0xFF)
+        self.registers.status.bits.Z = self.registers.X == 0x00
+        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        return 0
+
+    cpdef uint8_t LXA(self):
+        '''
+        Instruction: A = X = (A | magic) AND immediate (unofficial, also ATX)
+
+        The 6502 ORs the operand with whatever is floating on the internal
+        bus. On NES hardware that bus floats HIGH (pinned to 0xFF by
+        instr_test-v5/03-immediate), which collapses to A = X = immediate.
+        '''
+        self.fetch()
+        self.registers.A = <uint8_t> ((self.registers.A | 0xFF) & self.fetched)
+        self.registers.X = self.registers.A
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t ANE(self):
+        '''
+        Instruction: A = (A | magic) AND X AND immediate (unofficial, also XAA)
+
+        Same unstable-bus story as LXA; on the NES it floats to 0xFF. (No
+        blargg suite exercises $8B, so this is carried along with the LXA
+        value rather than independently pinned.)
+        '''
+        self.fetch()
+        self.registers.A = <uint8_t> ((self.registers.A | 0xFF) & self.registers.X & self.fetched)
+        self.registers.status.bits.Z = self.registers.A == 0x00
+        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        return 0
+
+    cpdef uint8_t LAS(self):
+        '''
+        Instruction: A = X = SP = M AND SP (unofficial)
+        Flags Out:   N, Z
+        '''
+        self.fetch()
+        cdef uint8_t value = <uint8_t> (self.fetched & self.registers.SP)
+        self.registers.A = value
+        self.registers.X = value
+        self.registers.SP = value
+        self.registers.status.bits.Z = value == 0x00
+        self.registers.status.bits.N = value & 0x80 > 0
+        return 0
+
+    cdef void store_and_hi(self, uint8_t value, uint8_t index):
+        '''
+        Store *value* ANDed with (high byte of the LITERAL address + 1).
+
+        SHA/SHX/SHY/TAS share this "semi-stable" behaviour: the address bus
+        is still driving the high byte when the value goes out, so it leaks
+        into the stored byte. Two details matter, and both are pinned by
+        instr_test-v5/07-abs_xy (its operand sits at $02FE, so X=2 crosses a
+        page while X=1 does not):
+
+          * the mask comes from the LITERAL (pre-index) high byte, not the
+            indexed one -- $02FE,X stores Y & $03 either way;
+          * when the index DOES cross a page, the increment prepared for the
+            address lands on the bus too, so the high byte of the ADDRESS is
+            replaced by the stored value.
+
+        *index* is the register the address was offset by; it is needed to
+        recover the pre-index high byte.
+        '''
+        cdef uint16_t addr = self.addr_abs
+        cdef uint8_t high = <uint8_t> (((((addr - index) & 0xFFFF) >> 8) + 1) & 0xFF)
+        cdef uint8_t stored = <uint8_t> (value & high)
+        if (addr & 0xFF) < index:
+            addr = (<uint16_t> stored << 8) | (addr & 0x00FF)
+        self.write(addr, stored)
+
+    cpdef uint8_t SHA(self):
+        '''
+        Instruction: Store A AND X AND (H+1) (unofficial, also AXA/AHX)
+        '''
+        self.store_and_hi(<uint8_t> (self.registers.A & self.registers.X),
+                          self.registers.Y)
+        return 0
+
+    cpdef uint8_t TAS(self):
+        '''
+        Instruction: SP = A AND X; store A AND X AND (H+1) (unofficial, SHS)
+        '''
+        cdef uint8_t value = <uint8_t> (self.registers.A & self.registers.X)
+        self.registers.SP = value
+        self.store_and_hi(value, self.registers.Y)
+        return 0
+
+    cpdef uint8_t SHY(self):
+        '''
+        Instruction: Store Y AND (H+1) (unofficial, also SYA)
+        '''
+        self.store_and_hi(self.registers.Y, self.registers.X)
+        return 0
+
+    cpdef uint8_t SHX(self):
+        '''
+        Instruction: Store X AND (H+1) (unofficial, also SXA)
+        '''
+        self.store_and_hi(self.registers.X, self.registers.Y)
         return 0
 
     def __init__(self, CPUBus bus):
         self.registers = Registers()        
         self.registers.status.value = 0x34
+        # Keep the interrupt mask's latched copy in step with the live flag
+        # from power-up (see set_i_flag).
+        self.set_i_flag(self.registers.status.bits.I, False)
         self.registers.SP = 0xFD
         
         self.ram = np.array([0x00] * 2 * 1024, dtype = np.uint8)
@@ -1051,22 +1392,22 @@ cdef class CPU6502:
         self.clock_count = 0
 
         self.lookup = [
-            Op( "BRK", self.BRK, self.IMM, 7 ),Op( "ORA", self.ORA, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "ORA", self.ORA, self.ZP0, 3 ),Op( "ASL", self.ASL, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PHP", self.PHP, self.IMP, 3 ),Op( "ORA", self.ORA, self.IMM, 2 ),Op( "ASL", self.ASL, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ABS, 4 ),Op( "ASL", self.ASL, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BPL", self.BPL, self.REL, 2 ),Op( "ORA", self.ORA, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ORA", self.ORA, self.ZPX, 4 ),Op( "ASL", self.ASL, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLC", self.CLC, self.IMP, 2 ),Op( "ORA", self.ORA, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 4 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "ORA", self.ORA, self.ABX, 4 ),Op( "ASL", self.ASL, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
-            Op( "JSR", self.JSR, self.ABS, 6 ),Op( "AND", self.AND, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "BIT", self.BIT, self.ZP0, 3 ),Op( "AND", self.AND, self.ZP0, 3 ),Op( "ROL", self.ROL, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PLP", self.PLP, self.IMP, 4 ),Op( "AND", self.AND, self.IMM, 2 ),Op( "ROL", self.ROL, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "BIT", self.BIT, self.ABS, 4 ),Op( "AND", self.AND, self.ABS, 4 ),Op( "ROL", self.ROL, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BMI", self.BMI, self.REL, 2 ),Op( "AND", self.AND, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "AND", self.AND, self.ZPX, 4 ),Op( "ROL", self.ROL, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SEC", self.SEC, self.IMP, 2 ),Op( "AND", self.AND, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "AND", self.AND, self.ABX, 4 ),Op( "ROL", self.ROL, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
-            Op( "RTI", self.RTI, self.IMP, 6 ),Op( "EOR", self.EOR, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "EOR", self.EOR, self.ZP0, 3 ),Op( "LSR", self.LSR, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PHA", self.PHA, self.IMP, 3 ),Op( "EOR", self.EOR, self.IMM, 2 ),Op( "LSR", self.LSR, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "JMP", self.JMP, self.ABS, 3 ),Op( "EOR", self.EOR, self.ABS, 4 ),Op( "LSR", self.LSR, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BVC", self.BVC, self.REL, 2 ),Op( "EOR", self.EOR, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "EOR", self.EOR, self.ZPX, 4 ),Op( "LSR", self.LSR, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLI", self.CLI, self.IMP, 2 ),Op( "EOR", self.EOR, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "EOR", self.EOR, self.ABX, 4 ),Op( "LSR", self.LSR, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
-            Op( "RTS", self.RTS, self.IMP, 6 ),Op( "ADC", self.ADC, self.IZX, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "???", self.NOP, self.IMP, 3 ),Op( "ADC", self.ADC, self.ZP0, 3 ),Op( "ROR", self.ROR, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "PLA", self.PLA, self.IMP, 4 ),Op( "ADC", self.ADC, self.IMM, 2 ),Op( "ROR", self.ROR, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "JMP", self.JMP, self.IND, 5 ),Op( "ADC", self.ADC, self.ABS, 4 ),Op( "ROR", self.ROR, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BVS", self.BVS, self.REL, 2 ),Op( "ADC", self.ADC, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "ADC", self.ADC, self.ZPX, 4 ),Op( "ROR", self.ROR, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SEI", self.SEI, self.IMP, 2 ),Op( "ADC", self.ADC, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "ADC", self.ADC, self.ABX, 4 ),Op( "ROR", self.ROR, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
-            Op( "???", self.NOP, self.IMP, 2 ),Op( "STA", self.STA, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "STY", self.STY, self.ZP0, 3 ),Op( "STA", self.STA, self.ZP0, 3 ),Op( "STX", self.STX, self.ZP0, 3 ),Op( "???", self.XXX, self.IMP, 3 ),Op( "DEY", self.DEY, self.IMP, 2 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "TXA", self.TXA, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "STY", self.STY, self.ABS, 4 ),Op( "STA", self.STA, self.ABS, 4 ),Op( "STX", self.STX, self.ABS, 4 ),Op( "???", self.XXX, self.IMP, 4 ),
-            Op( "BCC", self.BCC, self.REL, 2 ),Op( "STA", self.STA, self.IZY, 6 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 6 ),Op( "STY", self.STY, self.ZPX, 4 ),Op( "STA", self.STA, self.ZPX, 4 ),Op( "STX", self.STX, self.ZPY, 4 ),Op( "???", self.XXX, self.IMP, 4 ),Op( "TYA", self.TYA, self.IMP, 2 ),Op( "STA", self.STA, self.ABY, 5 ),Op( "TXS", self.TXS, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SAY", self.UNOFF, self.ABX, 5 ),Op( "STA", self.STA, self.ABX, 5 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),
-            Op( "LDY", self.LDY, self.IMM, 2 ),Op( "LDA", self.LDA, self.IZX, 6 ),Op( "LDX", self.LDX, self.IMM, 2 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "LDY", self.LDY, self.ZP0, 3 ),Op( "LDA", self.LDA, self.ZP0, 3 ),Op( "LDX", self.LDX, self.ZP0, 3 ),Op( "???", self.XXX, self.IMP, 3 ),Op( "TAY", self.TAY, self.IMP, 2 ),Op( "LDA", self.LDA, self.IMM, 2 ),Op( "TAX", self.TAX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "LDY", self.LDY, self.ABS, 4 ),Op( "LDA", self.LDA, self.ABS, 4 ),Op( "LDX", self.LDX, self.ABS, 4 ),Op( "???", self.XXX, self.IMP, 4 ),
-            Op( "BCS", self.BCS, self.REL, 2 ),Op( "LDA", self.LDA, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "LDY", self.LDY, self.ZPX, 4 ),Op( "LDA", self.LDA, self.ZPX, 4 ),Op( "LDX", self.LDX, self.ZPY, 4 ),Op( "???", self.XXX, self.IMP, 4 ),Op( "CLV", self.CLV, self.IMP, 2 ),Op( "LDA", self.LDA, self.ABY, 4 ),Op( "TSX", self.TSX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "LDY", self.LDY, self.ABX, 4 ),Op( "LDA", self.LDA, self.ABX, 4 ),Op( "LDX", self.LDX, self.ABY, 4 ),Op( "UNOFF", self.UNOFF, self.ABY, 4 ),
-            Op( "CPY", self.CPY, self.IMM, 2 ),Op( "CMP", self.CMP, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "CPY", self.CPY, self.ZP0, 3 ),Op( "CMP", self.CMP, self.ZP0, 3 ),Op( "DEC", self.DEC, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "INY", self.INY, self.IMP, 2 ),Op( "CMP", self.CMP, self.IMM, 2 ),Op( "DEX", self.DEX, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "CPY", self.CPY, self.ABS, 4 ),Op( "CMP", self.CMP, self.ABS, 4 ),Op( "DEC", self.DEC, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BNE", self.BNE, self.REL, 2 ),Op( "CMP", self.CMP, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "CMP", self.CMP, self.ZPX, 4 ),Op( "DEC", self.DEC, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "CLD", self.CLD, self.IMP, 2 ),Op( "CMP", self.CMP, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "CMP", self.CMP, self.ABX, 4 ),Op( "DEC", self.DEC, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
-            Op( "CPX", self.CPX, self.IMM, 2 ),Op( "SBC", self.SBC, self.IZX, 6 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "???", self.XXX, self.IMP, 8 ),Op( "CPX", self.CPX, self.ZP0, 3 ),Op( "SBC", self.SBC, self.ZP0, 3 ),Op( "INC", self.INC, self.ZP0, 5 ),Op( "???", self.XXX, self.IMP, 5 ),Op( "INX", self.INX, self.IMP, 2 ),Op( "SBC", self.SBC, self.IMM, 2 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "???", self.SBC, self.IMP, 2 ),Op( "CPX", self.CPX, self.ABS, 4 ),Op( "SBC", self.SBC, self.ABS, 4 ),Op( "INC", self.INC, self.ABS, 6 ),Op( "???", self.XXX, self.IMP, 6 ),
-            Op( "BEQ", self.BEQ, self.REL, 2 ),Op( "SBC", self.SBC, self.IZY, 5 ),Op( "???", self.XXX, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.IZY, 5 ),Op( "???", self.NOP, self.IMP, 4 ),Op( "SBC", self.SBC, self.ZPX, 4 ),Op( "INC", self.INC, self.ZPX, 6 ),Op( "???", self.XXX, self.IMP, 6 ),Op( "SED", self.SED, self.IMP, 2 ),Op( "SBC", self.SBC, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "UNOFF", self.UNOFF, self.ABY, 5 ),Op( "SKW", self.UNOFF, self.ABX, 4 ),Op( "SBC", self.SBC, self.ABX, 4 ),Op( "INC", self.INC, self.ABX_RMW, 7 ),Op( "UNOFF", self.UNOFF, self.ABX_RMW, 7 ),
+            Op( "BRK", self.BRK, self.IMM, 7 ),Op( "ORA", self.ORA, self.IZX, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SLO", self.SLO, self.IZX, 8 ),Op( "DOP", self.NOP, self.ZP0, 3 ),Op( "ORA", self.ORA, self.ZP0, 3 ),Op( "ASL", self.ASL, self.ZP0, 5 ),Op( "SLO", self.SLO, self.ZP0, 5 ),Op( "PHP", self.PHP, self.IMP, 3 ),Op( "ORA", self.ORA, self.IMM, 2 ),Op( "ASL", self.ASL, self.IMP, 2 ),Op( "ANC", self.ANC, self.IMM, 2 ),Op( "TOP", self.NOP, self.ABS, 4 ),Op( "ORA", self.ORA, self.ABS, 4 ),Op( "ASL", self.ASL, self.ABS, 6 ),Op( "SLO", self.SLO, self.ABS, 6 ),
+            Op( "BPL", self.BPL, self.REL, 2 ),Op( "ORA", self.ORA, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SLO", self.SLO, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "ORA", self.ORA, self.ZPX, 4 ),Op( "ASL", self.ASL, self.ZPX, 6 ),Op( "SLO", self.SLO, self.ZPX, 6 ),Op( "CLC", self.CLC, self.IMP, 2 ),Op( "ORA", self.ORA, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "SLO", self.SLO, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "ORA", self.ORA, self.ABX, 4 ),Op( "ASL", self.ASL, self.ABX_RMW, 7 ),Op( "SLO", self.SLO, self.ABX_RMW, 7 ),
+            Op( "JSR", self.JSR, self.ABS, 6 ),Op( "AND", self.AND, self.IZX, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RLA", self.RLA, self.IZX, 8 ),Op( "BIT", self.BIT, self.ZP0, 3 ),Op( "AND", self.AND, self.ZP0, 3 ),Op( "ROL", self.ROL, self.ZP0, 5 ),Op( "RLA", self.RLA, self.ZP0, 5 ),Op( "PLP", self.PLP, self.IMP, 4 ),Op( "AND", self.AND, self.IMM, 2 ),Op( "ROL", self.ROL, self.IMP, 2 ),Op( "ANC", self.ANC, self.IMM, 2 ),Op( "BIT", self.BIT, self.ABS, 4 ),Op( "AND", self.AND, self.ABS, 4 ),Op( "ROL", self.ROL, self.ABS, 6 ),Op( "RLA", self.RLA, self.ABS, 6 ),
+            Op( "BMI", self.BMI, self.REL, 2 ),Op( "AND", self.AND, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RLA", self.RLA, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "AND", self.AND, self.ZPX, 4 ),Op( "ROL", self.ROL, self.ZPX, 6 ),Op( "RLA", self.RLA, self.ZPX, 6 ),Op( "SEC", self.SEC, self.IMP, 2 ),Op( "AND", self.AND, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "RLA", self.RLA, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "AND", self.AND, self.ABX, 4 ),Op( "ROL", self.ROL, self.ABX_RMW, 7 ),Op( "RLA", self.RLA, self.ABX_RMW, 7 ),
+            Op( "RTI", self.RTI, self.IMP, 6 ),Op( "EOR", self.EOR, self.IZX, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SRE", self.SRE, self.IZX, 8 ),Op( "DOP", self.NOP, self.ZP0, 3 ),Op( "EOR", self.EOR, self.ZP0, 3 ),Op( "LSR", self.LSR, self.ZP0, 5 ),Op( "SRE", self.SRE, self.ZP0, 5 ),Op( "PHA", self.PHA, self.IMP, 3 ),Op( "EOR", self.EOR, self.IMM, 2 ),Op( "LSR", self.LSR, self.IMP, 2 ),Op( "ALR", self.ALR, self.IMM, 2 ),Op( "JMP", self.JMP, self.ABS, 3 ),Op( "EOR", self.EOR, self.ABS, 4 ),Op( "LSR", self.LSR, self.ABS, 6 ),Op( "SRE", self.SRE, self.ABS, 6 ),
+            Op( "BVC", self.BVC, self.REL, 2 ),Op( "EOR", self.EOR, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SRE", self.SRE, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "EOR", self.EOR, self.ZPX, 4 ),Op( "LSR", self.LSR, self.ZPX, 6 ),Op( "SRE", self.SRE, self.ZPX, 6 ),Op( "CLI", self.CLI, self.IMP, 2 ),Op( "EOR", self.EOR, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "SRE", self.SRE, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "EOR", self.EOR, self.ABX, 4 ),Op( "LSR", self.LSR, self.ABX_RMW, 7 ),Op( "SRE", self.SRE, self.ABX_RMW, 7 ),
+            Op( "RTS", self.RTS, self.IMP, 6 ),Op( "ADC", self.ADC, self.IZX, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RRA", self.RRA, self.IZX, 8 ),Op( "DOP", self.NOP, self.ZP0, 3 ),Op( "ADC", self.ADC, self.ZP0, 3 ),Op( "ROR", self.ROR, self.ZP0, 5 ),Op( "RRA", self.RRA, self.ZP0, 5 ),Op( "PLA", self.PLA, self.IMP, 4 ),Op( "ADC", self.ADC, self.IMM, 2 ),Op( "ROR", self.ROR, self.IMP, 2 ),Op( "ARR", self.ARR, self.IMM, 2 ),Op( "JMP", self.JMP, self.IND, 5 ),Op( "ADC", self.ADC, self.ABS, 4 ),Op( "ROR", self.ROR, self.ABS, 6 ),Op( "RRA", self.RRA, self.ABS, 6 ),
+            Op( "BVS", self.BVS, self.REL, 2 ),Op( "ADC", self.ADC, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RRA", self.RRA, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "ADC", self.ADC, self.ZPX, 4 ),Op( "ROR", self.ROR, self.ZPX, 6 ),Op( "RRA", self.RRA, self.ZPX, 6 ),Op( "SEI", self.SEI, self.IMP, 2 ),Op( "ADC", self.ADC, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "RRA", self.RRA, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "ADC", self.ADC, self.ABX, 4 ),Op( "ROR", self.ROR, self.ABX_RMW, 7 ),Op( "RRA", self.RRA, self.ABX_RMW, 7 ),
+            Op( "DOP", self.NOP, self.IMM, 2 ),Op( "STA", self.STA, self.IZX, 6 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "SAX", self.SAX, self.IZX, 6 ),Op( "STY", self.STY, self.ZP0, 3 ),Op( "STA", self.STA, self.ZP0, 3 ),Op( "STX", self.STX, self.ZP0, 3 ),Op( "SAX", self.SAX, self.ZP0, 3 ),Op( "DEY", self.DEY, self.IMP, 2 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "TXA", self.TXA, self.IMP, 2 ),Op( "ANE", self.ANE, self.IMM, 2 ),Op( "STY", self.STY, self.ABS, 4 ),Op( "STA", self.STA, self.ABS, 4 ),Op( "STX", self.STX, self.ABS, 4 ),Op( "SAX", self.SAX, self.ABS, 4 ),
+            Op( "BCC", self.BCC, self.REL, 2 ),Op( "STA", self.STA, self.IZY, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SHA", self.SHA, self.IZY, 6 ),Op( "STY", self.STY, self.ZPX, 4 ),Op( "STA", self.STA, self.ZPX, 4 ),Op( "STX", self.STX, self.ZPY, 4 ),Op( "SAX", self.SAX, self.ZPY, 4 ),Op( "TYA", self.TYA, self.IMP, 2 ),Op( "STA", self.STA, self.ABY, 5 ),Op( "TXS", self.TXS, self.IMP, 2 ),Op( "TAS", self.TAS, self.ABY, 5 ),Op( "SHY", self.SHY, self.ABX, 5 ),Op( "STA", self.STA, self.ABX, 5 ),Op( "SHX", self.SHX, self.ABY, 5 ),Op( "SHA", self.SHA, self.ABY, 5 ),
+            Op( "LDY", self.LDY, self.IMM, 2 ),Op( "LDA", self.LDA, self.IZX, 6 ),Op( "LDX", self.LDX, self.IMM, 2 ),Op( "LAX", self.LAX, self.IZX, 6 ),Op( "LDY", self.LDY, self.ZP0, 3 ),Op( "LDA", self.LDA, self.ZP0, 3 ),Op( "LDX", self.LDX, self.ZP0, 3 ),Op( "LAX", self.LAX, self.ZP0, 3 ),Op( "TAY", self.TAY, self.IMP, 2 ),Op( "LDA", self.LDA, self.IMM, 2 ),Op( "TAX", self.TAX, self.IMP, 2 ),Op( "LXA", self.LXA, self.IMM, 2 ),Op( "LDY", self.LDY, self.ABS, 4 ),Op( "LDA", self.LDA, self.ABS, 4 ),Op( "LDX", self.LDX, self.ABS, 4 ),Op( "LAX", self.LAX, self.ABS, 4 ),
+            Op( "BCS", self.BCS, self.REL, 2 ),Op( "LDA", self.LDA, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "LAX", self.LAX, self.IZY, 5 ),Op( "LDY", self.LDY, self.ZPX, 4 ),Op( "LDA", self.LDA, self.ZPX, 4 ),Op( "LDX", self.LDX, self.ZPY, 4 ),Op( "LAX", self.LAX, self.ZPY, 4 ),Op( "CLV", self.CLV, self.IMP, 2 ),Op( "LDA", self.LDA, self.ABY, 4 ),Op( "TSX", self.TSX, self.IMP, 2 ),Op( "LAS", self.LAS, self.ABY, 4 ),Op( "LDY", self.LDY, self.ABX, 4 ),Op( "LDA", self.LDA, self.ABX, 4 ),Op( "LDX", self.LDX, self.ABY, 4 ),Op( "LAX", self.LAX, self.ABY, 4 ),
+            Op( "CPY", self.CPY, self.IMM, 2 ),Op( "CMP", self.CMP, self.IZX, 6 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "DCP", self.DCP, self.IZX, 8 ),Op( "CPY", self.CPY, self.ZP0, 3 ),Op( "CMP", self.CMP, self.ZP0, 3 ),Op( "DEC", self.DEC, self.ZP0, 5 ),Op( "DCP", self.DCP, self.ZP0, 5 ),Op( "INY", self.INY, self.IMP, 2 ),Op( "CMP", self.CMP, self.IMM, 2 ),Op( "DEX", self.DEX, self.IMP, 2 ),Op( "SBX", self.SBX, self.IMM, 2 ),Op( "CPY", self.CPY, self.ABS, 4 ),Op( "CMP", self.CMP, self.ABS, 4 ),Op( "DEC", self.DEC, self.ABS, 6 ),Op( "DCP", self.DCP, self.ABS, 6 ),
+            Op( "BNE", self.BNE, self.REL, 2 ),Op( "CMP", self.CMP, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "DCP", self.DCP, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "CMP", self.CMP, self.ZPX, 4 ),Op( "DEC", self.DEC, self.ZPX, 6 ),Op( "DCP", self.DCP, self.ZPX, 6 ),Op( "CLD", self.CLD, self.IMP, 2 ),Op( "CMP", self.CMP, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "DCP", self.DCP, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "CMP", self.CMP, self.ABX, 4 ),Op( "DEC", self.DEC, self.ABX_RMW, 7 ),Op( "DCP", self.DCP, self.ABX_RMW, 7 ),
+            Op( "CPX", self.CPX, self.IMM, 2 ),Op( "SBC", self.SBC, self.IZX, 6 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "ISC", self.ISC, self.IZX, 8 ),Op( "CPX", self.CPX, self.ZP0, 3 ),Op( "SBC", self.SBC, self.ZP0, 3 ),Op( "INC", self.INC, self.ZP0, 5 ),Op( "ISC", self.ISC, self.ZP0, 5 ),Op( "INX", self.INX, self.IMP, 2 ),Op( "SBC", self.SBC, self.IMM, 2 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "USBC", self.SBC, self.IMM, 2 ),Op( "CPX", self.CPX, self.ABS, 4 ),Op( "SBC", self.SBC, self.ABS, 4 ),Op( "INC", self.INC, self.ABS, 6 ),Op( "ISC", self.ISC, self.ABS, 6 ),
+            Op( "BEQ", self.BEQ, self.REL, 2 ),Op( "SBC", self.SBC, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "ISC", self.ISC, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "SBC", self.SBC, self.ZPX, 4 ),Op( "INC", self.INC, self.ZPX, 6 ),Op( "ISC", self.ISC, self.ZPX, 6 ),Op( "SED", self.SED, self.IMP, 2 ),Op( "SBC", self.SBC, self.ABY, 4 ),Op( "NOP", self.NOP, self.IMP, 2 ),Op( "ISC", self.ISC, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "SBC", self.SBC, self.ABX, 4 ),Op( "INC", self.INC, self.ABX_RMW, 7 ),Op( "ISC", self.ISC, self.ABX_RMW, 7 ),
         ]
 
     cdef void power_up(self):
@@ -1086,7 +1427,9 @@ cdef class CPU6502:
         self.registers.PC = hi << 8 | lo
 
         self.registers.SP -= 3
-        self.registers.status.bits.I = True
+        # Adopted immediately: reset is not a flag-change instruction, so
+        # there is no one-instruction latency on the mask.
+        self.set_i_flag(True, False)
         
         self.remaining_cycles = 8    
 
@@ -1102,6 +1445,8 @@ cdef class CPU6502:
         # interrupt sequence (no polling while it drains).
         self.nmi_latch_dot = -1
         self.irq_latch_dot = -1
+        self.irq_i_latched = True
+        self.irq_defer_i = False
         self.in_interrupt = True
 
     cdef void set_nmi_line(self, bint level):
@@ -1149,21 +1494,32 @@ cdef class CPU6502:
 
         cdef uint8_t pushed_p
 
-        if (self.registers.status.bits.I == 0):
-            self.push_2_bytes(self.registers.PC)
+        # The decision to take this IRQ (I flag clear, line asserted) is made
+        # by the polling logic in clock() against the *latched* I value, which
+        # honors the CLI/SEI/PLP one-instruction delay. We therefore execute
+        # the vector unconditionally here: re-checking the live I flag would
+        # wrongly veto an IRQ whose latched I is 0 but whose live I has since
+        # been re-set by a following SEI -- the CLI/SEI "one IRQ just after
+        # SEI" case (subtest 5). We push the *live* status, then set I
+        # internally.
+        self.push_2_bytes(self.registers.PC)
 
-            # Hardware IRQ pushes P with B=0 and U=1; the I flag is only
-            # set afterwards (cycle 6), so the pushed byte still has I=0.
-            pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
-            self.push(pushed_p)
-            self.registers.status.bits.I = True
+        # Hardware IRQ pushes P with B=0 and U=1. The I bit pushed is whatever
+        # the live status holds at the vector moment (0 if I was genuinely
+        # clear, 1 if a just-executed SEI had already set it) -- both are what
+        # the real silicon pushes and what the tests check (subtest 6 expects
+        # I=1 in the saved status for the CLI/SEI case). I is then set
+        # internally for the duration of the handler.
+        pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
+        self.push(pushed_p)
+        self.set_i_flag(True, False)
 
-            self.addr_abs = 0xFFFE
-            lo = self.read(self.addr_abs + 0)
-            hi = self.read(self.addr_abs + 1)
-            self.registers.PC = hi << 8 | lo
+        self.addr_abs = 0xFFFE
+        lo = self.read(self.addr_abs + 0)
+        hi = self.read(self.addr_abs + 1)
+        self.registers.PC = hi << 8 | lo
 
-            self.remaining_cycles = 7
+        self.remaining_cycles = 7
 
     cdef void nmi(self):
         '''
@@ -1177,7 +1533,7 @@ cdef class CPU6502:
         # Same as IRQ: push P with B=0, U=1 and only then set I.
         pushed_p = <uint8_t>((self.registers.status.value | 0x20) & 0xEF)
         self.push(pushed_p)
-        self.registers.status.bits.I = True
+        self.set_i_flag(True, False)
 
         self.addr_abs = 0xFFFA
         lo = self.read(self.addr_abs + 0)
@@ -1227,6 +1583,17 @@ cdef class CPU6502:
             # to the next instruction's end. Without this, an NMI whose edge
             # lands in those dots fires a full instruction early
             # (7.nmi_timing's align subtests).
+            # CLI/SEI/PLP one-instruction I-flag latency: the mask reads
+            # self.irq_i_latched, never the live flag, and a flag-change
+            # instruction FREEZES that copy's refresh for one boundary
+            # (self.irq_defer_i, set by set_i_flag). While frozen the mask
+            # keeps the OLD value, so the new I is not honored until the
+            # instruction AFTER the next one.
+            if self.irq_defer_i:
+                self.irq_defer_i = False
+            else:
+                self.irq_i_latched = self.registers.status.bits.I
+
             if not self.in_interrupt and self.nmi_pending and self.nmi_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
                 self.nmi_pending = False
                 self.in_interrupt = True
@@ -1234,7 +1601,7 @@ cdef class CPU6502:
                 self.clock_count += 1
                 self.remaining_cycles -= 1
                 return 0
-            if not self.in_interrupt and self.irq_line and self.registers.status.bits.I == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
+            if not self.in_interrupt and self.irq_line and self.irq_i_latched == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
                 self.in_interrupt = True
                 self.irq()
                 self.clock_count += 1
