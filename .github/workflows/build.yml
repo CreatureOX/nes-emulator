@@ -70,7 +70,7 @@ jobs:
         run: |
           mkdir -p images
           curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
-          
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -122,7 +122,7 @@ jobs:
           cp images/FanNes.icns "$APP_PATH/Contents/Resources/"
           cat > "$APP_PATH/Contents/Info.plist" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
@@ -154,8 +154,61 @@ jobs:
           path: dist/FanNes.app
           retention-days: 5
 
-  test:
+  # Compile the Cython extensions ONCE on a single machine, then ship the
+  # built package to every test shard. The 20 gated shards previously each ran
+  # `setup.py build_ext` from scratch -- 20 identical compiles per run. On a
+  # free-tier public repo that is pure wasted compute and inflates wall-clock.
+  # One build job + artifact download collapses it to a single compile.
+  build:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-ci-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-ci-
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build Cython extensions
+        run: |
+          rm -rf build
+          find . -name "*.c" -delete
+          find . -name "*.h" -not -name "status_register.h" -delete
+          python setup.py build_ext --inplace
+
+      - name: Upload compiled extension package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nes-ext
+          path: nes
+          retention-days: 1
+
+  test:
+    needs: [build]
+    runs-on: ubuntu-latest
+    strategy:
+      # fan the gated sweep across N machines -- each shard is a full job on
+      # its own runner, so the wall-clock time is ~1/N of a single serial run.
+      # fail-fast:false so one red shard never cancels the others.
+      fail-fast: false
+      matrix:
+        # Free plan caps at 20 concurrent jobs; 20 shards == 20 machines in
+        # parallel, the wall-clock floor. Going past 20 only queues, no faster.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
       - name: Checkout code (with test ROM submodule)
         uses: actions/checkout@v4
@@ -167,27 +220,39 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install build/test dependencies
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-ci-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-ci-
+
+      - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "Cython>=3.0.6" "numpy>=1.21.0" "pygame>=2.5.0" "toml>=0.10.2" "Pillow>=9.3.0" "setuptools" "wheel"
+          pip install -r requirements.txt
 
-      - name: Build Cython extensions
-        run: |
-          rm -rf build
-          find . -name "*.c" -delete
-          find . -name "*.h" -not -name "status_register.h" -delete
-          python setup.py build_ext --inplace
+      - name: Download compiled extensions
+        # build job uploaded the whole `nes/` package (sources + built .so);
+        # extracting at the workspace root drops the .so next to the sources,
+        # so the shards import the prebuilt extensions instead of compiling.
+        uses: actions/download-artifact@v4
+        with:
+          name: nes-ext
+          path: .
 
-      - name: Run gated regression
+      - name: Run gated regression (shard ${{ matrix.shard }}/20)
         continue-on-error: true
         env:
           SDL_VIDEODRIVER: dummy
           PYTHONUNBUFFERED: "1"
           OPENBLAS_NUM_THREADS: "1"
           OMP_NUM_THREADS: "1"
-          NES_REGRESSION_WORKERS: "4"
-        run: python test/regression_runner.py --gated
+          # ubuntu-latest free tier is 2 vCPU; the pool caps at cpu_count()
+          # anyway, so 2 is the honest ceiling and avoids OpenBLAS RAM blow-up.
+          NES_REGRESSION_WORKERS: "2"
+        run: python test/regression_runner.py --gated --shard ${{ matrix.shard }} 20
 
   release:
     needs: [build-windows, build-macos, test]

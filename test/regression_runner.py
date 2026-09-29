@@ -228,6 +228,8 @@ def write_report(rows, args, any_bad):
         cmd += " " + args.pattern
     if args.timeout:
         cmd += " --timeout %d" % args.timeout
+    if args.shard:
+        cmd += " --shard %d %d" % (args.shard[0], args.shard[1])
 
     L = []
     L.append("# NES emulator regression report")
@@ -293,6 +295,14 @@ def main():
                          "it after N seconds as TIMEOUT (kills hangs instead of "
                          "freezing the machine). CI does NOT use this -- known "
                          "hangs are pre-excluded in regression.toml")
+    ap.add_argument("--shard", nargs=2, type=int, metavar=("N", "TOTAL"),
+                    help="split the selected ROMs into TOTAL shards and run "
+                         "shard N (0-indexed). Partition is deterministic by id, "
+                         "so every shard job sees the same split and the union of "
+                         "all shards is exactly the full selection with no overlap. "
+                         "CI uses this to fan the sweep across N machines; locally "
+                         "it lets you time a single slice. Works with --gated and "
+                         "--list.")
     args = ap.parse_args()
 
     settings, tests = suite.build()
@@ -311,6 +321,18 @@ def main():
     selected = [t for t in selected if not t.get("excluded")]
     if args.gated:
         selected = [t for t in selected if suite.gated(t)]
+
+    if args.shard:
+        n, total = args.shard
+        if not (0 <= n < total):
+            print(f"--shard N TOTAL requires 0 <= N < TOTAL "
+                  f"(got N={n} TOTAL={total})")
+            return 2
+        # Stable order so the partition is identical on every machine / job
+        # regardless of how suite.build() ordered the merged list.
+        selected.sort(key=lambda t: t["id"])
+        selected = [t for i, t in enumerate(selected) if i % total == n]
+        print(f"[shard {n}/{total}] selected {len(selected)} ROMs", flush=True)
 
     if args.list:
         for t in selected:
