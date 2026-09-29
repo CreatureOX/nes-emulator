@@ -138,9 +138,13 @@ cdef class CPUBus:
         # mid-instruction. The mapper holds its /IRQ line asserted until the
         # game acknowledges it (MMC3 $E000) -- the bus no longer force-clears
         # it on service, matching real hardware level-triggered behaviour.
-        # (When APU frame/DMC IRQ lands, OR its level in here.)
+        # APU frame/DMC IRQs are level-triggered /IRQ sources too; OR them in
+        # with the mapper's line so the CPU actually sees them.
         self.cpu.set_nmi_line(self.ppu.nmi_line)
-        self.cpu.set_irq_line(self.cartridge.mapper.IRQ_state())
+        self.cpu.set_irq_line(
+            (self.cartridge.mapper.IRQ_state() != 0)
+            or self.apu.irq_level()
+        )
         # S3 (phase calibration): a CPU cycle spans three PPU dots. The 6502
         # samples its interrupt inputs at phi2, i.e. the MIDDLE dot of the
         # three (dots 1,4,7,...), not the first. Clocking the CPU on
