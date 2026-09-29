@@ -59,6 +59,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Headless + OpenBLAS guard: apu.pyx imports numpy for audio buffering, which
+# pulls in scipy-openblas. On some Win11 hosts OpenBLAS pre-allocates a 24-thread
+# pool and aborts with "memory allocation" -- the "black screen" seen when the
+# suite is run locally. Force the thread count to 1 and a dummy SDL driver
+# BEFORE numpy/pygame load, so the regression suite runs headless and
+# allocation-light everywhere (local or CI).
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("GOTO_NUM_THREADS", "1")
+
 import rom_runner  # noqa: E402
 import suite  # noqa: E402
 
