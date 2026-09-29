@@ -61,6 +61,15 @@ cdef class PPU2C02:
     cdef bint vbl_suppress
     cdef int overflow_dot
 
+    # Open-bus (PPU "decay") latch. A write to any PPU register refreshes all
+    # eight bits; a read of a register that actually drives bits refreshes
+    # only those bits. Bits not refreshed for ~600 ms (DECAY_FRAMES) read back
+    # as 0, the way real PPU open bus leaks away. open_bus_frame[i] records the
+    # frame each bit was last refreshed on.
+    cdef uint8_t open_bus
+    cdef long long open_bus_frame[8]
+    cdef long long frame_count
+
     cdef CPUBus bus
 
     cdef int screen_width, screen_height
@@ -83,6 +92,9 @@ cdef class PPU2C02:
     cdef void _transfer_Y_address(self)
     cdef void _load_background_shifters(self)
     cdef void _reset_sprite_shift_registers(self)
+    cdef uint8_t _open_bus_decayed(self)
+    cdef void _open_bus_refresh(self, uint8_t data, uint8_t mask)
+
     cdef void _update_nmi_line(self)
 
     cdef void _update_background_shifters(self)
