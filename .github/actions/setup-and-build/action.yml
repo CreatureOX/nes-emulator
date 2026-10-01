@@ -1,0 +1,49 @@
+name: Setup Python and build Cython extensions (in-place)
+description: >-
+  Checkout (optional submodules) + install build deps + compile the nes/
+  Cython extensions in-place. Runs INSIDE the calling job, so the compiled
+  .pyd/.so/.dylib stay in that job's workspace -- no cross-job artifact
+  sharing, which is what keeps the regression gate reliable. Used by both
+  the test and the desktop-packaging jobs so the build command lives in one
+  place instead of drifting between them.
+inputs:
+  cache-path:
+    description: pip cache directory for this OS runner
+    required: true
+  submodules:
+    description: "checkout submodules (test jobs need the test ROM submodule)"
+    required: false
+    default: 'false'
+  python-version:
+    description: Python version to set up
+    required: false
+    default: '3.12'
+runs:
+  using: composite
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: ${{ inputs.submodules }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ runner.os }}-pip-ci-${{ hashFiles('requirements.txt') }}
+        restore-keys: ${{ runner.os }}-pip-ci-
+
+    - name: Install build dependencies and compile extensions
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+        rm -rf build
+        find . -name "*.c" -delete
+        find . -name "*.h" -not -name "status_register.h" -delete
+        python setup.py build_ext --inplace
