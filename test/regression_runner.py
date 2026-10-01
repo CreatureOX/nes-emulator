@@ -41,18 +41,29 @@ Usage (from repo root):
     python test/regression_runner.py --gated      # only the confirmed baseline
     python test/regression_runner.py <idglob>     # ids/paths matching the glob
     python test/regression_runner.py --list       # list the suite and exit
+    python test/regression_runner.py --list-dirs  # list runnable suites (top-level dirs)
     python test/regression_runner.py --frames N   # override frame count (no retry)
     python test/regression_runner.py --timeout N  # local only: abort a hung ROM after N s (TIMEOUT)
+    python test/regression_runner.py --dir DIR            # run only suite(s) DIR (repeatable)
+    python test/regression_runner.py --exclude-dir DIR    # skip suite(s) DIR (repeatable)
 
 Excluded ROMs (PAL, demo/other, no usable detector, unmapped mapper) are
 NEVER run, by any invocation -- not even an unqualified full sweep. A full
 regression must stay limited to ROMs that actually look like tests.
+
+Suites are grouped by their top-level directory and the runner batches each
+suite together, so a run reads suite-by-suite. By default it also skips any
+suite listed in DEFAULT_EXCLUDE_DIRS (currently apu_mixer -- audio-only mixer
+probes with no screen verdict the blargg detector cannot gate). Pass --dir to
+whitelist suites, or --exclude-dir to drop more; a suite containing no .nes at
+all is excluded automatically and never needs listing.
 """
 import os
 import sys
 import fnmatch
 import argparse
 import datetime
+import json
 import multiprocessing as mp
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,6 +86,14 @@ import suite  # noqa: E402
 
 REPORT_DIR = os.path.join(ROOT, "test", "reports")
 
+# Top-level (suite) directories the regression suite skips BY DEFAULT, even when
+# they carry runnable .nes files. apu_mixer's ROMs are audio-only mixer probes
+# with no screen verdict, so the blargg detector cannot gate them and they only
+# add noise to the report. A directory with NO .nes at all is skipped
+# automatically by selection (it contributes zero entries), so it never needs
+# listing here. Override with --dir (whitelist wins) or --exclude-dir.
+DEFAULT_EXCLUDE_DIRS = {"apu_mixer"}
+
 
 def _run_one(entry):
     """Pool worker -- module level so it can be pickled.
@@ -94,56 +113,76 @@ def _run_one(entry):
     return r
 
 
-def _print_progress(done, total, rid, verdict, pass_n, fail_n):
-    """One line of live progress. Newline-per-ROM and flush=True so it shows
-    up in CI logs in real time (GitHub Actions block-buffers stdout otherwise,
-    and a carriage-return progress bar renders poorly in the web UI).
+def _top_dir(rom_id):
+    """Top-level (suite) directory of a ROM id: 'apu_reset' for both
+    'apu_reset/works_immediately' and a bare 'apu_reset'."""
+    return rom_id.split("/", 1)[0]
+
+
+def _print_progress(done, total, d, rid, verdict, pass_n, fail_n):
+    """One line of live progress, grouped by directory. Newline-per-ROM and
+    flush=True so it shows in CI logs in real time (GitHub Actions block-buffers
+    stdout otherwise, and a carriage-return progress bar renders poorly in the
+    web UI).
     """
-    print(f"[{done:>3}/{total}] {rid:42s} {verdict:9s} "
+    print(f"[{done:>3}/{total}] {d:20s} {rid:42s} {verdict:9s} "
           f"PASSED={pass_n} FAIL={fail_n}", flush=True)
 
 
-def _parallel(total, jobs):
-    """Run *jobs* across a process pool, streaming a progress line per ROM.
-
-    Results arrive via imap_unordered as each worker finishes, so the log
-    shows real progress instead of one blob at the end. Only the parent
-    prints, which keeps the lines ordered and free of worker interleaving.
-
-    Workers are reused across jobs (no maxtasksperchild), which is safe here:
-    the only module-level state in the nes/*.pyx extensions is four read-only
-    lookup tables (apu LENGTH_TABLE / DMC_RATE_TABLE / DUTY_PATTERNS, and
-    mapper_factory.mappers) -- all mutable state lives in the Console
-    instance each job builds for itself.
-    """
-    # Default: one worker per CPU. A low-memory / sandboxed environment can
-    # cap this with NES_REGRESSION_WORKERS (e.g. 2) -- each worker imports
-    # numpy/OpenBLAS, so spawning cpu_count() at once can exhaust RAM. The
-    # knob only narrows the pool; it never widens past the CPU count.
+def _pick_workers(total):
+    """Worker count for the process pool: one per CPU by default, narrowed by
+    NES_REGRESSION_WORKERS when set (each worker imports numpy/OpenBLAS and can
+    exhaust RAM in a low-memory sandbox). Never widens past the CPU count."""
     env_w = os.environ.get("NES_REGRESSION_WORKERS")
     if env_w:
         try:
             env_w = max(1, min(int(env_w), mp.cpu_count()))
         except ValueError:
             env_w = None
-    workers = env_w if env_w else min(len(jobs), mp.cpu_count())
-    print(f"Running {total} ROMs across {workers} workers...", flush=True)
-    results = []
-    done = 0
-    pass_n = 0
-    fail_n = 0
-    with mp.Pool(workers) as pool:
-        for r in pool.imap_unordered(_run_one, jobs):
-            done += 1
-            if r["verdict"] == "PASSED":
-                pass_n += 1
-            else:
-                fail_n += 1
-            _print_progress(done, total, r["id"], r["verdict"], pass_n, fail_n)
-            results.append(r)
-    results.sort(key=lambda r: r["id"])
-    print(f"Done: {done}/{total}  PASSED={pass_n} FAIL={fail_n}", flush=True)
-    return results
+    return env_w if env_w else min(total, mp.cpu_count())
+
+
+def _run_batch(pool, jobs, dir_label, counters):
+    """Fan one directory's jobs across the shared pool, stream a per-ROM
+    progress line, update `counters`, and return the results.
+
+    Calling this per directory is what makes the run "batch by directory": a
+    header prints before each suite so the log reads suite-by-suite and one
+    suite's outcome can be eyeballed without scrolling a 188-line blob.
+    Parallelism is preserved WITHIN a directory -- the pool reuses its workers.
+    """
+    print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs) ===", flush=True)
+    res = []
+    for r in pool.imap_unordered(_run_one, jobs):
+        counters["done"] += 1
+        if r["verdict"] == "PASSED":
+            counters["pass_n"] += 1
+        else:
+            counters["fail_n"] += 1
+        _print_progress(counters["done"], len(jobs), dir_label, r["id"],
+                        r["verdict"], counters["pass_n"], counters["fail_n"])
+        res.append(r)
+    return res
+
+
+def _run_sequential_timeout(jobs, dir_label, timeout, counters):
+    """Local hang guard: one ROM per process, aborted at `timeout`. Sequential
+    on purpose -- used when probing a few ROMs by hand, not for the CI sweep.
+    Returns the results for one directory."""
+    print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs, --timeout) ===",
+          flush=True)
+    res = []
+    for j in jobs:
+        r = _run_one_timeout(j, timeout)
+        counters["done"] += 1
+        if r["verdict"] == "PASSED":
+            counters["pass_n"] += 1
+        else:
+            counters["fail_n"] += 1
+        _print_progress(counters["done"], len(jobs), dir_label, j["id"],
+                        r["verdict"], counters["pass_n"], counters["fail_n"])
+        res.append(r)
+    return res
 
 
 def _timeout_target(entry, q):
@@ -241,6 +280,12 @@ def write_report(rows, args, any_bad):
         cmd += " --timeout %d" % args.timeout
     if args.shard:
         cmd += " --shard %d %d" % (args.shard[0], args.shard[1])
+    if args.platform != "linux":
+        cmd += " --platform %s" % args.platform
+    if args.dir:
+        cmd += " " + " ".join("--dir %s" % d for d in args.dir)
+    if args.exclude_dir:
+        cmd += " " + " ".join("--exclude-dir %s" % d for d in args.exclude_dir)
 
     L = []
     L.append("# NES emulator regression report")
@@ -260,6 +305,36 @@ def write_report(rows, args, any_bad):
     L.append(f"- Gated entries: **{n_gated}**")
     L.append(f"- Regression status: **{'FAIL' if any_bad else 'OK'}** "
              f"(local exit code `{1 if any_bad else 0}`)")
+    L.append("")
+
+    # Per-directory (suite) breakdown: the primary way to eyeball a run, since
+    # ROMs are grouped by their top-level directory.
+    dir_stats = {}
+    for r, entry, label, bad in rows:
+        d = _top_dir(entry["id"])
+        s = dir_stats.setdefault(
+            d, {"total": 0, "pass": 0, "fail": 0,
+                "timeout": 0, "other": 0, "bad": False})
+        s["total"] += 1
+        if label == "PASSED":
+            s["pass"] += 1
+        elif label == "REGRESSION" or label.startswith("FAIL"):
+            s["fail"] += 1
+        elif r["verdict"] == "TIMEOUT":
+            s["timeout"] += 1
+        else:
+            s["other"] += 1
+        if bad:
+            s["bad"] = True
+    L.append("## By directory")
+    L.append("")
+    L.append("| Directory | Total | Pass | Fail | Timeout | Other | Regression |")
+    L.append("|-----------|------:|-----:|-----:|--------:|------:|-----------:|")
+    for d in sorted(dir_stats):
+        s = dir_stats[d]
+        L.append(f"| `{d}` | {s['total']} | {s['pass']} | {s['fail']} | "
+                 f"{s['timeout']} | {s['other']} | "
+                 f"{'⚠️' if s['bad'] else '—'} |")
     L.append("")
 
     def block(title, key, icon):
@@ -283,13 +358,55 @@ def write_report(rows, args, any_bad):
     text = "\n".join(L)
     try:
         os.makedirs(REPORT_DIR, exist_ok=True)
-        latest = os.path.join(REPORT_DIR, "latest.md")
-        with open(latest, "w", encoding="utf-8") as f:
+        # Sharded CI runs each write a UNIQUE file (shard-N.md) so the 20
+        # parallel jobs never clobber one another's report; a non-sharded
+        # local run keeps the classic latest.md. Every run also emits a
+        # machine-readable shard-N.json / latest.json so the `summarize` CI
+        # job can fold all shards into one tally.
+        if args.shard:
+            base = "shard-%s-%d" % (args.platform, args.shard[0])
+        else:
+            base = "latest"
+        md_path = os.path.join(REPORT_DIR, base + ".md")
+        with open(md_path, "w", encoding="utf-8") as f:
             f.write(text)
-        return latest
+        json_path = os.path.join(REPORT_DIR, base + ".json")
+        _write_json_report(json_path, rows, args, any_bad)
+        return md_path
     except OSError as e:
         print(f"(report not written: {e})")
         return None
+
+
+def _write_json_report(path, rows, args, any_bad):
+    """Emit a machine-readable shard report for the `summarize` CI job.
+
+    Mirrors the Markdown report but as JSON so the aggregator can merge N
+    shards without parsing Markdown. `rows` carries (r, entry, label, bad);
+    we flatten each into the fields summarize needs to tally verdicts and
+    spot regressions.
+    """
+    payload = {
+        "shard": args.shard[0] if args.shard else 0,
+        "total_shards": args.shard[1] if args.shard else 1,
+        "platform": args.platform,
+        "any_bad": any_bad,
+        "rows": [
+            {
+                "id": entry["id"],
+                "label": label,
+                "bad": bad,
+                "gated": bool(suite.gated(entry)),
+                "verdict": r["verdict"],
+                "detail": r.get("detail", ""),
+                "status": r.get("status", ""),
+                "path": entry.get("path", ""),
+            }
+            for r, entry, label, bad in rows
+        ],
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
 
 
 def main():
@@ -297,6 +414,14 @@ def main():
     ap.add_argument("pattern", nargs="?", default="*",
                     help="glob matched against test id or path")
     ap.add_argument("--list", action="store_true", help="list the suite and exit")
+    ap.add_argument("--list-dirs", action="store_true",
+                    help="list runnable top-level suites (dirs) and exit")
+    ap.add_argument("--dir", action="append", default=[], metavar="DIR",
+                    help="only run ROMs under top-level suite DIR (repeatable); "
+                         "whitelist -- wins over the default exclusions")
+    ap.add_argument("--exclude-dir", action="append", default=[], metavar="DIR",
+                    help="skip ROMs under top-level suite DIR (repeatable); "
+                         "applied on top of DEFAULT_EXCLUDE_DIRS")
     ap.add_argument("--gated", action="store_true",
                     help="only run confirmed entries (those without `basis`)")
     ap.add_argument("--frames", type=int, default=None,
@@ -314,6 +439,11 @@ def main():
                          "CI uses this to fan the sweep across N machines; locally "
                          "it lets you time a single slice. Works with --gated and "
                          "--list.")
+    ap.add_argument("--platform", default="linux",
+                    help="label for CI shard reports (linux/windows/macos). "
+                         "Namespaces the per-shard JSON so parallel jobs on "
+                         "different OSes never collide, and lets the summarize "
+                         "job break the tally down per platform.")
     args = ap.parse_args()
 
     settings, tests = suite.build()
@@ -333,6 +463,22 @@ def main():
     if args.gated:
         selected = [t for t in selected if suite.gated(t)]
 
+    # --- directory scoping ------------------------------------------------
+    # Group ROMs by their top-level (suite) directory. --dir is a whitelist
+    # (run ONLY these suites). Without it, every suite runs except the built-in
+    # DEFAULT_EXCLUDE_DIRS and any --exclude-dir. A suite with zero .nes in the
+    # submodule contributes no entries, so it is excluded automatically and
+    # never needs to be listed.
+    if args.dir:
+        wanted = set(args.dir)
+        selected = [t for t in selected if _top_dir(t["id"]) in wanted]
+        if args.exclude_dir:  # --exclude-dir still trims inside a whitelist
+            drop = set(args.exclude_dir)
+            selected = [t for t in selected if _top_dir(t["id"]) not in drop]
+    else:
+        skip = set(DEFAULT_EXCLUDE_DIRS) | set(args.exclude_dir)
+        selected = [t for t in selected if _top_dir(t["id"]) not in skip]
+
     if args.shard:
         n, total = args.shard
         if not (0 <= n < total):
@@ -345,52 +491,83 @@ def main():
         selected = [t for i, t in enumerate(selected) if i % total == n]
         print(f"[shard {n}/{total}] selected {len(selected)} ROMs", flush=True)
 
-    if args.list:
+    if args.list_dirs:
+        # Enumerate suites that actually carry runnable ROMs under the current
+        # scope (after exclusions and --gated), so --dir/--exclude-dir can be
+        # chosen by name. Suites with no .nes are skipped implicitly.
+        by_dir = {}
         for t in selected:
+            by_dir[_top_dir(t["id"])] = by_dir.get(_top_dir(t["id"]), 0) + 1
+        print("Runnable suites (top-level dirs):")
+        for d in sorted(by_dir):
+            print(f"  {d:28s} {by_dir[d]} ROM(s)")
+        print(f"\n  {len(by_dir)} suite(s), {len(selected)} ROM(s) in scope")
+        return 0
+
+    if args.list:
+        current = None
+        for t in selected:
+            d = _top_dir(t["id"])
+            if d != current:
+                current = d
+                print(f"\n[{d}]")
             print(f"  {suite.tag(t):16s}  {t['id']}")
         print(f"\n  {len(selected)} listed "
-              f"(of {len(tests)} scanned, {sum(1 for t in tests if t.get('excluded'))} excluded)")
+              f"(of {len(tests)} scanned, "
+              f"{sum(1 for t in tests if t.get('excluded'))} excluded)")
         return 0
 
     if not selected:
         print(f"No tests match pattern '{args.pattern}'.")
         return 0
 
+    # Group jobs by top-level directory so each suite runs as one batch.
     default_frames = int(settings.get("frames", rom_runner.FRAMES))
-    jobs = []
+    jobs_by_dir = {}
     for t in selected:
         j = rom_runner.normalize(t, settings)
         if args.frames:
             j["frames"] = args.frames
         elif int(j["frames"]) < default_frames:
             j["retry_frames"] = default_frames
-        jobs.append(j)
+        jobs_by_dir.setdefault(_top_dir(t["id"]), []).append(j)
+
+    dirs = sorted(jobs_by_dir.keys())
+    counters = {"done": 0, "pass_n": 0, "fail_n": 0}
 
     if args.timeout and args.timeout > 0:
         # Local hang guard: each ROM in its own process, aborted at the
         # timeout. Sequential on purpose -- this path is for probing a few
         # ROMs by hand, not for the CI sweep.
         results = []
-        done = 0
-        pass_n = 0
-        fail_n = 0
-        for j in jobs:
-            r = _run_one_timeout(j, args.timeout)
-            done += 1
-            if r["verdict"] == "PASSED":
-                pass_n += 1
-            else:
-                fail_n += 1
-            _print_progress(done, len(jobs), j["id"], r["verdict"], pass_n, fail_n)
-            results.append(r)
-    elif len(jobs) == 1:
-        r = rom_runner.run_one(jobs[0])
-        _print_progress(1, 1, jobs[0]["id"], r["verdict"],
-                        1 if r["verdict"] == "PASSED" else 0,
-                        0 if r["verdict"] == "PASSED" else 1)
+        for d in dirs:
+            results += _run_sequential_timeout(jobs_by_dir[d], d,
+                                                args.timeout, counters)
+    elif len(selected) == 1:
+        d = dirs[0]
+        j = jobs_by_dir[d][0]
+        print(f"\n=== directory: {d}  (1 ROM) ===", flush=True)
+        r = rom_runner.run_one(j)
+        counters["done"] = 1
+        if r["verdict"] == "PASSED":
+            counters["pass_n"] = 1
+        else:
+            counters["fail_n"] = 1
+        _print_progress(1, 1, d, j["id"], r["verdict"],
+                        counters["pass_n"], counters["fail_n"])
         results = [r]
     else:
-        results = _parallel(len(jobs), jobs)
+        workers = _pick_workers(len(selected))
+        print(f"Running {len(selected)} ROMs across {workers} workers "
+              f"in {len(dirs)} directories...", flush=True)
+        results = []
+        with mp.Pool(workers) as pool:
+            for d in dirs:
+                results += _run_batch(pool, jobs_by_dir[d], d, counters)
+        results.sort(key=lambda r: r["id"])
+        print(f"\nDone: {counters['done']}/{len(selected)}  "
+              f"PASSED={counters['pass_n']} FAIL={counters['fail_n']}",
+              flush=True)
 
     by_id = {t["id"]: t for t in selected}
     rows = []
