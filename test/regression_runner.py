@@ -244,35 +244,31 @@ def format_rows(rows, with_path=False):
     return lines, counts
 
 
-def _classify(label, verdict):
-    """Bucket a result row for the Markdown report.
+def _classify(verdict):
+    """Bucket a result row for the Markdown report: pass or fail only.
 
-    PASSED -> pass ; TIMEOUT -> timeout ; a gated expectation that diverged ->
-    fail ; everything else (ERROR / MISSING / OBSERVE_* / SKIP) -> other.
+    PASSED -> pass ; anything else (FAIL / REGRESSION / TIMEOUT / ERROR /
+    MISSING / OBSERVE_* / SKIP) -> fail. The per-ROM verdict string in the
+    failing list already says *why* it failed, so no extra label is needed.
     """
-    if label == "PASSED":
-        return "pass"
-    if verdict == "TIMEOUT":
-        return "timeout"
-    if label == "REGRESSION" or label.startswith("FAIL"):
-        return "fail"
-    return "other"
+    return "pass" if verdict == "PASSED" else "fail"
 
 
 def write_report(rows, args, any_bad):
     """Write a GitHub-flavoured Markdown run report to test/reports/latest.md.
 
-    Groups results into Pass / Fail / Timeout / Other. The failing and timeout
-    ROM ids are listed inline (folded <details> blocks) so the report stays
-    scannable on a PR. Never fatal: an unwritable reports directory must not
-    flip a green run red.
+    Groups results into Pass / Fail only. The failing ROM ids are listed
+    inline (folded <details> block) with their real verdict string, so the
+    report stays scannable on a PR. Never fatal: an unwritable reports
+    directory must not flip a green run red.
     """
-    groups = {"pass": [], "fail": [], "timeout": [], "other": []}
+    groups = {"pass": [], "fail": []}
     for r, entry, label, bad in rows:
-        groups[_classify(label, r["verdict"])].append((entry, r, label))
+        groups[_classify(r["verdict"])].append((entry, r, label, bad))
 
     n = {k: len(v) for k, v in groups.items()}
     n_gated = sum(1 for _, e, _, _ in rows if suite.gated(e))
+    n_bad = sum(1 for _, _, _, bad in rows if bad)
     now = datetime.datetime.now()
 
     cmd = "python test/regression_runner.py"
@@ -300,15 +296,13 @@ def write_report(rows, args, any_bad):
     L.append("")
     L.append("| Result | Count |")
     L.append("|--------|------:|")
-    L.append(f"| ✅ Pass | {n['pass']} |")
-    L.append(f"| ❌ Fail (regression) | {n['fail']} |")
-    L.append(f"| ⏱ Timeout | {n['timeout']} |")
-    L.append(f"| 🔸 Other | {n['other']} |")
+    L.append(f"| ✅ Pass (matches expectation) | {n['pass']} |")
+    L.append(f"| ❌ Fail (does not match) | {n['fail']} |")
     L.append(f"| **Total run** | {len(rows)} |")
     L.append("")
     L.append(f"- Gated entries: **{n_gated}**")
-    L.append(f"- Regression status: **{'FAIL' if any_bad else 'OK'}** "
-             f"(local exit code `{1 if any_bad else 0}`)")
+    L.append(f"- Gated ROMs that did not pass (CI red line): "
+             f"**{n_bad}**")
     L.append("")
 
     # Per-directory (suite) breakdown: the primary way to eyeball a run, since
@@ -316,29 +310,19 @@ def write_report(rows, args, any_bad):
     dir_stats = {}
     for r, entry, label, bad in rows:
         d = _top_dir(entry["id"])
-        s = dir_stats.setdefault(
-            d, {"total": 0, "pass": 0, "fail": 0,
-                "timeout": 0, "other": 0, "bad": False})
+        s = dir_stats.setdefault(d, {"total": 0, "pass": 0, "fail": 0})
         s["total"] += 1
-        if label == "PASSED":
+        if r["verdict"] == "PASSED":
             s["pass"] += 1
-        elif label == "REGRESSION" or label.startswith("FAIL"):
-            s["fail"] += 1
-        elif r["verdict"] == "TIMEOUT":
-            s["timeout"] += 1
         else:
-            s["other"] += 1
-        if bad:
-            s["bad"] = True
+            s["fail"] += 1
     L.append("## By directory")
     L.append("")
-    L.append("| Directory | Total | Pass | Fail | Timeout | Other | Regression |")
-    L.append("|-----------|------:|-----:|-----:|--------:|------:|-----------:|")
+    L.append("| Directory | Total | Pass | Fail |")
+    L.append("|-----------|------:|-----:|-----:|")
     for d in sorted(dir_stats):
         s = dir_stats[d]
-        L.append(f"| `{d}` | {s['total']} | {s['pass']} | {s['fail']} | "
-                 f"{s['timeout']} | {s['other']} | "
-                 f"{'⚠️' if s['bad'] else '—'} |")
+        L.append(f"| `{d}` | {s['total']} | {s['pass']} | {s['fail']} |")
     L.append("")
 
     def block(title, key, icon):
@@ -348,16 +332,15 @@ def write_report(rows, args, any_bad):
         L.append("<details>")
         L.append(f"<summary>{icon} {title} &mdash; {len(items)}</summary>")
         L.append("")
-        for entry, r, label in items:
-            L.append(f"- `{entry['id']}` &mdash; {r['verdict']}{r['detail']}")
+        for entry, r, label, bad in items:
+            mark = "!" if bad else " "
+            L.append(f"- {mark} `{entry['id']}` &mdash; {r['verdict']}{r['detail']}")
         L.append("")
         L.append("</details>")
         L.append("")
 
     block("Passing", "pass", "✅")
-    block("Failing (regression)", "fail", "❌")
-    block("Timeout", "timeout", "⏱")
-    block("Other", "other", "🔸")
+    block("Failing", "fail", "❌")
 
     text = "\n".join(L)
     try:
@@ -588,7 +571,7 @@ def main():
         print(line)
 
     n_gated = sum(1 for _, e, _, _ in rows if suite.gated(e))
-    print(f"\n=== regression {'FAIL' if any_bad else 'OK'}:  "
+    print(f"\n=== red-line {'FAIL' if any_bad else 'OK'}:  "
           f"{'  '.join(f'{k}={v}' for k, v in sorted(counts.items()))} ===")
     print(f"    {len(rows)} run, {n_gated} gated, "
           f"{len(rows) - n_gated} observed only")
