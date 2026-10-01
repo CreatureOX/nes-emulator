@@ -153,13 +153,15 @@ def _run_batch(pool, jobs, dir_label, counters):
     """
     print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs) ===", flush=True)
     res = []
+    done = 0
     for r in pool.imap_unordered(_run_one, jobs):
+        done += 1
         counters["done"] += 1
         if r["verdict"] == "PASSED":
             counters["pass_n"] += 1
         else:
             counters["fail_n"] += 1
-        _print_progress(counters["done"], len(jobs), dir_label, r["id"],
+        _print_progress(done, len(jobs), dir_label, r["id"],
                         r["verdict"], counters["pass_n"], counters["fail_n"])
         res.append(r)
     return res
@@ -172,14 +174,16 @@ def _run_sequential_timeout(jobs, dir_label, timeout, counters):
     print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs, --timeout) ===",
           flush=True)
     res = []
+    done = 0
     for j in jobs:
         r = _run_one_timeout(j, timeout)
+        done += 1
         counters["done"] += 1
         if r["verdict"] == "PASSED":
             counters["pass_n"] += 1
         else:
             counters["fail_n"] += 1
-        _print_progress(counters["done"], len(jobs), dir_label, j["id"],
+        _print_progress(done, len(jobs), dir_label, j["id"],
                         r["verdict"], counters["pass_n"], counters["fail_n"])
         res.append(r)
     return res
