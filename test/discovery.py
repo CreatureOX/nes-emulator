@@ -54,6 +54,25 @@ SUPPORTED_MAPPERS = {0, 1, 2, 3, 4, 66}
 # Directories holding demo/homebrew ROMs rather than tests.
 EXCLUDE_DIRS = {"other", "dpcmletterbox"}
 
+# Directories we deliberately do NOT run: every ROM in them lacks a
+# machine-readable self-reported verdict. Some are audio/visual demos with no
+# on-screen PASS/FAIL at all; others print a result that depends on real
+# hardware artifacts our RGB emulator does not reproduce (e.g. tvpassfail's
+# "PASS!" appears only under NTSC chroma/luma crosstalk). The human-readable
+# pass condition is recorded per directory so the run report can document WHY
+# the suite is skipped and what "correct" would look like, without ever letting
+# these noise ROMs gate the run.
+IGNORE_DIRS = {
+    "volume_tests": "audio volume listening test; verified by ear against reference .ogg",
+    "stomper": "Super Mario World stomp animation demo; no self-reported verdict",
+    "soundtest": "APU sound test; verified by ear / oscilloscope; no on-screen verdict",
+    "scrolltest": "scrolling render demo; judged visually, no PASS/FAIL text",
+    "scanline": "mid-scanline PPU write test; right 'Errors' column must show no stray '*' (visual); no printed pass",
+    "full_palette": "palette demo; judged visually; no verdict",
+    "tvpassfail": "display crosstalk demo; RGB emulators show '%%%' not 'PASS!' ('PASS!' is NTSC artifact); no machine verdict",
+    "spritecans-2011": "64 soda-can bounce intro (OAM cycling); no self-reported verdict",
+}
+
 # Never descended into while walking the submodule: build inputs, not ROMs.
 SKIP_DIRS = (".git", "source", "obj", "src", "tools", "tilesets")
 
@@ -193,6 +212,13 @@ def classify(rel_path, xml_index):
         "id": stem,
         "path": "nes-test-roms/" + rel_path,
     }
+
+    # --- deliberate ignores (no machine-readable self-reported verdict) ---
+    if top_dir in IGNORE_DIRS:
+        rec["excluded"] = True
+        rec["reason"] = "unknown-result"
+        rec["ignore_note"] = IGNORE_DIRS[top_dir]
+        return rec
 
     # --- exclusions -----------------------------------------------------
     if top_dir in EXCLUDE_DIRS:

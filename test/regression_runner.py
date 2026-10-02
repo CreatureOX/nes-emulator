@@ -254,7 +254,7 @@ def _classify(verdict):
     return "pass" if verdict == "PASSED" else "fail"
 
 
-def write_report(rows, args, any_bad):
+def write_report(rows, args, any_bad, ignored=None):
     """Write a GitHub-flavoured Markdown run report to test/reports/latest.md.
 
     Groups results into Pass / Fail only. The failing ROM ids are listed
@@ -341,6 +341,26 @@ def write_report(rows, args, any_bad):
 
     block("Passing", "pass", "✅")
     block("Failing", "fail", "❌")
+
+    # Deliberately-ignored suites: skipped because their ROMs have no
+    # machine-readable self-reported verdict, so they cannot gate the run.
+    # Document each with its human pass condition for traceability.
+    if ignored:
+        seen = {}
+        for e in ignored:
+            seen.setdefault(_top_dir(e["id"]),
+                            e.get("ignore_note", "correct result unknown"))
+        L.append("## Ignored (correct result not machine-readable)")
+        L.append("")
+        L.append("Skipped on purpose: these ROMs do not emit a machine-readable "
+                 "PASS/FAIL, so they cannot gate the run. The human pass "
+                 "condition is noted for each.")
+        L.append("")
+        L.append("| Suite | Why skipped / pass condition |")
+        L.append("|-------|-------------------------------|")
+        for d in sorted(seen):
+            L.append(f"| `{d}` | {seen[d]} |")
+        L.append("")
 
     text = "\n".join(L)
     try:
@@ -443,6 +463,11 @@ def main():
                 or fnmatch.fnmatch(t.get("path", ""), args.pattern))
 
     selected = [t for t in tests if match(t)]
+    # Suites skipped on purpose because their ROMs have no machine-readable
+    # verdict (discovery marks them excluded with reason="unknown-result").
+    # Surfaced in the report's "Ignored" section; never gate the run.
+    ignored = [t for t in tests
+               if t.get("excluded") and t.get("reason") == "unknown-result"]
     # Excluded ROMs (PAL, demo/other, no usable detector, unmapped mapper) are
     # filtered out unconditionally -- there is deliberately no flag to opt back
     # in, so a full regression can never accidentally sweep them.
@@ -576,7 +601,7 @@ def main():
     print(f"    {len(rows)} run, {n_gated} gated, "
           f"{len(rows) - n_gated} observed only")
 
-    report = write_report(rows, args, any_bad)
+    report = write_report(rows, args, any_bad, ignored)
     if report:
         print(f"    report -> {os.path.relpath(report, ROOT)}")
     return 1 if any_bad else 0
