@@ -1208,7 +1208,10 @@ cdef class CPU6502:
         self.registers.X = self.fetched
         self.registers.status.bits.Z = self.registers.A == 0x00
         self.registers.status.bits.N = self.registers.A & 0x80 > 0
-        return 0
+        # Page-cross reads (ABS,Y / (IND),Y) cost +1 cycle; the cycle engine
+        # only adds that penalty when operate() returns 1 AND addrmode()
+        # reports a cross (see clock(): remaining_cycles += addrmode & operate).
+        return 1
 
     cpdef uint8_t ANC(self):
         '''
@@ -1310,7 +1313,9 @@ cdef class CPU6502:
         self.registers.SP = value
         self.registers.status.bits.Z = value == 0x00
         self.registers.status.bits.N = value & 0x80 > 0
-        return 0
+        # LAS only exists as (IND),Y, which costs +1 on a page cross; return 1
+        # so clock() applies that penalty (addrmode & operate).
+        return 1
 
     cdef void store_and_hi(self, uint8_t value, uint8_t index):
         '''
