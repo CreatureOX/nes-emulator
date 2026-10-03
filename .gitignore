@@ -165,10 +165,10 @@ cython_debug/
 *.pyd
 *.ps1
 
-# Generated run output -- never committed (test/regression.toml is the single
-# source of truth). test/regression_runner.py writes its report here
-# (latest.txt only; no timestamped history).
-test/reports/
+# Generated run output -- never committed (tests/launcher.toml is the single
+# source of truth). tests/launcher.py writes its report here
+# (latest.md only; no timestamped history).
+tests/reports/
 
 # Local-only inputs, notes and tooling -- never committed.
 # `failed/` holds third-party blargg test ROMs downloaded from
