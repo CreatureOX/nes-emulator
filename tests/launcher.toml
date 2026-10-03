@@ -832,7 +832,9 @@ expected = "pass"
 
 [[tests]]
 id = "nmi_sync/demo_ntsc"
-expected = "pass"
+excluded = true
+reason = "visual"
+note = "Blargg NTSC NMI-sync demo: timed $2001 writes draw a sync line, no machine-readable PASS/FAIL -- judged visually, cannot gate. This is the NTSC variant; demo_pal.nes is the PAL one and is correctly PAL-excluded by the scanner. Do NOT exclude as PAL."
 
 [[tests]]
 id = "oam_stress/oam_stress"
