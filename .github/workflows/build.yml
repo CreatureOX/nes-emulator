@@ -12,16 +12,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ---- Run the gated regression on each OS (serial, in-place) ---------------
+  # ---- Run the self-check on each OS (serial, in-place) --------------------
   # Each OS checks out, compiles the Cython extensions ONCE in-place, then runs
-  # ALL gated ROMs serially in a single job. No shard fan-out and no cross-job
+  # ALL must-pass ROMs serially in a single job. No shard fan-out and no cross-job
   # artifact sharing: the earlier shard design downloaded the compiled `nes/`
   # package between jobs, which proved unreliable under parallel download
   # (some `.pyd` files arrived missing/truncated -> spurious
   # "ModuleNotFoundError: No module named 'nes.console'"). Building in-place
   # in the same job that runs the tests keeps the compiled modules and the
   # source together and removes that failure mode. The runner exits non-zero on
-  # any gated regression, so this job is the gate (red = regression).
+  # any self-check failure, so this job is the gate (red = failure).
   # Each job inlines its own "checkout -> install build deps -> compile
   # extensions" steps (kept identical by hand) rather than a shared composite
   # action, so the workflow never depends on a separate action file being
@@ -61,28 +61,28 @@ jobs:
           find . -name "*.h" -not -name "status_register.h" -delete
           python setup.py build_ext --inplace
 
-      - name: Run gated regression (serial, all gated ROMs)
+      - name: Self-check (serial, all must-pass ROMs)
         env:
           SDL_VIDEODRIVER: dummy
           PYTHONUNBUFFERED: "1"
           OPENBLAS_NUM_THREADS: "1"
           OMP_NUM_THREADS: "1"
-        run: python test/regression_runner.py --gated --platform windows
+        run: python tests/launcher.py --platform windows
 
       - name: Publish report to run summary
         if: always()
         shell: bash
         run: |
-          if [ -f test/reports/latest.md ]; then
-            cat test/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f tests/reports/latest.md ]; then
+            cat tests/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload run report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: regression-report-windows
-          path: test/reports/latest.json
+          name: check-report-windows
+          path: tests/reports/latest.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -120,28 +120,28 @@ jobs:
           find . -name "*.h" -not -name "status_register.h" -delete
           python setup.py build_ext --inplace
 
-      - name: Run gated regression (serial, all gated ROMs)
+      - name: Self-check (serial, all must-pass ROMs)
         env:
           SDL_VIDEODRIVER: dummy
           PYTHONUNBUFFERED: "1"
           OPENBLAS_NUM_THREADS: "1"
           OMP_NUM_THREADS: "1"
-        run: python test/regression_runner.py --gated --platform macos
+        run: python tests/launcher.py --platform macos
 
       - name: Publish report to run summary
         if: always()
         shell: bash
         run: |
-          if [ -f test/reports/latest.md ]; then
-            cat test/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f tests/reports/latest.md ]; then
+            cat tests/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload run report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: regression-report-macos
-          path: test/reports/latest.json
+          name: check-report-macos
+          path: tests/reports/latest.json
           if-no-files-found: warn
           retention-days: 7
 

@@ -1,9 +1,9 @@
-# NES emulator regression suite configuration.
+# NES emulator self-check suite configuration.
 #
-# Consumed by test/regression_runner.py. ROMs that are not listed here are
-# still discovered automatically by scanning the nes-test-roms submodule
-# (see test/discovery.py) -- an empty config therefore means "run everything
-# that looks like a test". Entries listed here override the discovered values
+# Consumed by tests/launcher.py. ROMs that are not listed here are
+# still scanned automatically by walking the nes-test-roms submodule
+# (see tests/rom_scanner.py) -- an empty config therefore means "run everything
+# that looks like a test". Entries listed here override the scanned values
 # and are the place to record human judgement.
 #
 # [settings]
@@ -16,21 +16,13 @@
 #              that collide across suites (instr_test-v3 vs nes_instr_test,
 #              blargg_apu_2005.07.30 vs pal_apu_tests, ...).
 #              There is no `path` field: the location is derived from the id
-#              at run time (test/discovery.py:path_of), so the two can never
+#              at run time (tests/rom_scanner.py:path_of), so the two can never
 #              disagree. Run reports print the full path.
 #   frames   : optional frame budget. Listed tests pin the count they were
 #              verified at; discovered ones use test_roms.xml's runframes
 #              (often 60 -- measured ~17x cheaper than the 1200 default).
-#   expected : "pass" | "fail" | "skip"
-#   basis    : OPTIONAL, and its presence means "this expectation is NOT yet
-#              confirmed on this build". Such a test is run and reported but
-#              never allowed to fail the run. Values:
-#                "assumed"  -- no source; we merely assume it should pass
-#                "hardware" -- upstream readme claims real-hardware pass, but
-#                              we have never run it here
-#              To promote a test to real gating, confirm it passes and DELETE
-#              the basis line. There is no automatic write-back on purpose:
-#              recording a FAIL would cement the bug as an expectation.
+#   expected : "pass" | "skip"  (only "pass" runs and fails the red line;
+#              "skip" only suppresses discovery from re-adding the ROM)
 #   note     : optional free text
 #
 # There is deliberately no "reference" field. test_roms.xml's `testresult`
@@ -42,9 +34,9 @@
 frames = 1200
 detector = "blargg"
 
-# --- Verified passing (regression baseline) -------------------------------
+# --- Verified passing (self-check baseline) -------------------------------
 # These four have been run on this build and confirmed PASS at 1200 frames.
-# No `basis` => they gate: a non-PASS verdict fails the run.
+# expected=pass => a non-PASS verdict fails the run.
 [[tests]]
 id = "apu_test/apu_test"
 frames = 1200
@@ -67,7 +59,7 @@ expected = "pass"
 note = "Locally verified PASS at 1200 frames (nametable reads 'Passed', $6000=0x00). Upstream status.txt reports FAIL for the reference emulators, but this build was never actually run against it until the submodule was fetched."
 
 
-# --- Batch-gated: PASS confirmed in the 2026-09-26 NTSC full serial sweep ---
+# --- Batch: PASS confirmed in the 2026-09-26 NTSC full serial sweep ---
 [[tests]]
 id = "apu_reset/4015_cleared"
 frames = 1200
@@ -475,8 +467,8 @@ expected = "pass"
 
 # --- Temporarily excluded: ROMs that hang (CPU dead-loop) on this build ----
 # Identified by _probe_hang.py on 2026-09-26. They stall the headless
-# regression runner because a single ROM has no wall-clock timeout, so they
-# are excluded rather than gated. Delete these three entries to re-enable.
+# self-check runner because a single ROM has no wall-clock timeout, so they
+# are excluded rather than run. Delete these three entries to re-enable.
 [[tests]]
 id = "instr_test-v3/all_instrs"
 expected = "skip"
@@ -491,9 +483,7 @@ note = "Hangs (CPU dead-loop) on this build; found 2026-09-26 by _probe_hang.py.
 
 [[tests]]
 id = "read_joy3/thorough_test"
-expected = "skip"
-excluded = true
-note = "Hangs (CPU dead-loop) on this build; found 2026-09-26 by _probe_hang.py."
+expected = "pass"
 [[tests]]
 id = "apu_mixer/dmc"
 expected = "pass"
@@ -864,7 +854,9 @@ expected = "pass"
 
 [[tests]]
 id = "read_joy3/test_buttons"
-expected = "pass"
+expected = "skip"
+excluded = true
+note = "Interactive; tests Famicom controller 3 which this emulator does not model (keyboard only drives player 1)."
 
 [[tests]]
 id = "scanline/scanline"
@@ -896,10 +888,6 @@ expected = "pass"
 
 [[tests]]
 id = "tvpassfail/tv"
-expected = "pass"
-
-[[tests]]
-id = "vaus-test/vaus-test"
 expected = "pass"
 
 [[tests]]
