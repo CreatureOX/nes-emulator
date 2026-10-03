@@ -20,7 +20,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import rom_scanner  # noqa: E402
-import rom_runner  # noqa: E402
 import test_judge  # noqa: E402
 
 CONFIG_PATH = os.path.join(ROOT, "tests", "launcher.toml")
@@ -34,8 +33,6 @@ CONFIG_HEADER = '''# NES emulator self-check suite configuration.
 #
 # [settings]
 #   frames   : frame count used when a test supplies none
-#   detector : default detector -- "blargg" reads the nametable PASS/FAIL text;
-#              "joy3" selects the read_joy3 tally detector (N/1000, 0 = pass).
 #
 # [[tests]]
 #   id       : submodule-relative ROM path minus .nes -- the ONLY key. It stays
@@ -43,26 +40,49 @@ CONFIG_HEADER = '''# NES emulator self-check suite configuration.
 #              the location is derived from the id at run time
 #              (rom_scanner.path_of), so the two can never disagree. Run
 #              reports print the full path.
-#   frames   : optional frame budget. Listed tests pin the count they were
-#              verified at; discovered ones use test_roms.xml's runframes (60).
-#   expected : "pass" | "fail" | "skip"  (only "pass" runs and fails the red line)
+#   frames   : optional frame budget, in NES frames. Listed tests pin the
+#              count they were verified at; discovered ones use
+#              test_roms.xml's `runframes`, falling back to
+#              [settings].frames when the XML omits it.
+#   detector : optional per-ROM judge override. "blargg" (default) reads the
+#              nametable PASS/FAIL text; "joy3" is the read_joy3 tally
+#              (N/1000, 0 = pass). Omit to use the suite default
+#              (test_judge.DETECTOR_BY_DIR, else "blargg"). This per-ROM knob
+#              is the ONLY detector setting -- there is deliberately no global
+#              [settings] detector (nothing consumed it); don't reintroduce one.
+#   expected : "pass" -- the only meaningful value. Every kept ROM is gated: a
+#              non-PASS verdict fails the run. Do NOT use "skip"/"fail" to keep
+#              a ROM out of the red line -- those silently drop it (never run)
+#              WITHOUT listing it in the report's Ignored section. To not run a
+#              ROM, use excluded = true below.
+#   excluded : true -> the ROM is NOT run and NOT gated, and it is listed in the
+#              report's Ignored section with its reason. This is the ONLY
+#              "don't run this ROM" switch (document a hang / interactive /
+#              known-fail, or keep a suite out of the sweep). Prefer it over any
+#              expected value so nothing ever disappears silently.
+#   reason   : required alongside excluded -- a short code + free text saying
+#              why it isn't gated (e.g. "hang", "interactive", "known-fail").
+#              Shown in the report's Ignored section; without it the exclusion
+#              is undocumented.
 #   note     : optional free text
 #
 # No "reference" field on purpose: test_roms.xml's `testresult` records what
-# OTHER emulators do, and trusting it once mislabelled
-# ppu_vbl_nmi/10-even_odd_timing as expected=fail (it passes here).
-# Cross-emulator results belong in `note`.
+# OTHER emulators do, and trusting it once mislabelled a ROM that actually
+# passes here as expected=fail. Cross-emulator results belong in `note`.
 
 [settings]
 frames = %d
-detector = "%s"
-''' % (rom_runner.FRAMES, test_judge.DEFAULT_DETECTOR)
+''' % (test_judge.DEFAULT_FRAMES,)
 
 
 def _default_settings():
-    # Single source: rom_runner.DEFAULT_SETTINGS owns {frames, detector};
-    # return a fresh copy so callers can't mutate the shared dict.
-    return dict(rom_runner.DEFAULT_SETTINGS)
+    # Single source: test_judge owns the canonical frame default; build a fresh
+    # dict so callers can't mutate the shared one. No dependency on the executor
+    # layer (rom_runner) -- the config layer stays above only rom_scanner/judge.
+    # No "detector" key on purpose: nothing consumed settings["detector"], so a
+    # global detector looked editable but did nothing. Per-ROM `detector` (read
+    # by test_judge.detector_for) is the only detector knob.
+    return {"frames": test_judge.DEFAULT_FRAMES}
 
 
 def load_check_config():
@@ -96,7 +116,15 @@ def render_toml(entries):
             lines.append('detector = "%s"' % esc(det))
         if e.get("frames"):
             lines.append("frames = %d" % int(e["frames"]))
-        lines.append('expected = "%s"' % esc(e.get("expected", "skip")))
+        if e.get("excluded"):
+            # excluded=true alone decides "don't run"; an expected value would
+            # be dead (the launcher filters excluded before it reads expected)
+            # and double-writing both is what created the old drift.
+            lines.append("excluded = true")
+            if e.get("reason"):
+                lines.append('reason = "%s"' % esc(e["reason"]))
+        else:
+            lines.append('expected = "%s"' % esc(e.get("expected", "pass")))
         if e.get("note"):
             lines.append('note = "%s"' % esc(e["note"]))
         lines.append("")
@@ -155,10 +183,20 @@ def summarize(argv):
     _, configured = load_check_config()
     merged = apply_config(configured, discovered)
 
-    # Excluded ROMs are filtered at run time, so skip them in the file.
-    keep = [e for e in merged if not e.get("excluded")]
+    # Keep human-curated exclusions (hang/interactive ROMs) so --write-config
+    # stays idempotent instead of silently re-admitting them to the red line.
+    # Scanner-intrinsic exclusions (PAL/demo/mapper/no-detector) are re-derived
+    # every run and need no entry in the file.
+    configured_ids = {c["id"] for c in configured}
+    keep = [e for e in merged
+            if not e.get("excluded") or e["id"] in configured_ids]
 
-    n_must = sum(1 for e in keep if e.get("expected") == "pass")
+    # Red line = expected=pass AND actually runnable (not scanner-excluded).
+    # Excluded entries (PAL/demo/IGNORE_DIRS/hang) never gate, so they must not
+    # inflate this count -- a stale "expected=pass" on an excluded ROM would
+    # otherwise make the number lie about the real gating set.
+    n_must = sum(1 for e in keep
+                 if e.get("expected") == "pass" and not e.get("excluded"))
 
     print("discovered : %d" % len(discovered))
     print("excluded   : %d" % (len(merged) - len(keep)))

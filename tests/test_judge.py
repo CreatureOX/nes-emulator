@@ -6,9 +6,9 @@ Stage 1, screen -> verdict:
     detector falls back to RUNNING/blank so a bad config can't crash the sweep.
 
 Stage 2, verdict -> pass/fail:
-    judge_result(result) is the single place the pass/fail rule lives.
-    It reads only `verdict` off the result and `expected` off the entry, so it
-    stays a pure function of (result, entry).
+    judge_result(result) is the single place the pass/fail rule lives. It reads
+    only `verdict` off the result; the launcher only runs must-pass entries, so
+    any non-PASS verdict is a failure and it stays a pure function of result.
 
 A run fails only when a must-pass test (expected="pass") does not PASS.
 
@@ -18,10 +18,12 @@ and calls classify_screen().
 import re
 
 DEFAULT_DETECTOR = "blargg"
+# Canonical default frame budget, owned here so the config layer (test_picker)
+# and the executor (rom_runner) both read it from the single bottom layer
+# instead of the executor importing the config layer.
+DEFAULT_FRAMES = 1200
 # Top-level dir -> detector; anything else falls back to DEFAULT_DETECTOR.
 DETECTOR_BY_DIR = {"read_joy3": "joy3"}
-
-# name -> verdict fn(raw, low); unknown name -> RUNNING/blank (no crash).
 
 
 def top_dir(rom_id):
@@ -96,29 +98,25 @@ def _first_int(low, pattern):
     return int(m.group(1)) if m else None
 
 
+# name -> verdict fn(raw, low); unknown name -> RUNNING/blank (no crash)
 DETECTORS = {"blargg": _blargg_verdict, "joy3": _joy3_verdict}
-
-
-def label_of(entry):
-    """Short classification for --list: excluded:<reason> or the expectation."""
-    if entry.get("excluded"):
-        return "excluded:" + entry.get("reason", "?")
-    return entry.get("expected", "skip")
 
 
 def judge_result(result):
     """Compare one result against its expectation -> (label, is_bad).
 
-    Only expected=pass entries are ever run (launcher filters the rest), so
-    this only has to decide pass vs gate-fail. is_bad is what turns the run
-    red. TIMEOUT/CRASH/ERROR are reported for visibility only -- never a
-    self-check failure, so they must not turn the run red (the per-ROM
-    watchdog produces them instead of wedging the sweep).
+    is_bad is what turns the run red. The launcher only runs must-pass
+    (expected="pass") entries, so this only has to decide pass vs gate-fail.
+
+    TIMEOUT/CRASH/ERROR count as real failures: a must-pass ROM that hangs,
+    crashes or errors did not pass. The specific verdict is preserved as the
+    label so the report stays perceptible instead of collapsing to a generic
+    FAIL. They stay non-fatal to the *sweep* -- the watchdog only kills the
+    offending worker, so the remaining ROMs still run.
     """
     v = result["verdict"]
     if v in ("TIMEOUT", "CRASH", "ERROR"):
-        return v, False
+        return v, True
     if v == "MISSING":
         return "FAIL_MISSING", True   # claimed pass but ROM can't be found
-    # expected == "pass" by construction
     return ("PASSED", False) if v == "PASSED" else ("GATEFAIL", True)

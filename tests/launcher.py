@@ -5,9 +5,10 @@ results, set the exit code. No judgement here -- every pass/fail rule lives in
 test_judge.py (the single judge), so changing expectations
 never touches this file.
 
-Gating: every expected=pass ROM must pass; a hung ROM is killed (TIMEOUT) and
-a crashed worker is CRASH -- both non-fatal, so one bad ROM can't wedge the
-sweep. Exit code is non-zero only when a must-pass ROM diverges.
+Gating: every expected=pass ROM must pass. A hung ROM is killed (TIMEOUT) and
+a crashed worker is CRASH; both count as red-line failures, but stay non-fatal
+to the sweep -- the watchdog only kills the offending worker, so the remaining
+ROMs still run. Exit code is non-zero when any must-pass ROM fails to PASS.
 
 Excluded ROMs (PAL, demo/other, no usable detector, unmapped mapper) are NEVER
 run, by any invocation. A run report is written to tests/reports/latest.md;
@@ -24,7 +25,6 @@ import multiprocessing as mp
 import traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Headless + OpenBLAS guard: numpy (via apu.pyx) pulls in scipy-openblas, which
@@ -42,13 +42,6 @@ import test_picker  # noqa: E402
 
 REPORT_DIR = os.path.join(ROOT, "tests", "reports")
 
-# Suite dirs skipped by default even when they carry runnable .nes. apu_mixer's
-# ROMs are audio-only with no screen verdict, so the blargg detector can't gate
-# Run-layer dir opt-out, distinct from rom_scanner's ROM-intrinsic exclusions:
-# these suites we deliberately choose not to gate, not because the ROM can't be
-# judged. Override with --dir (whitelist wins) or --exclude-dir.
-DEFAULT_EXCLUDE_DIRS = {"apu_mixer"}
-
 # Per-ROM watchdog: a ROM running longer than this is killed and reported
 # TIMEOUT instead of freezing the sweep / hitting the CI job limit.
 DEFAULT_ROM_TIMEOUT = 300
@@ -57,8 +50,8 @@ DEFAULT_ROM_TIMEOUT = 300
 def _run_one(entry):
     """Pool worker (module level so it pickles).
 
-    A non-PASS at a cheap test_roms.xml budget is retried once at the full
-    budget, so a too-short runframes can't manufacture a false failure.
+    A non-PASS at a cheap frame budget is retried once at the full budget
+    (retry_frames), so too-short runframes can't manufacture a false failure.
 
     run_one re-raises programming errors (NameError/TypeError/...) so direct
     callers fail loud with a full traceback; here we catch them and fold the
@@ -74,7 +67,12 @@ def _run_one(entry):
                 "detail": " %s: %s | %s" % (type(e).__name__, e, tb.strip()),
                 "path": entry.get("path")}
     retry = entry.get("retry_frames")
-    if retry and r["verdict"] != "PASSED" and int(entry.get("frames", 0)) < retry:
+    # Don't retry a hang/crash/error at the full budget -- it would just burn
+    # the watchdog again. Only "soft" non-passes (RUNNING/blank, FAIL) get the
+    # second chance to rule out a too-short runframes.
+    if (retry and r["verdict"] != "PASSED"
+            and r["verdict"] not in ("TIMEOUT", "CRASH", "ERROR", "MISSING")
+            and int(entry.get("frames", 0)) < retry):
         again = dict(entry)
         again["frames"] = retry
         r2 = rom_runner.run_one(again)
@@ -130,7 +128,8 @@ def _drain_remaining(inflight, dir_label, timeout, counters, done, total, res):
 
     Shared by the TIMEOUT and CRASH sweep-downs so the bookkeeping lives in one
     place; a poisoned/terminated pool means the rest can't be trusted, so they
-    are reported TIMEOUT (non-fatal) and retried next run.
+    are reported TIMEOUT (red-line, but non-fatal to the sweep). They are lost
+    for this run; re-run the suite to retry them.
     """
     for ar2 in list(inflight):
         j2, _ = inflight.pop(ar2)
@@ -148,8 +147,9 @@ def _run_batch_watched(pool, jobs, dir_label, timeout, counters):
     """Fan one directory's jobs across *pool* with a per-ROM watchdog.
 
     A ROM past `timeout` is killed (TIMEOUT); a worker that crashes is CRASH.
-    Both are non-fatal, so one bad ROM can't wedge the sweep. The pool is
-    per-directory, so a kill/restart in one suite stays local to it.
+    Both are red-line failures that stay non-fatal to the sweep, so one bad ROM
+    can't wedge it. The pool is per-directory, so a kill/restart in one suite
+    stays local to it.
     """
     print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs) ===", flush=True)
     inflight = {pool.apply_async(_run_one, (j,)): (j, time.time())
@@ -173,7 +173,8 @@ def _run_batch_watched(pool, jobs, dir_label, timeout, counters):
             except Exception:
                 # Worker process died (segfault). It is CRASH; the rest of this
                 # directory can't be trusted on a poisoned pool, so they are
-                # reported TIMEOUT (non-fatal) and retried next run.
+                # reported TIMEOUT (red-line, non-fatal to the sweep). Lost for
+                # this run; re-run the suite to retry them.
                 inflight.pop(ar)
                 r = _watchdog_result(j, timeout, "CRASH")
                 counters["done"] += 1
@@ -209,13 +210,15 @@ def format_rows(rows):
 
     stdout is terse (id only); the written report adds the full ROM path, the
     one place the location is spelled out (launcher.toml stores just the id).
+    No `exp=` column: the launcher only runs expected="pass", so it would print
+    the same value on every row.
     """
     counts = {}
     lines = []
     for r, entry, label, bad in rows:
         marker = "!" if bad else " "
-        line = (f"{marker} {label:20s} exp={entry.get('expected','skip'):5s} "
-                f"{r['id']:44s} {r['verdict']:14s}{r['detail']}")
+        line = (f"{marker} {label:20s} {r['id']:44s} "
+                f"{r['verdict']:14s}{r['detail']}")
         lines.append(line)
         counts[label] = counts.get(label, 0) + 1
     return lines, counts
@@ -230,6 +233,27 @@ def _bucket(verdict):
     return "pass" if verdict == "PASSED" else "fail"
 
 
+def _reason_text(reason):
+    """Human-readable explanation for a scanner/human exclusion reason.
+
+    Falls back to None for reasons that always carry their own free-text note
+    (human hang/interactive/known-fail), so the caller's `note` wins.
+    """
+    table = {
+        "pal": "PAL ROM (cannot pass on an NTSC emulator)",
+        "demo": "demo / homebrew ROM, not a self-checking test",
+        "bad-header": "unusable iNES header",
+        "no-detector": "no machine-readable verdict evidence",
+        "unknown-result": "emits no readable on-screen verdict",
+        "hang": "known to hang / never completes",
+        "interactive": "requires manual input to run",
+        "known-fail": "known emulator defect, not yet fixed",
+    }
+    if reason.startswith("mapper-"):
+        return "unsupported mapper %s" % reason.split("-", 1)[1]
+    return table.get(reason)
+
+
 def write_report(rows, args, any_bad, ignored=None):
     """Write a GitHub-flavoured Markdown run report to tests/reports/latest.md.
 
@@ -241,7 +265,6 @@ def write_report(rows, args, any_bad, ignored=None):
         groups[_bucket(r["verdict"])].append((entry, r, label, bad))
 
     n = {k: len(v) for k, v in groups.items()}
-    n_bad = sum(1 for _, _, _, bad in rows if bad)
     now = datetime.datetime.now()
 
     cmd = "python tests/launcher.py"
@@ -249,8 +272,6 @@ def write_report(rows, args, any_bad, ignored=None):
         cmd += " " + args.pattern
     if args.timeout:
         cmd += " --timeout %d" % args.timeout
-    if args.shard:
-        cmd += " --shard %d %d" % (args.shard[0], args.shard[1])
     if args.platform != "linux":
         cmd += " --platform %s" % args.platform
     if args.dir:
@@ -270,10 +291,6 @@ def write_report(rows, args, any_bad, ignored=None):
     L.append(f"| ✅ Pass (matches expectation) | {n['pass']} |")
     L.append(f"| ❌ Fail (does not match) | {n['fail']} |")
     L.append(f"| **Total run** | {len(rows)} |")
-    L.append("")
-    L.append(f"- Must-pass entries: **{len(rows)}**")
-    L.append(f"- ROMs that did not pass (CI red line): "
-             f"**{n_bad}**")
     L.append("")
 
     # Per-directory breakdown -- the main way to eyeball a run.
@@ -317,16 +334,25 @@ def write_report(rows, args, any_bad, ignored=None):
     if ignored:
         seen = {}
         for e in ignored:
-            seen.setdefault(test_judge.top_dir(e["id"]),
-                            e.get("ignore_note", "correct result unknown"))
-        L.append("## Ignored (correct result not machine-readable)")
+            # Scanner-intrinsic exclusions set ignore_note; human exclusions
+            # (hang/interactive) carry a free-text note instead. Scanner
+            # exclusions that only set `reason` (PAL/mapper/bad-header/...) get
+            # a readable explanation from _reason_text instead of a vague
+            # "correct result unknown".
+            why = (e.get("ignore_note")
+                   or e.get("note")
+                   or _reason_text(e.get("reason", ""))
+                   or "correct result unknown")
+            seen.setdefault(test_judge.top_dir(e["id"]), why)
+        L.append("## Ignored (not gated)")
         L.append("")
-        L.append("Skipped on purpose: these ROMs do not emit a machine-readable "
-                 "PASS/FAIL, so they cannot gate the run. The human pass "
-                 "condition is noted for each.")
+        L.append("Skipped on purpose: either the ROM emits no machine-readable "
+                 "verdict (so it cannot gate), or we chose not to run it "
+                 "(hangs, interactive input, or audio-only with no screen "
+                 "output). Each is documented with its reason.")
         L.append("")
-        L.append("| Suite | Why skipped / pass condition |")
-        L.append("|-------|-------------------------------|")
+        L.append("| Suite | Why skipped |")
+        L.append("|-------|-------------|")
         for d in sorted(seen):
             L.append(f"| {_suite_link(d)} | {seen[d]} |")
         L.append("")
@@ -334,42 +360,33 @@ def write_report(rows, args, any_bad, ignored=None):
     text = "\n".join(L)
     try:
         os.makedirs(REPORT_DIR, exist_ok=True)
-        # Sharded CI runs each write a UNIQUE file (shard-N.md) so the parallel
-        # jobs never clobber one another; a non-sharded local run keeps
-        # latest.md. Every run also emits shard-N.json / latest.json so the
-        # `summarize` CI job can fold all shards into one tally.
-        if args.shard:
-            base = "shard-%s-%d" % (args.platform, args.shard[0])
-        else:
-            base = "latest"
-        md_path = os.path.join(REPORT_DIR, base + ".md")
+        md_path = os.path.join(REPORT_DIR, "latest.md")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(text)
-        json_path = os.path.join(REPORT_DIR, base + ".json")
-        _write_json_report(json_path, rows, args, any_bad)
+        _write_json_report(os.path.join(REPORT_DIR, "latest.json"),
+                           rows, args.platform, any_bad)
         return md_path
     except OSError as e:
         print(f"(report not written: {e})")
         return None
 
 
-def _write_json_report(path, rows, args, any_bad):
-    """Emit a machine-readable shard report for the `summarize` CI job.
+def _write_json_report(path, rows, platform, any_bad):
+    """Emit the machine-readable run report (tests/reports/latest.json).
 
-    JSON mirror of the Markdown report so the aggregator can merge N shards
-    without parsing Markdown; flattens each row to the fields it tallies.
+    JSON mirror of the Markdown report: a stable, parseable record of the run
+    for tooling and later diffing. Flattens each row to the fields it tallies.
+    `platform` is the CI runner's own label (--platform), since a json consumer
+    cannot otherwise tell a windows pass from a macos one.
     """
     payload = {
-        "shard": args.shard[0] if args.shard else 0,
-        "total_shards": args.shard[1] if args.shard else 1,
-        "platform": args.platform,
+        "platform": platform,
         "any_bad": any_bad,
         "rows": [
             {
                 "id": entry["id"],
                 "label": label,
                 "bad": bad,
-                "must_pass": entry.get("expected") == "pass",
                 "verdict": r["verdict"],
                 "detail": r.get("detail", ""),
                 "path": entry.get("path", ""),
@@ -393,25 +410,16 @@ def main():
                          "whitelist -- wins over the default exclusions")
     ap.add_argument("--exclude-dir", action="append", default=[], metavar="DIR",
                     help="skip ROMs under top-level suite DIR (repeatable); "
-                         "applied on top of DEFAULT_EXCLUDE_DIRS")
+                         "trims an explicit --dir whitelist, or narrows a full "
+                         "run when no --dir is given")
     ap.add_argument("--frames", type=int, default=None,
                     help="override the frame count for every selected test")
     ap.add_argument("--timeout", type=int, default=0,
                     help="override the per-ROM watchdog to N seconds (default "
                          "%d). A ROM that runs longer is killed and reported "
                          "TIMEOUT instead of freezing the sweep." % DEFAULT_ROM_TIMEOUT)
-    ap.add_argument("--shard", nargs=2, type=int, metavar=("N", "TOTAL"),
-                    help="split the selected ROMs into TOTAL shards and run "
-                    "shard N (0-indexed). Partition is deterministic by id, "
-                    "so every shard job sees the same split and the union of "
-                    "all shards is exactly the full selection with no overlap. "
-                    "CI uses this to fan the sweep across N machines; locally "
-                    "it lets you time a single slice. Works with --list.")
     ap.add_argument("--platform", default="linux",
-                    help="label for CI shard reports (linux/windows/macos). "
-                    "Namespaces the per-shard JSON so parallel jobs on "
-                    "different OSes never collide, and lets the summarize "
-                    "job break the tally down per platform.")
+                    help="OS label recorded in the report (linux/windows/macos)")
     args = ap.parse_args()
 
     settings, tests = test_picker.build_test_list()
@@ -424,16 +432,20 @@ def main():
                 or fnmatch.fnmatch(t.get("path", ""), args.pattern))
 
     selected = [t for t in tests if match(t)]
-    # Excluded ROMs (PAL/demo/other/no-detector/unmapped) are filtered out
-    # unconditionally -- no flag opts them back in.
+    # Excluded entries never run: rom_scanner tags every non-gated ROM with a
+    # reason (PAL/demo/no-detector/no-verdict-dir) and test_picker may exclude
+    # more from launcher.toml. No flag opts them back in -- the report's Ignored
+    # section is where "why didn't this run" is answered.
     selected = [t for t in selected if not t.get("excluded")]
     # Only must-pass (expected="pass") entries run; "skip" stays in config just
     # to stop discovery re-adding them.
     selected = [t for t in selected if t.get("expected") == "pass"]
 
     # --- directory scoping ------------------------------------------------
-    # Group by top-level suite dir. --dir whitelists suites (run ONLY these);
-    # without it, all run except DEFAULT_EXCLUDE_DIRS and --exclude-dir.
+    # Group by top-level suite dir. --dir whitelists suites (run ONLY these),
+    # then --exclude-dir trims inside the whitelist. Without --dir, everything
+    # runs except --exclude-dir. Skipped-by-default suites (audio-only, PAL,
+    # demo, ...) never reach here: rom_scanner already excluded them.
     if args.dir:
         wanted = set(args.dir)
         selected = [t for t in selected if test_judge.top_dir(t["id"]) in wanted]
@@ -442,34 +454,25 @@ def main():
             selected = [t for t in selected if test_judge.top_dir(t["id"]) not in drop]
         scope = wanted - set(args.exclude_dir)
     else:
-        skip = set(DEFAULT_EXCLUDE_DIRS) | set(args.exclude_dir)
-        selected = [t for t in selected if test_judge.top_dir(t["id"]) not in skip]
-        scope = None  # all suites except the run-time opt-outs
+        if args.exclude_dir:
+            drop = set(args.exclude_dir)
+            selected = [t for t in selected if test_judge.top_dir(t["id"]) not in drop]
+        scope = None  # all suites except the ones just dropped
 
-    # Ignored suites (discovery marks them excluded="unknown-result") are shown
-    # in the report's Ignored section, never gate the run. Scoped to the same
-    # dirs as the run so --dir X doesn't list every unknown-result suite.
+    # Every excluded entry that carries a reason shows up in the report's
+    # Ignored section, whether the reason is ROM-intrinsic (scanner-set
+    # reason) or human (launcher.toml), scoped to the same dirs as the run.
     ignored = [t for t in tests
-               if t.get("excluded") and t.get("reason") == "unknown-result"
+               if t.get("excluded") and t.get("reason")
                and (scope is None or test_judge.top_dir(t["id"]) in scope)]
-
-    if args.shard:
-        n, total = args.shard
-        if not (0 <= n < total):
-            print(f"--shard N TOTAL requires 0 <= N < TOTAL "
-                  f"(got N={n} TOTAL={total})")
-            return 2
-        # Stable order so the partition is identical on every machine / job.
-        selected.sort(key=lambda t: t["id"])
-        selected = [t for i, t in enumerate(selected) if i % total == n]
-        print(f"[shard {n}/{total}] selected {len(selected)} ROMs", flush=True)
 
     if args.list_dirs:
         # List suites that carry runnable ROMs under the current scope, so
         # --dir/--exclude-dir can be chosen by name.
         by_dir = {}
         for t in selected:
-            by_dir[test_judge.top_dir(t["id"])] = by_dir.get(test_judge.top_dir(t["id"]), 0) + 1
+            d = test_judge.top_dir(t["id"])
+            by_dir[d] = by_dir.get(d, 0) + 1
         print("Runnable suites (top-level dirs):")
         for d in sorted(by_dir):
             print(f"  {d:28s} {by_dir[d]} ROM(s)")
@@ -483,18 +486,25 @@ def main():
             if d != current:
                 current = d
                 print(f"\n[{d}]")
-            print(f"  {test_judge.label_of(t):16s}  {t['id']}")
+            print(f"  {t.get('expected', 'skip'):16s}  {t['id']}")
         print(f"\n  {len(selected)} listed "
               f"(of {len(tests)} scanned, "
               f"{sum(1 for t in tests if t.get('excluded'))} excluded)")
         return 0
 
     if not selected:
-        print(f"No tests match pattern '{args.pattern}'.")
-        return 0
+        # An empty scope means the operator's --pattern/--dir resolved to zero
+        # runnable ROMs (typo, wrong suite, or every match excluded). That is a
+        # misconfiguration, not a green result: never let a no-op run report
+        # success. 2 is distinct from 0 (green) / 1 (red-line failure).
+        scope_desc = (f"--pattern '{args.pattern}'" if args.pattern != "*"
+                      else (f"--dir {args.dir}" if args.dir else "current scope"))
+        print(f"WARNING: no runnable ROMs in {scope_desc} -- nothing executed.",
+              file=sys.stderr)
+        return 2
 
     # Group by top-level dir so each suite runs as one batch.
-    default_frames = int(settings.get("frames", rom_runner.FRAMES))
+    default_frames = int(settings["frames"])
     jobs_by_dir = {}
     for t in selected:
         j = rom_runner.prepare_run(t, settings)
@@ -535,7 +545,7 @@ def main():
 
     print(f"\n=== red-line {'FAIL' if any_bad else 'OK'}:  "
           f"{'  '.join(f'{k}={v}' for k, v in sorted(counts.items()))} ===")
-    print(f"    {len(rows)} ROMs run, {len(rows)} must-pass, "
+    print(f"    {len(rows)} must-pass ROMs run, "
           f"{'GATEFAIL' if any_bad else 'all green'}")
 
     report = write_report(rows, args, any_bad, ignored)

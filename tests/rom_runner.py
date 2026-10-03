@@ -13,14 +13,21 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import test_judge  # noqa: E402
 
-# Frame-budget default, single source for test_picker's [settings].
-# Detector selection lives in test_judge (the judge), not here.
-FRAMES = 1200
-DEFAULT_SETTINGS = {"frames": FRAMES, "detector": test_judge.DEFAULT_DETECTOR}
+# Frame-budget default. The canonical value lives in test_judge.DEFAULT_FRAMES
+# (the bottom layer both this executor and the config layer read from); this is
+# just the local alias. Detector selection lives in test_judge too -- chosen
+# per-ROM by test_judge.detector_for (entry override > DETECTOR_BY_DIR > default),
+# NOT via a settings dict, so there is no "detector" key here.
+FRAMES = test_judge.DEFAULT_FRAMES
+DEFAULT_SETTINGS = {"frames": FRAMES}
 
-# Split-suite ROMs run one addressing mode per part; official_only/all_instrs
-# run the whole suite serially and need ~90s of emulated time.
-PER_ROM_FRAMES = {"official_only": 5400, "all_instrs": 5400}
+# Split-suite ROMs run one addressing mode per part and need far more emulated
+# time than a normal suite. Keyed by full id so a same-basename ROM in another
+# suite can never inherit this budget. Entries here are only consulted when
+# launcher.toml pins no `frames` for that id (see prepare_run's priority).
+PER_ROM_FRAMES = {
+    "instr_test-v5/all_instrs": 5400,
+}
 
 POLL_EVERY = 10            # inspect nametable this often (frames) while polling
 MAX_INJECTED_RESETS = 3    # guard against a ROM that loops on reset
@@ -160,8 +167,9 @@ def run_one(entry):
 def prepare_run(entry, settings=None):
     """Fill in default frames/detector so run_one has everything it needs.
 
-    *settings* comes from launcher.toml's [settings] table and takes effect
-    here; a per-entry value wins over it, and PER_ROM_FRAMES wins over both.
+    *settings* comes from launcher.toml's [settings] table. Priority for the
+    frame budget, highest first: a per-entry `frames` (launcher.toml pins what
+    it was verified at) > PER_ROM_FRAMES (split-suite needs) > settings.
     An optional `retry_frames` key (injected by the orchestrator, launcher)
     is honoured by the pool worker: a ROM that fails at a short budget is
     re-run once at that frame count to rule out a false failure.
@@ -170,6 +178,6 @@ def prepare_run(entry, settings=None):
     e = dict(entry)
     e["frames"] = int(
         entry.get("frames")
-        or PER_ROM_FRAMES.get(entry.get("id", "").split("/")[-1])
-        or s.get("frames", FRAMES))
+        or PER_ROM_FRAMES.get(entry.get("id", ""))
+        or s["frames"])
     return e

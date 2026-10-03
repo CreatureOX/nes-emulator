@@ -8,9 +8,10 @@ A ROM is kept only when it self-reports a machine-readable verdict, so every
 kept ROM is simply expected to pass. Excluded when PAL, in a demo dir, on an
 unimplemented mapper, or with no verdict evidence.
 
-Exclusions here are ROM-intrinsic -- the ROM can't be auto-judged. A second,
-dir-level opt-out (DEFAULT_EXCLUDE_DIRS in launcher) is applied at run time
-for suites we choose not to gate; the two layers are distinct on purpose.
+Exclusion is a single layer: every "we don't gate this" decision lives here,
+tagged with a reason so the report can explain it. Directories whose ROMs
+carry no readable on-screen verdict (audio-only suites, visual demos) go in
+IGNORE_DIRS with a note; there is no separate run-time dir opt-out.
 """
 import os
 import re
@@ -42,6 +43,7 @@ IGNORE_DIRS = {
     "tvpassfail": "display crosstalk demo; RGB emulators show '%%%' not 'PASS!' ('PASS!' is NTSC artifact); no machine verdict",
     "spritecans-2011": "64 soda-can bounce intro (OAM cycling); no self-reported verdict",
     "vaus-test": "Vaus/Arkanoid paddle controller test; requires manual paddle input, no machine-readable verdict",
+    "apu_mixer": "APU mixer test; audio-only, nothing rendered on screen, so the blargg text detector has no verdict to read",
 }
 
 # Never descended into while walking the submodule: build inputs, not ROMs.
@@ -52,14 +54,6 @@ SKIP_DIRS = (".git", "source", "obj", "src", "tools", "tilesets")
 PAL_PATH_RE = re.compile(r"(?:^|[_\-/])pal(?:[_\-./]|$)", re.IGNORECASE)
 # "... on a PAL NES", "PAL NES APU Tests"
 PAL_TEXT_RE = re.compile(r"\bPAL\s+NES\b", re.IGNORECASE)
-
-# Suite-level real-hardware assertion; phrasing varies but always contains
-# "all ... give ... passing result".
-HW_ASSERT_RE = re.compile(
-    r"all\s+(?:of\s+them\s+)?(?:give|pass(?:es)?|should\s+pass)\s+"
-    r"(?:a\s+)?passing\s+result",
-    re.IGNORECASE,
-)
 
 README_NAMES = ("readme.txt", "README.txt", "readme.md", "README.md")
 
@@ -121,8 +115,8 @@ def load_xml():
     """Return {submodule-relative path: {"frames"}} from test_roms.xml.
 
     Only `runframes` (frame budget) is used; `testresult` is NOT an expectation
-    -- it records what OTHER emulators do, and trusting it once mislabelled
-    ppu_vbl_nmi/10-even_odd_timing as expected=fail (it passes here).
+    -- it records what OTHER emulators do, and trusting it once mislabelled a
+    ROM that actually passes here as expected=fail.
     """
     out = {}
     if not os.path.exists(XML_PATH):
