@@ -20,4 +20,7 @@ cdef class MapperMMC3(Mapper):
     cdef uint16_t IRQ_reload
     cdef bint a12_prev
 
+    cdef void _a12_edge(self, uint16_t addr)
+    cdef void _clock_irq(self)
+
     cdef uint8_t[:] RAM_static
