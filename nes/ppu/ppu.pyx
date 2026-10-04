@@ -183,6 +183,10 @@ cdef class PPU2C02:
                 self._open_bus_refresh(data, 0xFF)
             if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
                 self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+                # After a $2007 access the advanced VRAM address drives PPU A12;
+                # MMC3-class mappers clock their IRQ on the resulting edge
+                # (blargg mmc3_irq_tests sub-5/sub-6: $0fff -> $1000).
+                self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
             else:
                 self._incr_coarseX()
                 self._incr_Y()
@@ -244,12 +248,19 @@ cdef class PPU2C02:
                 self.temp_VRAM_addr.value = (self.temp_VRAM_addr.value & 0xFF00) | data
                 self.VRAM_addr.value = self.temp_VRAM_addr.value
                 self.address_latch = 0
+                # The updated VRAM address drives PPU A12; MMC3-class mappers
+                # clock their IRQ counter on A12 rising edges seen here
+                # (blargg mmc3_irq_tests rely on $2006-driven manual clocking).
+                self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
         elif addr == 0x0007:
             # PPU Data Register ($2007)
             # Read/write VRAM at current VRAM address
             self.writeByPPU(self.VRAM_addr.value & 0x3FFF, data)
             # Increment VRAM address (1 or 32 bytes based on increment mode)
             self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            # After a $2007 access the advanced VRAM address drives PPU A12;
+            # MMC3-class mappers clock their IRQ on the resulting edge.
+            self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
 
     cdef uint8_t readByPPU(self, uint16_t addr):
         """
