@@ -19,6 +19,7 @@ cdef class MapperMMC3(Mapper):
     cdef uint16_t IRQ_counter
     cdef uint16_t IRQ_reload
     cdef bint a12_prev
+    cdef bint a12_suppress
 
     cdef void a12_notify(self, uint16_t addr)
     cdef void _clock_irq(self)

@@ -40,7 +40,7 @@ cdef class Mapper:
 
     cdef void reset(self):
         """Reset mapper state."""
-        pass
+        self.a12_suppress = False
 
     cdef uint8_t mirror(self):
         """Return the mirroring mode."""

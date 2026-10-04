@@ -31,6 +31,7 @@ cdef class MapperMMC3(Mapper):
         self.IRQ_counter = 0x0000
         self.IRQ_reload = 0x0000
         self.a12_prev = 0
+        self.a12_suppress = False
 
         self.RAM_static = np.zeros(32 * 1024).astype(np.uint8)
 
@@ -171,6 +172,7 @@ cdef class MapperMMC3(Mapper):
         self.IRQ_counter = 0x0000
         self.IRQ_reload = 0x0000
         self.a12_prev = 0
+        self.a12_suppress = False
 
         for i in range(4):
             self.PRG_bank[i] = 0
@@ -193,6 +195,12 @@ cdef class MapperMMC3(Mapper):
         self.IRQ_active = False
 
     cdef void a12_notify(self, uint16_t addr):
+        # The PPU may ask us to ignore an access (a12_suppress) when it performs
+        # the late, dot-340 sprite-data fetch. That fetch would otherwise emit a
+        # second A12 rising edge per scanline; the correctly-phased edge is
+        # emitted separately at dot 257, so we must not count the dot-340 one.
+        if self.a12_suppress:
+            return
         # MMC3 IRQ counter is clocked on the rising edge of the (filtered) PPU
         # A12 line. A12 is bit 12 of the CHR/pattern address bus ($0000-$1FFF).
         #

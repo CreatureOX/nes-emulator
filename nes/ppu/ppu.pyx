@@ -847,15 +847,28 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._load_background_shifters()
                     self._transfer_X_address()
-                    # Align MMC3 A12 edge phase: fetch sprite patterns at the
-                    # start of the HW sprite-fetch window (~dot 257), not at 340.
-                    self._fetch_sprites()
+                    # Emit the MMC3 A12 rising edge at the hardware-correct
+                    # sprite-fetch phase (~dot 257). Sprite pattern DATA is still
+                    # fetched at dot 340 (below) to preserve sprite-0 hit timing;
+                    # that fetch suppresses its own redundant A12 edge.
+                    # Defensive: clear any stuck suppress before emitting the
+                    # edge (a stuck True would silently disable MMC3 IRQ clocking).
+                    self.cartridge.mapper.a12_suppress = False
+                    self.cartridge.mapper.a12_notify(0x1000)
             elif 321 <= self.cycle <= 336: 
                 self._eval_background()
             if self.cycle == 340:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:                
                     self.background_next_tile_id = self._fetch_background_tile_id()
                     self.background_next_tile_id = self._fetch_background_tile_id()
+                    # Fetch sprite pattern data at dot 340 (original schedule)
+                    # so sprite rendering and sprite-0 hit timing are unchanged.
+                    # Suppress its A12 edge: the correctly-phased edge was already
+                    # emitted at dot 257; counting this one too would clock MMC3
+                    # twice per scanline.
+                    self.cartridge.mapper.a12_suppress = True
+                    self._fetch_sprites()
+                    self.cartridge.mapper.a12_suppress = False
 
             if 2 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
@@ -888,6 +901,14 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self.background_next_tile_id = self._fetch_background_tile_id()
                     self.background_next_tile_id = self._fetch_background_tile_id()
+                    # Fetch sprite pattern data at dot 340 (original schedule)
+                    # so sprite rendering and sprite-0 hit timing are unchanged.
+                    # Suppress its A12 edge: the correctly-phased edge was already
+                    # emitted at dot 257; counting this one too would clock MMC3
+                    # twice per scanline.
+                    self.cartridge.mapper.a12_suppress = True
+                    self._fetch_sprites()
+                    self.cartridge.mapper.a12_suppress = False
 
             if 2 <= self.cycle <= 256: 
                 if self.PPUMASK.render_sprites == 1:
@@ -895,12 +916,14 @@ cdef class PPU2C02:
             elif self.cycle == 257:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._eval_sprites()
-                    # Moved from cycle 340. Real hardware fetches sprite
-                    # patterns during dots 257-320 of the hblank; the BG->sprite
-                    # A12 transition (the MMC3 IRQ clock edge) happens at ~dot
-                    # 257. Aligning the fetch here puts the A12 rising edge at
-                    # the correct phase so MMC3 scanline-timing IRQs fire on time.
-                    self._fetch_sprites()
+                    # Emit the MMC3 A12 rising edge at the hardware-correct
+                    # sprite-fetch phase (~dot 257). Sprite pattern DATA is still
+                    # fetched at dot 340 (below) to preserve sprite-0 hit timing;
+                    # that fetch suppresses its own redundant A12 edge.
+                    # Defensive: clear any stuck suppress before emitting the
+                    # edge (a stuck True would silently disable MMC3 IRQ clocking).
+                    self.cartridge.mapper.a12_suppress = False
+                    self.cartridge.mapper.a12_notify(0x1000)
 
             # Sprite overflow is raised part-way through the OAM scan, not in
             # one lump at its end. Plan the scan when it starts (dot 65) and
