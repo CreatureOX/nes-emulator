@@ -847,6 +847,9 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._load_background_shifters()
                     self._transfer_X_address()
+                    # Align MMC3 A12 edge phase: fetch sprite patterns at the
+                    # start of the HW sprite-fetch window (~dot 257), not at 340.
+                    self._fetch_sprites()
             elif 321 <= self.cycle <= 336: 
                 self._eval_background()
             if self.cycle == 340:
@@ -857,9 +860,6 @@ cdef class PPU2C02:
             if 2 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()   
-            if self.cycle == 340:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._fetch_sprites()
 
             if self.cycle == 1:
                 # Clear status flags at start of pre-render scanline
@@ -895,9 +895,12 @@ cdef class PPU2C02:
             elif self.cycle == 257:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._eval_sprites()
-            elif self.cycle == 340:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._fetch_sprites()        
+                    # Moved from cycle 340. Real hardware fetches sprite
+                    # patterns during dots 257-320 of the hblank; the BG->sprite
+                    # A12 transition (the MMC3 IRQ clock edge) happens at ~dot
+                    # 257. Aligning the fetch here puts the A12 rising edge at
+                    # the correct phase so MMC3 scanline-timing IRQs fire on time.
+                    self._fetch_sprites()
 
             # Sprite overflow is raised part-way through the OAM scan, not in
             # one lump at its end. Plan the scan when it starts (dot 65) and
