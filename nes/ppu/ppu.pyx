@@ -664,8 +664,17 @@ cdef class PPU2C02:
                 m = (m + 1) & 0x03
 
     cdef void _fetch_sprites(self):
-        for i in range(0, self.sprite_count):
-            self._fetch_sprite(i)    
+        # Real hardware always performs 8 sprite pattern fetches during the
+        # sprite-fetch window of every scanline when sprite rendering is
+        # enabled, even when fewer than 8 (or zero) sprites are actually on
+        # the scanline ("dummy" fetches of OAM slot data). These fetches drive
+        # PPU A12, so omitting them starves A12-based IRQ clocks (e.g. MMC3)
+        # of their once-per-scanline rising edge whenever sprite_count == 0.
+        # Loop over all 8 slots; entries past sprite_count hold stale/garbage
+        # secondary-OAM data and are never displayed (render loop is bounded
+        # by sprite_count), so the extra fetches are harmless and accurate.
+        for i in range(8):
+            self._fetch_sprite(i)
 
     cdef void _fetch_sprite(self, int i):
         """
