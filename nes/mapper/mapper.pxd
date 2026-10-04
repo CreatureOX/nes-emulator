@@ -24,9 +24,3 @@ cdef class Mapper:
     cdef void scanline(self)
 
     cdef void a12_notify(self, uint16_t addr)
-
-    # When True, a12_notify becomes a no-op. The PPU sets this around the
-    # late (dot 340) sprite-data fetch so that fetch does not emit a second
-    # A12 rising edge; the correctly-phased edge is emitted separately at
-    # dot 257 via an explicit call.
-    cdef bint a12_suppress
