@@ -57,3 +57,12 @@ cdef class Mapper:
     cdef void scanline(self):
         """Called on each PPU scanline (for scanline-based IRQs)."""
         pass
+
+    cdef void a12_notify(self, uint16_t addr):
+        """Notify the mapper of a PPU address-bus A12 transition.
+
+        Base no-op. Mappers that clock an IRQ off PPU A12 (e.g. MMC3) override
+        this. It is called from both the PPU CHR/nametable fetch path and the
+        $2006 VRAM-address write path.
+        """
+        pass

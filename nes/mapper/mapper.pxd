@@ -22,3 +22,5 @@ cdef class Mapper:
     cdef void IRQ_clear(self)
     
     cdef void scanline(self)
+
+    cdef void a12_notify(self, uint16_t addr)

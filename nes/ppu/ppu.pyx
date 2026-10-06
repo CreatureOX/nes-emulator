@@ -183,6 +183,10 @@ cdef class PPU2C02:
                 self._open_bus_refresh(data, 0xFF)
             if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
                 self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+                # After a $2007 access the advanced VRAM address drives PPU A12;
+                # MMC3-class mappers clock their IRQ on the resulting edge
+                # (blargg mmc3_irq_tests sub-5/sub-6: $0fff -> $1000).
+                self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
             else:
                 self._incr_coarseX()
                 self._incr_Y()
@@ -244,12 +248,19 @@ cdef class PPU2C02:
                 self.temp_VRAM_addr.value = (self.temp_VRAM_addr.value & 0xFF00) | data
                 self.VRAM_addr.value = self.temp_VRAM_addr.value
                 self.address_latch = 0
+                # The updated VRAM address drives PPU A12; MMC3-class mappers
+                # clock their IRQ counter on A12 rising edges seen here
+                # (blargg mmc3_irq_tests rely on $2006-driven manual clocking).
+                self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
         elif addr == 0x0007:
             # PPU Data Register ($2007)
             # Read/write VRAM at current VRAM address
             self.writeByPPU(self.VRAM_addr.value & 0x3FFF, data)
             # Increment VRAM address (1 or 32 bytes based on increment mode)
             self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            # After a $2007 access the advanced VRAM address drives PPU A12;
+            # MMC3-class mappers clock their IRQ on the resulting edge.
+            self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
 
     cdef uint8_t readByPPU(self, uint16_t addr):
         """
@@ -653,8 +664,17 @@ cdef class PPU2C02:
                 m = (m + 1) & 0x03
 
     cdef void _fetch_sprites(self):
-        for i in range(0, self.sprite_count):
-            self._fetch_sprite(i)    
+        # Real hardware always performs 8 sprite pattern fetches during the
+        # sprite-fetch window of every scanline when sprite rendering is
+        # enabled, even when fewer than 8 (or zero) sprites are actually on
+        # the scanline ("dummy" fetches of OAM slot data). These fetches drive
+        # PPU A12, so omitting them starves A12-based IRQ clocks (e.g. MMC3)
+        # of their once-per-scanline rising edge whenever sprite_count == 0.
+        # Loop over all 8 slots; entries past sprite_count hold stale/garbage
+        # secondary-OAM data and are never displayed (render loop is bounded
+        # by sprite_count), so the extra fetches are harmless and accurate.
+        for i in range(8):
+            self._fetch_sprite(i)
 
     cdef void _fetch_sprite(self, int i):
         """
@@ -827,6 +847,9 @@ cdef class PPU2C02:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._load_background_shifters()
                     self._transfer_X_address()
+                    # Align MMC3 A12 edge phase: fetch sprite patterns at the
+                    # start of the HW sprite-fetch window (~dot 257), not at 340.
+                    self._fetch_sprites()
             elif 321 <= self.cycle <= 336: 
                 self._eval_background()
             if self.cycle == 340:
@@ -837,9 +860,6 @@ cdef class PPU2C02:
             if 2 <= self.cycle <= 256:
                 if self.PPUMASK.render_sprites == 1:
                     self._update_sprite_shifters()   
-            if self.cycle == 340:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._fetch_sprites()
 
             if self.cycle == 1:
                 # Clear status flags at start of pre-render scanline
@@ -875,9 +895,12 @@ cdef class PPU2C02:
             elif self.cycle == 257:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._eval_sprites()
-            elif self.cycle == 340:
-                if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-                    self._fetch_sprites()        
+                    # Moved from cycle 340. Real hardware fetches sprite
+                    # patterns during dots 257-320 of the hblank; the BG->sprite
+                    # A12 transition (the MMC3 IRQ clock edge) happens at ~dot
+                    # 257. Aligning the fetch here puts the A12 rising edge at
+                    # the correct phase so MMC3 scanline-timing IRQs fire on time.
+                    self._fetch_sprites()
 
             # Sprite overflow is raised part-way through the OAM scan, not in
             # one lump at its end. Plan the scan when it starts (dot 65) and
