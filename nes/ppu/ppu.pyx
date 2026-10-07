@@ -843,10 +843,20 @@ cdef class PPU2C02:
             # straight to (0, 0), so PPUMASK is sampled at dot 339, not dot 0.
             if 1 <= self.cycle <= 256:
                 self._eval_background()
-            elif self.cycle == 257:                
+            elif self.cycle == 257:
                 if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
                     self._load_background_shifters()
                     self._transfer_X_address()
+                    # Evaluate sprites for the *next* scanline here, exactly as
+                    # the visible-scanline path does. In real hardware the
+                    # sprite-fetch window of scanline M (dots 257-320) sets up
+                    # scanline M+1, so the pre-render line's window must set up
+                    # scanline 0. Without this, scanline 0 inherits the stale
+                    # eval_sprite0 left over from scanline 239 of the previous
+                    # frame, which (combined with the 257-time fetch phase)
+                    # produces a spurious sprite-0 hit at scanline 0 and breaks
+                    # blargg sprite_hit_tests 07.screen_bottom (FAIL #N=4).
+                    self._eval_sprites()
                     # Align MMC3 A12 edge phase: fetch sprite patterns at the
                     # start of the HW sprite-fetch window (~dot 257), not at 340.
                     self._fetch_sprites()
@@ -875,7 +885,6 @@ cdef class PPU2C02:
 
         elif visible_scanlines:
             # Visible scanlines (0-239): Render pixels to screen
-
             if 1 <= self.cycle <= 256:
                 self._eval_background()
             elif self.cycle == 257:                
