@@ -171,9 +171,19 @@ cdef class CPU6502:
     # one dot after the cycle's tick dot. So with the boundary at bus dot D
     # the sample lands at D-5, and an edge that arrives after it (latch dot
     # >= D-4) is deferred to the NEXT instruction's end. The CPU services a
-    # pending interrupt at its boundary iff latch_dot <= D-5.
+    # pending interrupt at its boundary iff latch_dot <= D-5 -- EXCEPT after
+    # an OAM DMA stall, where D is rebased to the pre-stall boundary dot
+    # (last_clock_dot + 3) so the halt's cycles are not mistaken for the
+    # instruction's tail; see clock().
     cdef long long nmi_latch_dot
     cdef long long irq_latch_dot
+    # Bus dot of the PREVIOUS cpu.clock() call. The bus clocks the CPU on every
+    # CPU cycle (every third dot) EXCEPT while an OAM DMA holds it halted
+    # (bus.pyx skips cpu.clock() for the transfer's 513/514 cycles), so a gap
+    # larger than 3 dots between consecutive calls marks a stall. clock()'s
+    # boundary poll then references this pre-stall dot instead of `now`; see
+    # clock().
+    cdef long long last_clock_dot
     # True while the 7/8-cycle interrupt sequence itself is running. Hardware
     # does not poll during that sequence, which guarantees at least one handler
     # instruction executes before another interrupt can be taken.

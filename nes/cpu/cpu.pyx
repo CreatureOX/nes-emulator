@@ -1497,6 +1497,8 @@ cdef class CPU6502:
         # interrupt sequence (no polling while it drains).
         self.nmi_latch_dot = -1
         self.irq_latch_dot = -1
+        # No previous clock yet; the first boundary polls against `now`.
+        self.last_clock_dot = -1
         self.irq_i_latched = True
         self.irq_defer_i = False
         # Non-page-crossing taken branch ignores IRQ/NMI on its later clocks
@@ -1651,9 +1653,16 @@ cdef class CPU6502:
     cdef uint8_t clock(self) except *:
         '''
         Perform one clock cycle of CPU execution.
-        
-        If no instruction is running (remaining_cycles == 0), fetch and decode
-        the next opcode. Then decrement the cycle counter.
+
+        If no instruction is running (remaining_cycles == 0), this is an
+        instruction boundary: poll the interrupt lines (NMI edge, IRQ level
+        gated by the latched I flag), take a pending interrupt if one was
+        visible at the just-ended instruction's penultimate-cycle phi2,
+        otherwise fetch and decode the next opcode. The poll reference dot is
+        rebased onto the pre-stall boundary when an OAM DMA held the CPU
+        halted since the previous clock, so edges latched during the halt are
+        not attributed one instruction early. Then decrement the cycle
+        counter.
         '''
         cdef Op op
         cdef uint8_t op_cycles = 0
@@ -1667,6 +1676,22 @@ cdef class CPU6502:
         # Bus dot of this boundary; sampled once and shared by the poll
         # comparisons and the deferred-sequence bookkeeping below.
         cdef long long now = 0
+        # Bus dot of this clock's tick, of the previous clock() call, and
+        # whether the bus stalled the CPU in between. The bus clocks the CPU
+        # on every CPU cycle (every third dot) except while an OAM DMA holds
+        # it halted, so consecutive calls are exactly 3 dots apart unless a
+        # stall (513+ dots) intervened.
+        cdef long long tick = 0
+        cdef long long prev_clock_dot = 0
+        # Poll reference dot: `now` in normal flow, the pre-stall boundary
+        # dot after a DMA halt (see the boundary block below).
+        cdef long long eff_now = 0
+        cdef bint stalled = False
+
+        tick = <long long>self.bus.nSystemClockCounter
+        prev_clock_dot = self.last_clock_dot
+        stalled = (prev_clock_dot >= 0 and prev_clock_dot + 3 != tick)
+        self.last_clock_dot = tick
 
         if self.remaining_cycles == 0:
             # Instruction boundary. A real 6502 samples its interrupt inputs at
@@ -1706,7 +1731,33 @@ cdef class CPU6502:
             else:
                 self.irq_i_latched = self.registers.status.bits.I
 
-            now = <long long>self.bus.nSystemClockCounter
+            now = tick
+            # Poll reference dot. In normal flow the previous clock was
+            # exactly one CPU cycle ago, so `now` is the dot the just-ended
+            # instruction ran up to and `now - poll_margin` its
+            # penultimate-cycle phi2. After an OAM DMA stall the gap between
+            # our last clock and this boundary is 513+ cycles, so `now - 5`
+            # would fall inside the halt: an edge latched during the stall
+            # (or during the pre-stall instruction's final cycle, after its
+            # own penultimate phi2) would satisfy the comparison and be
+            # attributed to THIS boundary -- taking the interrupt one
+            # instruction early, which is 4-irq_and_dma's dly=11..13 rows
+            # (expected 8,8,8; we produced 7,7,7). Rebase the reference onto
+            # the pre-stall dot instead: prev_clock_dot + 3 is where the
+            # boundary would have fallen without the halt, so the poll asks
+            # whether the edge was visible at the penultimate phi2 of the
+            # instruction that ACTUALLY ended, and anything later waits for
+            # the next boundary. Mesen2 reaches the same attribution by
+            # keeping _runIrq/_prevRunIrq sampled every cycle through the DMA
+            # (NesCpu::EndCpuCycle) while deciding only at the instruction's
+            # end (NesCpu::Exec); this model decides at the boundary, so the
+            # reference must be rebased.
+            # Ref: NESdev wiki "PPU OAM" (DMA halts the CPU);
+            # Mesen2 Core/NES/NesCpu.cpp (EndCpuCycle, Exec)
+            if stalled:
+                eff_now = prev_clock_dot + 3
+            else:
+                eff_now = now
 
             # Branch quirk (nesdev "Branch instructions and interrupts"; blargg
             # 5-branch_delays_irq source header): a NON-page-crossing TAKEN branch
@@ -1737,7 +1788,7 @@ cdef class CPU6502:
                 self.finish_interrupt_sequence()
             else:
                 if (not self.in_interrupt and self.nmi_pending
-                        and self.nmi_latch_dot <= now - poll_margin):
+                        and self.nmi_latch_dot <= eff_now - poll_margin):
                     self.nmi_pending = False
                     self.in_interrupt = True
                     self.nmi()
@@ -1745,7 +1796,7 @@ cdef class CPU6502:
                     self.remaining_cycles -= 1
                     return 0
                 if (not self.in_interrupt and self.irq_line and self.irq_i_latched == 0
-                        and self.irq_latch_dot <= now - poll_margin):
+                        and self.irq_latch_dot <= eff_now - poll_margin):
                     self.in_interrupt = True
                     # NMI hijack: this sequence's vector fetch is DEFERRED to
                     # its end (finish_interrupt_sequence) so an NMI edge
@@ -1754,12 +1805,15 @@ cdef class CPU6502:
                     # push(P); in this boundary-poll model that decision point
                     # is equivalent to the sequence's end. int_seq_start_dot is
                     # the bus dot of this cycle (the sequence's cycle 1) and
-                    # int_seq_start_margin the poll margin just used -- the
-                    # hijack lower bound, since an edge the poll already saw
-                    # would have been taken as an NMI instead.
+                    # the hijack lower bound is this poll's sample point
+                    # (eff_now - poll_margin) -- an edge the poll already saw
+                    # would have been taken as an NMI instead. Store that
+                    # sample point as a dot distance from the actual start:
+                    # it equals poll_margin in normal flow and only grows
+                    # after a DMA stall rebased the poll reference.
                     self.int_seq_deferred = True
                     self.int_seq_start_dot = now
-                    self.int_seq_start_margin = poll_margin
+                    self.int_seq_start_margin = now - eff_now + poll_margin
                     self.irq()
                     self.clock_count += 1
                     self.remaining_cycles -= 1
@@ -1772,8 +1826,11 @@ cdef class CPU6502:
             # after a deferred interrupt sequence completed, to fetch the
             # handler's first opcode. Record the dot/margin so a BRK running
             # here can recover where its 7-cycle interrupt sequence began.
+            # The margin is stored as a dot distance from the fetch dot; it
+            # equals poll_margin unless a DMA stall rebased this boundary's
+            # poll reference.
             self.last_fetch_dot = now
-            self.last_fetch_margin = poll_margin
+            self.last_fetch_margin = now - eff_now + poll_margin
             self.opcode = self.read(self.registers.PC)
             self.registers.status.bits.U = True
             self.registers.PC = self.registers.PC + 1
