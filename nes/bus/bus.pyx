@@ -124,7 +124,9 @@ cdef class CPUBus:
         Clock the system - advances one CPU cycle.
         
         The PPU runs 3x faster than the CPU (3 PPU cycles per CPU cycle).
-        DMA transfers take 512 cycles (256 bytes read + 256 bytes write).
+        OAM DMA (sprite DMA) transfers take 512 cycles (256 bytes read + 256
+        bytes written) plus a 1-2 cycle alignment prefix, during which the CPU
+        is halted but the PPU/APU and interrupt lines keep running.
         NMI is generated at start of VBLANK when enabled.
         The APU is clocked on the same cycle the CPU samples its interrupt
         lines, so an APU frame/DMC IRQ is recognized without a one-cycle lag.
@@ -166,17 +168,34 @@ cdef class CPUBus:
             # This is a CPU cycle
             cpu_cycle = <unsigned long long>(self.nSystemClockCounter // 3)
             if self.dma_transfer:
-                # OAM DMA transfer: takes 512 cycles (2 per byte transferred)
+                # OAM DMA transfer: 512 transfer cycles (2 per byte) plus an
+                # alignment prefix. The CPU is halted for the whole transfer
+                # (cpu.clock() is not called), but the PPU and APU keep
+                # running and the interrupt lines keep being propagated, so a
+                # device IRQ raised mid-transfer is seen the moment the CPU
+                # resumes (see CPU6502.clock's stall-aware poll reference).
+                #
+                # Phase rule (Mesen2 NesCpu::ProcessPendingDma): reads land on
+                # ODD cpu cycles and $2004 writes on EVEN ones. The alignment
+                # prefix is 1 halt cycle when the $4014 write fell on an odd
+                # cpu cycle (first read at W+2, total halt 513 cycles) and 2
+                # cycles -- halt + one dummy alignment read -- when it fell on
+                # an even one (first read at W+3, total 514). The dummy phase
+                # therefore waits for an EVEN cycle, and the transfer itself
+                # reads on odd / writes on even. Getting this backwards cost a
+                # full CPU cycle of halt on one parity and made
+                # 4-irq_and_dma's dly=526 row fire an instruction late.
+                # Ref: Mesen2 Core/NES/NesCpu.cpp (ProcessPendingDma)
                 if self.dma_dummy:
-                    # Odd cycle of dummy read - wait
-                    if cpu_cycle % 2 == 1:
+                    # Even cycle of dummy read - wait
+                    if cpu_cycle % 2 == 0:
                         self.dma_dummy = False
                 else:
-                    # Even cycle: read byte from PRG ROM
-                    if cpu_cycle % 2 == 0:
+                    # Odd cycle: read byte from PRG ROM
+                    if cpu_cycle % 2 == 1:
                         self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
                     else:
-                        # Odd cycle: write byte to PPU OAM ($2004)
+                        # Even cycle: write byte to PPU OAM ($2004)
                         self.write(0x2004, self.dma_data)
                         self.dma_addr += 1
                         if self.dma_addr == 0x00:
