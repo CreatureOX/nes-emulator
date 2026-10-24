@@ -610,6 +610,9 @@ expected = "pass"
 [[tests]]
 id = "cpu_interrupts_v2/cpu_interrupts"
 expected = "pass"
+# Combined ROM runs all five subtests in sequence; the default 1200 frames
+# cuts it off mid-run (RUNNING/blank). 1500 is where it reaches its verdict.
+frames = 1500
 
 [[tests]]
 id = "cpu_interrupts_v2/rom_singles/1-cli_latency"

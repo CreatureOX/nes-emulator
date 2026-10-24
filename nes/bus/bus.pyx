@@ -126,12 +126,22 @@ cdef class CPUBus:
         The PPU runs 3x faster than the CPU (3 PPU cycles per CPU cycle).
         DMA transfers take 512 cycles (256 bytes read + 256 bytes write).
         NMI is generated at start of VBLANK when enabled.
+        The APU is clocked on the same cycle the CPU samples its interrupt
+        lines, so an APU frame/DMC IRQ is recognized without a one-cycle lag.
         """
         cdef uint8_t cycles = 0
         cdef unsigned long long cpu_cycle = 0
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
+        cdef bint is_cpu_cycle = (self.nSystemClockCounter % 3 == 1)
+        # Clock the APU on the SAME CPU cycle the CPU samples its interrupt
+        # lines, so a frame/DMC IRQ raised by the APU this cycle is recognised
+        # at phi2 of that cycle instead of one cycle late. The mapper line
+        # already had this property because ppu.clock() runs above; only the
+        # APU path was shifted.
+        if is_cpu_cycle:
+            self.apu.clock(1)
         # A1: propagate the /NMI and /IRQ line levels from the devices to the
         # CPU every tick. The CPU edge-detects NMI and level-samples IRQ; both
         # are serviced only at instruction boundaries, never injected
@@ -152,7 +162,7 @@ cdef class CPUBus:
         # NMI recognition a full CPU cycle off for 7.nmi_timing's align1
         # subtests. Sampling on `% 3 == 1` puts the observation point at the
         # middle dot, matching hardware.
-        if self.nSystemClockCounter % 3 == 1:
+        if is_cpu_cycle:
             # This is a CPU cycle
             cpu_cycle = <unsigned long long>(self.nSystemClockCounter // 3)
             if self.dma_transfer:
@@ -176,8 +186,6 @@ cdef class CPUBus:
             else:
                 # Normal CPU instruction execution
                 self.cpu.clock()
-            # Clock APU (1 CPU cycle)
-            self.apu.clock(1)
 
         self.nSystemClockCounter += 1
 

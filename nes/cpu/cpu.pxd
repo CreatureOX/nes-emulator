@@ -195,7 +195,44 @@ cdef class CPU6502:
     cdef bint irq_i_latched
     cdef bint irq_defer_i
 
+    # Non-page-crossing TAKEN branch quirk (nesdev "Branch instructions and
+    # interrupts"; blargg 5-branch_delays_irq source header): such a branch
+    # ignores a pending IRQ/NMI on its later clocks, so the branch target
+    # executes before the interrupt is taken. The branch's operate() sets this
+    # flag; clock()'s boundary poll consumes it by tightening that single poll's
+    # margin from 5 to 8 dots, deferring an edge latched within the branch.
+    # Page-crossing taken branches do NOT set this (their behaviour already
+    # matches), so they are unaffected.
+    cdef bint branch_ignore_irq
+
+    # NMI hijack (nesdev "CPU interrupts"; blargg cpu_interrupts_v2 subtests
+    # 2-nmi_and_brk / 3-nmi_and_irq): an IRQ or BRK interrupt sequence defers
+    # its VECTOR FETCH to the end of the 7-cycle sequence. If an NMI edge is
+    # latched after the boundary poll's sample and before the sequence's
+    # 4th-cycle check (Mesen2 NesCpu::IRQ tests _needNmi between push16(PC)
+    # and push(P)), the vector is taken from $FFFA instead and the pending NMI
+    # is consumed. The pushes already happened, so the saved PC/P are
+    # untouched -- a hijacked BRK still pushes P with B=1. The /IRQ line is
+    # level-triggered and never cleared here, so a hijacked IRQ is
+    # re-recognized after the NMI handler's RTI. int_seq_deferred marks a
+    # sequence whose vector is still pending; int_seq_start_dot is the bus dot
+    # of its cycle 1 and int_seq_start_margin the poll margin in effect there
+    # (the hijack lower bound: an edge the start-boundary poll already saw
+    # would have been taken as an NMI instead).
+    cdef bint int_seq_deferred
+    cdef long long int_seq_start_dot
+    cdef long long int_seq_start_margin
+
+    # Bus dot / poll margin of the most recent opcode fetch. BRK's operate()
+    # runs on the instruction's LAST cycle, but its 7-cycle interrupt sequence
+    # began with the opcode-fetch cycle, so the hijack window is measured from
+    # last_fetch_dot rather than the current dot.
+    cdef long long last_fetch_dot
+    cdef long long last_fetch_margin
+
+    cdef void finish_interrupt_sequence(self)
+
     cdef int clock_count
-    
+
     cdef uint8_t clock(self) except *
     cpdef bint complete(self)
