@@ -3,7 +3,7 @@ from nes.cpu.cpu_op cimport Op
 import numpy as np
 cimport numpy as np
 
-cdef class CPU6502:    
+cdef class CPU6502:
     cdef uint8_t read(self, uint16_t addr):
         addr &= 0xFFFF
         return self.bus.read(addr, False)
@@ -385,6 +385,10 @@ cdef class CPU6502:
             
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
+                # last clock so the target executes first (blargg source header).
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -401,6 +405,10 @@ cdef class CPU6502:
             
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
+                # last clock so the target executes first (blargg source header).
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -417,6 +425,10 @@ cdef class CPU6502:
             
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
+                # last clock so the target executes first (blargg source header).
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -446,6 +458,8 @@ cdef class CPU6502:
             
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                self.branch_ignore_irq = True
             self.registers.PC = self.addr_abs
         return 0
 
@@ -461,6 +475,8 @@ cdef class CPU6502:
 
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -477,6 +493,8 @@ cdef class CPU6502:
 
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
     
@@ -484,9 +502,18 @@ cdef class CPU6502:
 
     cpdef uint8_t BRK(self):
         '''
-        Instruction: Break
-        Function:    Program Sourced Interrupt
-        Return:      Require additional 0 clock cycle
+        Instruction: Break -- program-sourced interrupt.
+
+        BRK's own 7 cycles ARE the interrupt sequence: PC+2 and P (B=1, U=1)
+        are pushed here and I is set after the push, but the VECTOR FETCH IS
+        DEFERRED to the sequence's end (finish_interrupt_sequence) so an NMI
+        edge latched during the sequence can hijack it to $FFFA -- the saved
+        P still carries B=1. in_interrupt is set here to block the boundary
+        polls until the 7 cycles have run out; without it an NMI latched
+        during BRK fired at the very next boundary, one instruction too
+        early.
+
+        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (BRK)
         '''
         # Real 6502 BRK is 2 bytes (opcode + padding byte). By the time
         # this operate() runs, the dispatch already advanced PC past the
@@ -511,7 +538,23 @@ cdef class CPU6502:
         self.push(pushed_p)
 
         self.set_i_flag(True, False)
-        self.registers.PC = self.read(0xFFFE) | (self.read(0xFFFF) << 8)
+
+        # The BRK instruction's own 7 cycles ARE the interrupt sequence, and
+        # the vector fetch is deferred to their end (finish_interrupt_sequence)
+        # so an NMI edge latched during the sequence can hijack it to $FFFA
+        # (Mesen2 NesCpu::BRK tests _needNmi between the PC push and the P
+        # push). Mesen also clears its one-cycle NMI poll latch right after
+        # BRK so that the handler's FIRST instruction runs before a pending
+        # NMI is taken ("needed for nmi_and_brk test"); in_interrupt=True
+        # here is this model's equivalent -- it blocks the boundary polls
+        # until the sequence's 7 cycles have run out. Without it an NMI
+        # latched during the BRK fired at the very next boundary, one
+        # instruction too early (2-nmi_and_brk rows 4-10 pushed P with C=0
+        # instead of hijacking / firing after the handler's SEC).
+        self.in_interrupt = True
+        self.int_seq_deferred = True
+        self.int_seq_start_dot = self.last_fetch_dot
+        self.int_seq_start_margin = self.last_fetch_margin
         return 0
 
     cpdef uint8_t BVC(self):
@@ -526,6 +569,8 @@ cdef class CPU6502:
 
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -542,6 +587,8 @@ cdef class CPU6502:
 
             if ((self.addr_abs & 0xFF00) != (self.registers.PC & 0xFF00)):
                 self.remaining_cycles += 1
+            else:
+                self.branch_ignore_irq = True
 
             self.registers.PC = self.addr_abs
         return 0
@@ -1452,6 +1499,18 @@ cdef class CPU6502:
         self.irq_latch_dot = -1
         self.irq_i_latched = True
         self.irq_defer_i = False
+        # Non-page-crossing taken branch ignores IRQ/NMI on its later clocks
+        # (nesdev "Branch instructions and interrupts"; blargg 5-branch_delays_irq
+        # source header): the branch target executes before the interrupt is
+        # taken. Set by the branch's operate(); consumed by clock()'s boundary
+        # poll, which tightens that one poll's margin (see clock()).
+        self.branch_ignore_irq = False
+        # NMI hijack: no interrupt sequence is mid-flight after a reset.
+        self.int_seq_deferred = False
+        self.int_seq_start_dot = -1
+        self.int_seq_start_margin = 5
+        self.last_fetch_dot = -1
+        self.last_fetch_margin = 5
         self.in_interrupt = True
 
     cdef void set_nmi_line(self, bint level):
@@ -1494,9 +1553,21 @@ cdef class CPU6502:
     cdef void irq(self):
         '''
         Interrupt Request
-        '''
-        cdef uint8_t lo, hi 
 
+        Push PC and P (B=0, U=1), set I, and start the 7-cycle sequence. The
+        VECTOR FETCH IS DEFERRED to the sequence's end
+        (finish_interrupt_sequence, called by clock() at the boundary where
+        the 7 cycles complete) so that an NMI edge arriving during the
+        sequence can hijack it: Mesen2 NesCpu::IRQ tests _needNmi between
+        push16(PC) and push(P), which in this boundary-poll model is
+        equivalent to deciding the vector once the sequence has run. A hijack
+        takes $FFFA and consumes the pending NMI; the pushed PC/P are
+        untouched, so a hijacked IRQ still pushes P with B=0. The /IRQ line
+        is level-triggered and never cleared here, so a hijacked IRQ is
+        re-recognized after the NMI handler's RTI.
+
+        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (IRQ)
+        '''
         cdef uint8_t pushed_p
 
         # The decision to take this IRQ (I flag clear, line asserted) is made
@@ -1519,12 +1590,40 @@ cdef class CPU6502:
         self.push(pushed_p)
         self.set_i_flag(True, False)
 
-        self.addr_abs = 0xFFFE
-        lo = self.read(self.addr_abs + 0)
-        hi = self.read(self.addr_abs + 1)
-        self.registers.PC = hi << 8 | lo
-
         self.remaining_cycles = 7
+
+    cdef void finish_interrupt_sequence(self):
+        '''
+        Complete a deferred IRQ/BRK interrupt sequence by fetching its vector.
+
+        Called by clock() at the instruction boundary where the sequence's
+        7 cycles have run out; the pushes (PC, P) already happened when the
+        sequence began. The vector decision is what Mesen2 NesCpu::IRQ /
+        NesCpu::BRK make between push16(PC) and push(P): if an NMI edge was
+        latched after the start boundary's poll sample (so that poll could
+        not have taken it as an NMI) and no later than the sequence's 4th
+        cycle (phi2 dots start+1/+4/+7/+10), the NMI hijacks the sequence:
+        the vector comes from $FFFA and the pending NMI is consumed. The
+        saved PC/P are untouched, so a hijacked BRK still returns with B set
+        in the saved status (2-nmi_and_brk rows 4-8). Otherwise the sequence
+        takes $FFFE -- the IRQ/BRK vector, which BRK uses too.
+
+        The /IRQ line is level-triggered and deliberately NOT cleared here:
+        when a hijacked IRQ's source is still asserted (e.g. the APU frame
+        IRQ, unless the NMI handler acknowledged it), the CPU re-recognizes
+        it at the first boundary after the NMI handler's RTI.
+
+        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (IRQ/BRK)
+        '''
+        cdef uint16_t vector = 0xFFFE
+
+        if (self.nmi_pending
+                and self.nmi_latch_dot > self.int_seq_start_dot - self.int_seq_start_margin
+                and self.nmi_latch_dot <= self.int_seq_start_dot + 10):
+            self.nmi_pending = False
+            vector = 0xFFFA
+
+        self.registers.PC = self.read(vector) | (self.read(vector + 1) << 8)
 
     cdef void nmi(self):
         '''
@@ -1556,10 +1655,18 @@ cdef class CPU6502:
         If no instruction is running (remaining_cycles == 0), fetch and decode
         the next opcode. Then decrement the cycle counter.
         '''
-        cdef Op op 
+        cdef Op op
         cdef uint8_t op_cycles = 0
         cdef uint8_t additional_cycle1 = 0
         cdef uint8_t additional_cycle2 = 0
+        cdef bint _branch_defer = False
+        # Interrupt-poll margin (dots before the boundary an edge must have been
+        # latched to be recognized). Normally 5 (penultimate-cycle phi2). A
+        # non-page-crossing TAKEN branch tightens it to 8 -- see below.
+        cdef long long poll_margin = 5
+        # Bus dot of this boundary; sampled once and shared by the poll
+        # comparisons and the deferred-sequence bookkeeping below.
+        cdef long long now = 0
 
         if self.remaining_cycles == 0:
             # Instruction boundary. A real 6502 samples its interrupt inputs at
@@ -1599,22 +1706,74 @@ cdef class CPU6502:
             else:
                 self.irq_i_latched = self.registers.status.bits.I
 
-            if not self.in_interrupt and self.nmi_pending and self.nmi_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
-                self.nmi_pending = False
-                self.in_interrupt = True
-                self.nmi()
-                self.clock_count += 1
-                self.remaining_cycles -= 1
-                return 0
-            if not self.in_interrupt and self.irq_line and self.irq_i_latched == 0 and self.irq_latch_dot <= (<long long>self.bus.nSystemClockCounter) - 5:
-                self.in_interrupt = True
-                self.irq()
-                self.clock_count += 1
-                self.remaining_cycles -= 1
-                return 0
-            # No interrupt: fetch the next opcode. This is cycle 1 of the
-            # instruction, which really does happen first on hardware.
-            self.in_interrupt = False
+            now = <long long>self.bus.nSystemClockCounter
+
+            # Branch quirk (nesdev "Branch instructions and interrupts"; blargg
+            # 5-branch_delays_irq source header): a NON-page-crossing TAKEN branch
+            # ignores a pending IRQ/NMI during its LAST clock, so the branch
+            # target executes before the interrupt is taken. The branch's
+            # operate() sets branch_ignore_irq; here we consume it on that last
+            # clock -- skipping recognition for one cycle -- so the interrupt is
+            # deferred by one instruction. Page-crossing taken branches do NOT set
+            # the flag (their behaviour already matches), so they are untouched.
+            if self.branch_ignore_irq:
+                # This boundary is the branch's last clock, whose effective
+                # poll sits at cycle-1 phi2 rather than the usual penultimate
+                # cycle. An edge latched later than that (measured at
+                # 5-branch_delays_irq: 6 dots before this boundary) must wait
+                # one instruction, so this poll alone tightens the margin
+                # from 5 to 8 dots.
+                self.branch_ignore_irq = False
+                poll_margin = 8
+            if self.int_seq_deferred:
+                # A deferred IRQ/BRK interrupt sequence has just finished its
+                # 7 cycles: fetch its vector -- possibly hijacked by an NMI
+                # edge latched during the sequence -- then start the handler.
+                # No polling happens at this boundary (the handler's first
+                # instruction must run before another interrupt can be taken);
+                # in_interrupt was set when the sequence began.
+                self.int_seq_deferred = False
+                self.in_interrupt = False
+                self.finish_interrupt_sequence()
+            else:
+                if (not self.in_interrupt and self.nmi_pending
+                        and self.nmi_latch_dot <= now - poll_margin):
+                    self.nmi_pending = False
+                    self.in_interrupt = True
+                    self.nmi()
+                    self.clock_count += 1
+                    self.remaining_cycles -= 1
+                    return 0
+                if (not self.in_interrupt and self.irq_line and self.irq_i_latched == 0
+                        and self.irq_latch_dot <= now - poll_margin):
+                    self.in_interrupt = True
+                    # NMI hijack: this sequence's vector fetch is DEFERRED to
+                    # its end (finish_interrupt_sequence) so an NMI edge
+                    # arriving during the 7 cycles can redirect it to $FFFA.
+                    # Mesen2 NesCpu::IRQ tests _needNmi between push16(PC) and
+                    # push(P); in this boundary-poll model that decision point
+                    # is equivalent to the sequence's end. int_seq_start_dot is
+                    # the bus dot of this cycle (the sequence's cycle 1) and
+                    # int_seq_start_margin the poll margin just used -- the
+                    # hijack lower bound, since an edge the poll already saw
+                    # would have been taken as an NMI instead.
+                    self.int_seq_deferred = True
+                    self.int_seq_start_dot = now
+                    self.int_seq_start_margin = poll_margin
+                    self.irq()
+                    self.clock_count += 1
+                    self.remaining_cycles -= 1
+                    return 0
+                # No interrupt: fall through to the opcode fetch.
+                self.in_interrupt = False
+
+            # Fetch the next opcode. This is cycle 1 of the instruction,
+            # which really does happen first on hardware. Also reached right
+            # after a deferred interrupt sequence completed, to fetch the
+            # handler's first opcode. Record the dot/margin so a BRK running
+            # here can recover where its 7-cycle interrupt sequence began.
+            self.last_fetch_dot = now
+            self.last_fetch_margin = poll_margin
             self.opcode = self.read(self.registers.PC)
             self.registers.status.bits.U = True
             self.registers.PC = self.registers.PC + 1
