@@ -446,14 +446,20 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(<uint16_t> self.fetched << 1)
-        
+
         self.registers.status.bits.C = self.temp & 0xFF00 > 0
         self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.bits.N = self.temp & 0x80 > 0
-        
+
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
+            # RMW dummy write-back (T5): a real 6502 rewrites the unmodified
+            # operand one cycle before the final write, so registers with write
+            # side effects ($2004 OAMADDR, $2006/$2007 PPUADDR) advance as the
+            # hardware does. blargg cpu_dummy_writes (oam + ppumem) verifies
+            # this 2x-write behavior. Cycle count is already 6/7, unchanged.
+            self.write(self.addr_abs, self.fetched)
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
@@ -807,6 +813,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(self.fetched - 1)
+        # RMW dummy write-back (T5); see ASL for rationale.
+        self.write(self.addr_abs, self.fetched)
         self.write(self.addr_abs, self.temp & 0x00FF)
         self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.bits.N = self.temp & 0x0080 > 0
@@ -858,6 +866,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(self.fetched + 1)
+        # RMW dummy write-back (T5); see ASL for rationale.
+        self.write(self.addr_abs, self.fetched)
         self.write(self.addr_abs, self.temp & 0x00FF)
         self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.bits.N = self.temp & 0x0080 > 0
@@ -952,12 +962,14 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.status.bits.C = self.fetched & 0x0001 > 0
-        self.set_temp(self.fetched >> 1)   
+        self.set_temp(self.fetched >> 1)
         self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
         self.registers.status.bits.N = self.temp & 0x0080 > 0
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
@@ -1051,6 +1063,8 @@ cdef class CPU6502:
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
@@ -1069,6 +1083,8 @@ cdef class CPU6502:
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
             self.write(self.addr_abs, self.temp & 0x00FF)
         return 0
 
@@ -1268,6 +1284,9 @@ cdef class CPU6502:
         Flags Out:   C from the shift; N, Z from A
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         cdef uint16_t shifted = <uint16_t> self.fetched << 1
         self.registers.status.bits.C = shifted & 0xFF00 > 0
         cdef uint8_t value = <uint8_t> (shifted & 0x00FF)
@@ -1284,6 +1303,9 @@ cdef class CPU6502:
         Flags Out:   C from the rotate; N, Z from A
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         cdef uint16_t rotated = <uint16_t> ((self.fetched << 1) | <uint16_t> self.registers.status.bits.C)
         self.registers.status.bits.C = rotated & 0xFF00 > 0
         cdef uint8_t value = <uint8_t> (rotated & 0x00FF)
@@ -1300,6 +1322,9 @@ cdef class CPU6502:
         Flags Out:   C = old bit 0; N, Z from A
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         self.registers.status.bits.C = self.fetched & 0x01
         cdef uint8_t value = <uint8_t> (self.fetched >> 1)
         self.write(self.addr_abs, value)
@@ -1315,6 +1340,9 @@ cdef class CPU6502:
         Flags Out:   C, V, N, Z (from the ADC; C is set by the rotate first)
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         cdef uint8_t carry_in = self.registers.status.bits.C
         self.registers.status.bits.C = self.fetched & 0x01
         cdef uint8_t value = <uint8_t> ((self.fetched >> 1) | (carry_in << 7))
@@ -1334,6 +1362,9 @@ cdef class CPU6502:
         Flags Out:   C, N, Z
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         cdef uint8_t value = <uint8_t> ((self.fetched - 1) & 0xFF)
         self.write(self.addr_abs, value)
         cdef uint16_t diff = <uint16_t> self.registers.A - <uint16_t> value
@@ -1349,6 +1380,9 @@ cdef class CPU6502:
         Flags Out:   C, V, N, Z
         '''
         self.fetch()
+        if (self.lookup[self.opcode].addrmode != self.IMP):
+            # RMW dummy write-back (T5); see ASL for rationale.
+            self.write(self.addr_abs, self.fetched)
         cdef uint8_t value = <uint8_t> ((self.fetched + 1) & 0xFF)
         self.write(self.addr_abs, value)
         cdef uint16_t inv = <uint16_t> (value ^ 0x00FF)
