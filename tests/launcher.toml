@@ -23,10 +23,23 @@
 #              [settings].frames when the XML omits it.
 #   detector : optional per-ROM judge override. "blargg" (default) reads the
 #              nametable PASS/FAIL text; "joy3" is the read_joy3 tally
-#              (N/1000, 0 = pass). Omit to use the suite default
-#              (test_judge.DETECTOR_BY_DIR, else "blargg"). This per-ROM knob is
-#              the ONLY detector setting -- there is deliberately no global
-#              [settings] detector (nothing consumed it); don't reintroduce one.
+#              (N/1000); "crc" compares the printed CRC-32 against the
+#              accepted set below (for ROMs that print a checksum and never
+#              say pass/fail); "terminal_pc" judges ROMs that report through
+#              the CPU instead of the screen (see pass_pc). Omit to use the
+#              suite default (test_judge.DETECTOR_BY_DIR, else "blargg").
+#              This per-ROM knob is the ONLY detector setting -- there is
+#              deliberately no global [settings] detector (nothing consumed
+#              it); don't reintroduce one.
+#   crc      : only for detector = "crc". The accepted CRC-32 checksums for
+#              this ROM, as a list of 8 hex digits. A ROM may legitimately
+#              produce more than one of them (the same output lands
+#              differently depending on the CPU/PPU phase at reset), so every
+#              listed value passes and anything else fails.
+#   pass_pc  : only for detector = "terminal_pc". The address of the ROM's
+#              terminal `JMP self` instruction, in hex. The ROM parks there
+#              when it succeeds; a ROM stuck in its failure wait loop lands
+#              elsewhere and fails.
 #   expected : "pass" -- the only meaningful value. Every kept ROM is gated: a
 #              non-PASS verdict fails the run. Do NOT use "skip"/"fail" to keep
 #              a ROM out of the red line -- those silently drop it (never run)
@@ -174,7 +187,7 @@ expected = "pass"
 
 [[tests]]
 id = "dmc_dma_during_read4/dma_2007_write"
-frames = 1200
+frames = 60
 expected = "pass"
 
 [[tests]]
@@ -636,35 +649,64 @@ expected = "pass"
 
 [[tests]]
 id = "dmc_dma_during_read4/dma_2007_read"
+detector = "crc"
+# The ROM prints only a CRC (never "Passed"/"Failed"), and the corruption it
+# measures legitimately lands on either of two lines depending on the CPU/PPU
+# phase at reset -- so both documented checksums are accepted.
+crc = ["159A7A8F", "5E3DF9C4"]
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_dma_during_read4/dma_4016_read"
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_dma_during_read4/double_2007_read"
+detector = "crc"
+# CRC-only ROM again: the CPU/PPU sync at reset decides which bytes the
+# doubled $2007 read picks up, so four checksums are all legitimate.
+crc = ["85CFD627", "F018C287", "440EF923", "E52F41A5"]
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_dma_during_read4/read_write_2007"
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_tests/buffer_retained"
+# These ROMs draw nothing: on success they start the APU's success tone and
+# park in a terminal `JMP self`; on failure they spin in a wait loop. The
+# screen is blank either way, so the verdict comes from the final CPU PC.
+detector = "terminal_pc"
+pass_pc = "$E149"
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_tests/latency"
+detector = "terminal_pc"
+pass_pc = "$E162"
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_tests/status"
+detector = "terminal_pc"
+pass_pc = "$E14E"
+frames = 60
 expected = "pass"
 
 [[tests]]
 id = "dmc_tests/status_irq"
+detector = "terminal_pc"
+pass_pc = "$E154"
+frames = 60
 expected = "pass"
+
 
 
 

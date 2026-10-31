@@ -41,9 +41,11 @@ cdef class CPU6502:
     cpdef uint8_t REL(self)
     cpdef uint8_t ABS(self)
     cpdef uint8_t ABX(self)
+    cpdef uint8_t ABX_W(self)
     cpdef uint8_t ABX_RMW(self)
     cpdef uint16_t get_pc(self)
     cpdef uint8_t ABY(self)
+    cpdef uint8_t ABY_W(self)
     cpdef uint8_t IND(self)
     cpdef uint8_t IZX(self)
     cpdef uint8_t IZY(self)
@@ -153,6 +155,11 @@ cdef class CPU6502:
     # A1: /IRQ signal line (level driven by mapper/APU, sampled by CPU at
     # instruction boundaries and masked by the I flag; no edge latch)
     cdef bint irq_line
+    cdef bint operand_fetch         # 1 while an operand-byte read is in flight
+                                    # (bus decides per-read whether a pending
+                                    # DMC DMA may halt there -- see CPUBus.read)
+    cdef uint8_t read(self, uint16_t addr)
+    cdef uint8_t read_operand(self, uint16_t addr)
     cdef void set_irq_line(self, bint level)
 
     # HARDWARE QUIRK method: page-cross dummy read (see doc/13-quirk-method-extraction.md)
@@ -214,6 +221,24 @@ cdef class CPU6502:
     # Page-crossing taken branches do NOT set this (their behaviour already
     # matches), so they are unaffected.
     cdef bint branch_ignore_irq
+
+    # Taken-branch dummy opcode fetch (6502 cycle-by-cycle bus activity; Mesen2
+    # NesCpu.cpp performs the same discarded read for every instruction cycle,
+    # so its ProcessPendingDma can halt the CPU there). The THIRD cycle of a
+    # taken branch fetches the opcode at the branch target and DISCARDS it --
+    # the next instruction's cycle 1 re-fetches it, so the instruction stream
+    # and cycle counts are unchanged. The bus cycle itself is real, though: a
+    # DMC sample-byte DMA that is pending at that point halts the CPU HERE.
+    # operate() arms branch_dummy_reads (1 for a non-page-crossing branch) and
+    # branch_dummy_addr (the target); clock() spends the read on the extra
+    # cycle. Without this model the halt lands one cycle late -- on the next
+    # opcode fetch -- which inverts the 3-vs-4 stall parity and phase-locks
+    # blargg's sync_dmc fine loop (dmc_dma_during_read4): its period must be
+    # 3421+4 = 3425 (odd) to out-drift the 3424-cycle DMC byte period.
+    # Ref: NESdev wiki "CPU memory access" per-cycle bus activity;
+    # Mesen2 Core/NES/NesCpu.cpp (MemoryRead -> ProcessPendingDma).
+    cdef uint8_t branch_dummy_reads
+    cdef uint16_t branch_dummy_addr
 
     # NMI hijack (nesdev "CPU interrupts"; blargg cpu_interrupts_v2 subtests
     # 2-nmi_and_brk / 3-nmi_and_irq): an IRQ or BRK interrupt sequence defers

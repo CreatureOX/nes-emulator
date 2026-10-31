@@ -177,6 +177,9 @@ doc/
 .workbuddy/
 .qoder/
 
+# Local-only code standards guide -- never committed (kept on this machine).
+/CONTRIBUTING.md
+
 # Build backups (.c/.pyd/.html renamed by the safe-delete hook) and the
 # ad-hoc _* diagnostic scripts / scratch files produced during debugging --
 # never committed.

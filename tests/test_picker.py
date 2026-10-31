@@ -46,10 +46,23 @@ CONFIG_HEADER = '''# NES emulator self-check suite configuration.
 #              [settings].frames when the XML omits it.
 #   detector : optional per-ROM judge override. "blargg" (default) reads the
 #              nametable PASS/FAIL text; "joy3" is the read_joy3 tally
-#              (N/1000, 0 = pass). Omit to use the suite default
-#              (test_judge.DETECTOR_BY_DIR, else "blargg"). This per-ROM knob
-#              is the ONLY detector setting -- there is deliberately no global
-#              [settings] detector (nothing consumed it); don't reintroduce one.
+#              (N/1000); "crc" compares the printed CRC-32 against the
+#              accepted set below (for ROMs that print a checksum and never
+#              say pass/fail); "terminal_pc" judges ROMs that report through
+#              the CPU instead of the screen (see pass_pc). Omit to use the
+#              suite default (test_judge.DETECTOR_BY_DIR, else "blargg").
+#              This per-ROM knob is the ONLY detector setting -- there is
+#              deliberately no global [settings] detector (nothing consumed
+#              it); don't reintroduce one.
+#   crc      : only for detector = "crc". The accepted CRC-32 checksums for
+#              this ROM, as a list of 8 hex digits. A ROM may legitimately
+#              produce more than one of them (the same output lands
+#              differently depending on the CPU/PPU phase at reset), so every
+#              listed value passes and anything else fails.
+#   pass_pc  : only for detector = "terminal_pc". The address of the ROM's
+#              terminal `JMP self` instruction, in hex. The ROM parks there
+#              when it succeeds; a ROM stuck in its failure wait loop lands
+#              elsewhere and fails.
 #   expected : "pass" -- the only meaningful value. Every kept ROM is gated: a
 #              non-PASS verdict fails the run. Do NOT use "skip"/"fail" to keep
 #              a ROM out of the red line -- those silently drop it (never run)
@@ -114,6 +127,14 @@ def render_toml(entries):
         det = e.get("detector")
         if det and det != test_judge.DEFAULT_DETECTOR:
             lines.append('detector = "%s"' % esc(det))
+        crcs = e.get("crc")
+        if crcs:
+            if isinstance(crcs, str):
+                crcs = [crcs]
+            lines.append("crc = [%s]"
+                         % ", ".join('"%s"' % esc(c) for c in crcs))
+        if e.get("pass_pc"):
+            lines.append('pass_pc = "%s"' % esc(e["pass_pc"]))
         if e.get("frames"):
             lines.append("frames = %d" % int(e["frames"]))
         if e.get("excluded"):

@@ -20,6 +20,10 @@ cdef class CPUBus:
         self.dma_dummy = True
         self.dma_transfer = False
 
+        self.dmc_dma_request = False
+        self.dmc_dma_armed = False
+        self.dmc_dma_armed_prev = False
+
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
         self.apu = APU2A03()
@@ -28,6 +32,108 @@ cdef class CPUBus:
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
+
+    cdef void _dma_halt_cycle(self, uint16_t dummy_addr, bint do_dummy_read):
+        """Burn one CPU cycle with the CPU halted (a DMA stall cycle).
+
+        Mirrors the non-CPU half of clock(): three PPU dots, then the APU and
+        the interrupt lines on the CPU-cycle dot. The APU keeps running
+        through any DMA halt, which is what keeps the DMC rate timer -- and
+        therefore the sample's byte-to-byte period -- continuous. The CPU
+        itself is not clocked, so the instruction that triggered the stall
+        simply takes that many extra cycles.
+
+        When do_dummy_read is set the cycle ends with a read of dummy_addr
+        whose result is discarded: on hardware the halted CPU's address is what
+        sits on the bus, so the side effects of that address fire an extra
+        time (Mesen2 ProcessPendingDma).
+        """
+        self.nSystemClockCounter += 1
+        self.ppu.clock()
+        self.nSystemClockCounter += 1
+        self.ppu.clock()
+        self.nSystemClockCounter += 1
+        self.ppu.clock()
+        self.apu.clock(1)
+        self.cpu.set_nmi_line(self.ppu.nmi_line)
+        self.cpu.set_irq_line(
+            (self.cartridge.mapper.IRQ_state() != 0)
+            or self.apu.irq_level()
+        )
+        if do_dummy_read:
+            self.read(dummy_addr, False)
+
+    cdef void _run_dmc_dma(self, uint16_t cpu_read_addr):
+        """Halt the CPU and run a DMC sample-byte DMA.
+
+        Port of Mesen2 NesCpu::ProcessPendingDma for the DMC-only case (no
+        OAM DMA in flight, no abort). The transfer is
+
+          * one halt cycle, whose dummy read targets the address the CPU was
+            about to read;
+          * alignment dummy cycles -- also reading the CPU's address -- until
+            the cycle parity allows the fetch;
+          * the fetch cycle, which reads the DMC's sample address and hands
+            the byte to the APU.
+
+        The request is consumed here, so the dummy/fetch reads below cannot
+        re-enter this function.
+
+        Dummy-read count. The halt cycle plus the alignment cycles give 2 or
+        3 extra reads of the CPU's address, and the CPU is stalled for 3 or 4
+        cycles -- exactly the "2-3 extra $2007 reads" that blargg's
+        dmc_dma_during_read4 measures. Mesen2 consumes its pending
+        _needDummyRead on the FIRST cycle of the alignment loop, whatever that
+        cycle's parity is, and only then may the fetch run; the fetch itself
+        is the first EVEN CycleCount after that. Doing it any other way costs
+        one dummy read too many, which shifts the VRAM pointer one byte too
+        far and lands blargg's corruption on the wrong iteration.
+
+        Parity. Mesen2 fetches on an EVEN CycleCount (`getCycle =
+        (CycleCount & 1) == 0`), tested before the next cycle is started --
+        i.e. against the cycle that just ran. This bus counts differently: at
+        the loop head `nSystemClockCounter // 3` is the cycle that is ABOUT
+        to run, one past the halt cycle Mesen2's CycleCount names. The two
+        parities are therefore opposite, and the fetch waits for an ODD
+        value of `nSystemClockCounter // 3` -- the same cycle Mesen2's even
+        CycleCount selects.
+
+        Dummy reads at $4016/$4017. Mesen2 skips the alignment dummy reads
+        when the CPU was reading a controller register: on an NES only the
+        FIRST dummy read has side effects, so a controller loses exactly ONE
+        bit per DMA instead of one per dummy cycle. The halt cycle's read
+        still happens -- that is what makes blargg's dma_4016_read count 07
+        instead of 08 on the iteration where the DMA lands on the $4016 read.
+        """
+        cdef bint internal_reg_read = (cpu_read_addr & 0xFFE0) == 0x4000
+        cdef bint skip_first_input_clock = False
+        cdef bint skip_dummy_reads = (cpu_read_addr == 0x4016
+                                      or cpu_read_addr == 0x4017)
+        if internal_reg_read:
+            # Mesen2's skipFirstInputClock: with /OE asserted for the whole
+            # DMA, a DMC sample address that shares the CPU's register number
+            # hides the halt cycle's dummy read, so the controller never sees
+            # it and loses no bit.
+            skip_first_input_clock = ((self.apu.dmc_read_addr() & 0x1F)
+                                       == (cpu_read_addr & 0x1F))
+        self.dmc_dma_request = False
+        self.dmc_dma_armed = False
+        # Initial halt cycle (dummy read of the CPU's address).
+        self._dma_halt_cycle(cpu_read_addr, not skip_first_input_clock)
+        cdef bint need_dummy = True
+        while True:
+            # The fetch runs on the first parity-allowed cycle after the
+            # pending dummy read has been consumed; every other cycle is an
+            # alignment dummy that reads the CPU's address again.
+            if (self.nSystemClockCounter // 3) % 2 == 1 and not need_dummy:
+                # Fetch cycle: read the sample byte and deliver it.
+                self._dma_halt_cycle(0, False)
+                self.apu.dmc_deliver(
+                    self.read(self.apu.dmc_read_addr(), False))
+                return
+            # Alignment cycle: another dummy read of the CPU's address.
+            self._dma_halt_cycle(cpu_read_addr, not skip_dummy_reads)
+            need_dummy = False
 
     cpdef uint8_t read(self, uint16_t addr, bint readOnly):
         """
@@ -40,6 +146,45 @@ cdef class CPUBus:
         - $4016-$4017: Controller I/O registers
         - $4020-$FFFF: Cartridge space (PRG ROM/RAM)
         """
+        # DMC sample-byte DMA (Mesen2 NesCpu::ProcessPendingDma): when the APU
+        # has requested a sample fetch, the CPU is halted at its next read
+        # cycle and the transfer runs first, so the read the CPU attempted is
+        # delayed by the stall (3 cycles, or 4 -- see _run_dmc_dma). Only CPU
+        # reads trigger it: readOnly reads are the debugger's passive
+        # disassembly, an in-flight OAM DMA services its own reads here, and
+        # Mesen2's MemoryWrite likewise never calls ProcessPendingDma -- a
+        # store's final cycle is a write, so a request armed there waits for
+        # the next read. The armed flag is this cycle's sample of the request
+        # (taken in clock() before the APU ran, so a request raised now halts
+        # the NEXT read cycle); the live request is re-checked so a $4015
+        # write that stops the channel in the meantime cancels the stall.
+        #
+        # Deferred operand reads and the age test. This CPU runs an
+        # instruction's addressing mode on its FINAL cycle, so operand bytes
+        # that a real 6502 reads on cycles 2..N-1 all arrive here, on the same
+        # cycle as the data access. Mesen2 has no such compression (each
+        # operand fetch is its own MemoryRead, and any of them may halt), so
+        # the placement is reproduced by an age test on the request: a
+        # deferred operand read suppresses the transfer ONLY when the request
+        # was armed during THIS very cycle. Such a request belongs to the
+        # instruction's own data access -- the one bus cycle that exists at
+        # the same dot on silicon (the data read of an LDA/LDX/..., or, for a
+        # store, the following opcode fetch, since a store never halts on its
+        # write) -- and halting on the operand read instead would fire the
+        # transfer a cycle early and put its dummy reads on the instruction
+        # stream, stripping dma_2007_read's extra $2007 reads. An OLDER request
+        # belongs to one of the deferred operand fetches themselves: on
+        # silicon those cycles really do read the bus, so halting there is
+        # correct -- the dummy reads hit the instruction stream exactly as
+        # they do on hardware, and a store's write is still delayed by the
+        # full stall (Mesen2 adds the whole transfer before the CPU's own
+        # cycle; the instruction grows by 3-4 cycles either way).
+        # Ref: NESdev wiki "CPU memory access" (per-cycle bus activity);
+        # Mesen2 Core/NES/NesCpu.cpp (MemoryRead -> ProcessPendingDma).
+        if (not readOnly and not self.dma_transfer
+                and self.dmc_dma_armed and self.dmc_dma_request
+                and not (self.cpu.operand_fetch and not self.dmc_dma_armed_prev)):
+            self._run_dmc_dma(addr)
         # Try cartridge space first
         success, data = self.cartridge.readByCPU(addr)
         if success:
@@ -54,9 +199,17 @@ cdef class CPUBus:
             # APU status register
             data = self.apu.readByCPU(addr)
         elif 0x4016 <= addr <= 0x4017:
-            # Controller registers - shift data out serially
+            # Controller registers - shift data out serially.
+            #
+            # The shift register shifts in 1s, so once the 8 button bits have
+            # been read it returns 1 forever. On hardware the register is
+            # filled with 1s, and a program that keeps reading past the eighth
+            # button sees 1s -- blargg's dma_4016_read counts bits until the
+            # register returns 1, and would hang forever on a register stuck
+            # at 0.
             data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
-            self.controller_state[addr & 0x0001] <<= 1
+            self.controller_state[addr & 0x0001] = (
+                (self.controller_state[addr & 0x0001] << 1) | 1) & 0xFF
         return data
 
     cpdef void write(self, uint16_t addr, uint8_t data):
@@ -105,6 +258,9 @@ cdef class CPUBus:
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+        self.dmc_dma_request = False
+        self.dmc_dma_armed = False
+        self.dmc_dma_armed_prev = False
 
     cpdef void power_up(self):
         """Initialize all components as if power was just applied."""
@@ -118,6 +274,9 @@ cdef class CPUBus:
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+        self.dmc_dma_request = False
+        self.dmc_dma_armed = False
+        self.dmc_dma_armed_prev = False
 
     cpdef void clock(self):
         """
@@ -143,6 +302,14 @@ cdef class CPUBus:
         # already had this property because ppu.clock() runs above; only the
         # APU path was shifted.
         if is_cpu_cycle:
+            # Sample the DMC DMA request BEFORE clocking the APU: a fetch the
+            # APU asks for during this cycle must not halt this cycle's own
+            # read. Mesen2 reaches the same ordering by calling
+            # ProcessPendingDma before StartCpuCycle clocks the APU.
+            # The previous cycle's sample is kept alongside: read() uses the
+            # pair to tell a request armed THIS cycle from an older one.
+            self.dmc_dma_armed_prev = self.dmc_dma_armed
+            self.dmc_dma_armed = self.dmc_dma_request
             self.apu.clock(1)
         # A1: propagate the /NMI and /IRQ line levels from the devices to the
         # CPU every tick. The CPU edge-detects NMI and level-samples IRQ; both

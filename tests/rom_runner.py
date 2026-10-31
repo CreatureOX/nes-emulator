@@ -25,8 +25,15 @@ DEFAULT_SETTINGS = {"frames": FRAMES}
 # time than a normal suite. Keyed by full id so a same-basename ROM in another
 # suite can never inherit this budget. Entries here are only consulted when
 # launcher.toml pins no `frames` for that id (see prepare_run's priority).
+#
+# instr_test-v5/all_instrs prints "All 16 tests passed" at frame ~2400
+# (measured 2026-10-31 by sampling the nametable every 100 frames). The old
+# 5400 budget was more than double what the ROM needs, and at ~18 frames/s
+# the extra frames pushed the run past the launcher's 300 s per-ROM watchdog
+# (300 s at 5400 frames vs ~140 s at 2800). Keep some margin over the
+# measured 2400 so a later emulator change cannot silently truncate it.
 PER_ROM_FRAMES = {
-    "instr_test-v5/all_instrs": 5400,
+    "instr_test-v5/all_instrs": 2800,
 }
 
 POLL_EVERY = 10            # inspect nametable this often (frames) while polling
@@ -110,15 +117,29 @@ def run_frames(console, frames, poll=False):
     return resets
 
 
-def verdict_from_screen(console, detector):
+def verdict_from_screen(console, detector, entry=None, state=None):
     """Read the final nametable and let the judge classify it.
 
     Returns (verdict, detail). The classification itself lives in
-    test_judge.classify_screen -- this module stays the executor.
+    test_judge.classify_screen -- this module stays the executor. *entry* is
+    the run entry and *state* the runtime snapshot; both are forwarded so
+    detectors that need per-ROM configuration (the CRC detector's accepted
+    checksums) or runtime state (the terminal-PC detector's final PC) can see
+    them.
     """
     raw, off = decode(read_nametable(console.bus))
     low = (raw + "\n" + off).lower()
-    return test_judge.classify_screen(raw, low, detector)
+    return test_judge.classify_screen(raw, low, detector, entry, state)
+
+
+def final_state(console):
+    """Runtime snapshot the judge may need: where the CPU ended up.
+
+    Sampled before the screen is read, because read_nametable() is
+    destructive (it touches $2001/$2007) and must not be the last thing that
+    happens to the machine.
+    """
+    return {"pc": console.bus.cpu.get_pc()}
 
 
 def needs_reset(entry):
@@ -137,13 +158,15 @@ def run_one(entry):
     try:
         console = open_console(rom)
         run_frames(console, frames, poll=False)
-        verdict, detail = verdict_from_screen(console, detector)
+        verdict, detail = verdict_from_screen(console, detector, entry,
+                                              final_state(console))
         # Reset-waiting suites print nothing, so re-run with polling.
         if verdict == "RUNNING/blank" and needs_reset(entry):
             console = open_console(rom)
             budget = max(frames, RESET_WAIT_FRAMES * (MAX_INJECTED_RESETS + 1))
             resets = run_frames(console, budget, poll=True)
-            verdict, detail = verdict_from_screen(console, detector)
+            verdict, detail = verdict_from_screen(console, detector, entry,
+                                                  final_state(console))
             if resets:
                 detail += f" [reset x{resets}]"
         return {"id": entry["id"], "verdict": verdict, "detail": detail,

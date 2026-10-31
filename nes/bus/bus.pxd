@@ -19,10 +19,23 @@ cdef class CPUBus:
     cdef bint dma_dummy
     cdef bint dma_transfer
 
+    # DMC sample-byte DMA request (pushed by the APU) and its once-per-cycle
+    # sample; public so the APU can push/clear the request through bus_ref.
+    # dmc_dma_armed_prev holds the armed flag as it stood during the PREVIOUS
+    # CPU cycle, so read() can tell a request armed this cycle (which belongs
+    # to the instruction's own data access) from an older one (which belongs
+    # to a deferred operand fetch) -- see CPUBus.read.
+    cdef public bint dmc_dma_request
+    cdef public bint dmc_dma_armed
+    cdef bint dmc_dma_armed_prev
+
     cdef public CPU6502 cpu 
     cdef public PPU2C02 ppu
     cdef public object apu
     cdef Cartridge cartridge
+
+    cdef void _dma_halt_cycle(self, uint16_t, bint)
+    cdef void _run_dmc_dma(self, uint16_t)
 
     cpdef uint8_t read(self, uint16_t, bint)
     cpdef void write(self, uint16_t, uint8_t)

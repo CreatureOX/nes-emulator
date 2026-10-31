@@ -8,6 +8,30 @@ cdef class CPU6502:
         addr &= 0xFFFF
         return self.bus.read(addr, False)
 
+    cdef uint8_t read_operand(self, uint16_t addr):
+        """Read an instruction operand byte, marking it as a deferred fetch.
+
+        This CPU model executes an instruction's addressing mode on its FINAL
+        cycle, so operand bytes that a real 6502 fetches on cycles 2..N-1 are
+        all read here. The marker tells the bus to hold back a pending DMC DMA
+        only when the request was raised during the immediately preceding CPU
+        cycle: in that case the transfer belongs to this instruction's own
+        data access (the only bus access that exists at the same cycle on
+        silicon -- a data read for LDA/LDX/..., the following opcode fetch for
+        a store, whose final cycle is a write). When the request is older the
+        halt belongs to one of these deferred operand fetches themselves --
+        on silicon those cycles really do read the bus, so halting there is
+        correct (and is what lets the transfer land inside a store before its
+        write, re-arming blargg's dmc_test sample between its two $4015
+        writes). The bus performs the age test; see CPUBus.read.
+        Ref: NESdev wiki "CPU memory access" per-cycle bus activity;
+        Mesen2 Core/NES/NesCpu.cpp (MemoryRead -> ProcessPendingDma).
+        """
+        self.operand_fetch = True
+        cdef uint8_t value = self.read(addr)
+        self.operand_fetch = False
+        return value
+
     cdef void write(self, uint16_t addr, uint8_t data):                      
         addr, data = addr & 0xFFFF, data & 0xFF
         self.bus.write(addr, data)
@@ -105,7 +129,7 @@ cdef class CPU6502:
         '''
         Address Mode: Zero Page
         '''
-        self.set_addr_abs(self.read(self.registers.PC) & 0x00FF)
+        self.set_addr_abs(self.read_operand(self.registers.PC) & 0x00FF)
         self.registers.PC = self.registers.PC + 1
         return 0
 
@@ -113,7 +137,7 @@ cdef class CPU6502:
         '''
         Address Mode: Zero Page with X Offset
         '''
-        self.set_addr_abs((self.read(self.registers.PC) + self.registers.X) & 0x00FF)
+        self.set_addr_abs((self.read_operand(self.registers.PC) + self.registers.X) & 0x00FF)
         self.registers.PC = self.registers.PC + 1
         return 0
 
@@ -121,7 +145,7 @@ cdef class CPU6502:
         '''
         Address Mode: Zero Page with Y Offset
         '''
-        self.set_addr_abs((self.read(self.registers.PC) + self.registers.Y) & 0x00FF)
+        self.set_addr_abs((self.read_operand(self.registers.PC) + self.registers.Y) & 0x00FF)
         self.registers.PC = self.registers.PC + 1
         return 0
 
@@ -137,13 +161,13 @@ cdef class CPU6502:
 
     cpdef uint8_t ABS(self):
         '''
-        Address Mode: Absolute 
+        Address Mode: Absolute
         '''
-        cdef uint8_t lo = self.read(self.registers.PC)
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        cdef uint8_t hi = self.read(self.registers.PC)
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        
+
         self.set_addr_abs((hi << 8) | lo)
         return 0
 
@@ -164,9 +188,9 @@ cdef class CPU6502:
         '''
         Address Mode: Absolute with X Offset
         '''
-        cdef uint8_t lo = self.read(self.registers.PC)
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        cdef uint8_t hi = self.read(self.registers.PC)
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
 
         cdef uint16_t base = (hi << 8) | lo
@@ -178,6 +202,42 @@ cdef class CPU6502:
         # VBL) at the correct point -- blargg cpu_dummy_reads depends on it.
         if (addr & 0xFF00) != (base & 0xFF00):
             self.read((base & 0xFF00) | (addr & 0x00FF))
+            return 1
+        return 0
+
+    cpdef uint8_t ABX_W(self):
+        """
+        Address Mode: Absolute with X Offset, for STORE instructions.
+
+        A real 6502's indexed WRITE modes perform the internal read of the
+        effective address before the write: the write needs a cycle of its
+        own, so the addressing cycle reads the target instead of writing it.
+        The read lands on the (possibly wrong-page) address
+        (base_high << 8) | ((base_low + X) & 0xFF). With no page cross that
+        IS the effective address -- so a store to $2007 reads $2007, and the
+        PPU's VRAM pointer advances before the write lands.
+
+        blargg's dmc_dma_during_read4 read_write_2007 pins this down: it
+        writes $2007 with STA abs,X and expects the byte to land one byte
+        further along than an STA abs would put it, because the indexed store
+        reads $2007 first. (The page-cross case is the same dummy read the
+        read modes perform; ABX_RMW has the always-on variant for the
+        read-modify-write opcodes.)
+
+        Ref: NESdev wiki "CPU memory access" (per-cycle bus activity);
+        blargg dmc_dma_during_read4/source/read_write_2007.s.
+        """
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
+        self.registers.PC = self.registers.PC + 1
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
+        self.registers.PC = self.registers.PC + 1
+
+        cdef uint16_t base = (hi << 8) | lo
+        cdef uint16_t addr = (<uint16_t> base) + self.registers.X
+        self.set_addr_abs(addr)
+        # The internal read of the effective (un-fixed) address.
+        self.read((base & 0xFF00) | (addr & 0x00FF))
+        if (addr & 0xFF00) != (base & 0xFF00):
             return 1
         return 0
 
@@ -203,9 +263,9 @@ cdef class CPU6502:
         Returns 1 when a page boundary was crossed (so the caller may add the
         extra cycle), else 0.
         '''
-        cdef uint8_t lo = self.read(self.registers.PC)
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        cdef uint8_t hi = self.read(self.registers.PC)
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
 
         cdef uint16_t base = (hi << 8) | lo
@@ -219,6 +279,30 @@ cdef class CPU6502:
             return 1
         return 0
 
+    cpdef uint8_t ABY_W(self):
+        """
+        Address Mode: Absolute with Y Offset, for STORE instructions.
+
+        The Y counterpart of ABX_W: an indexed store performs the internal
+        read of the effective address before the write, so a store to $2007
+        reads $2007 and the PPU's VRAM pointer advances first.
+
+        Ref: NESdev wiki "CPU memory access" (per-cycle bus activity).
+        """
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
+        self.registers.PC = self.registers.PC + 1
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
+        self.registers.PC = self.registers.PC + 1
+
+        cdef uint16_t base = (hi << 8) | lo
+        cdef uint16_t addr = (<uint16_t> base) + self.registers.Y
+        self.set_addr_abs(addr)
+        # The internal read of the effective (un-fixed) address.
+        self.read((base & 0xFF00) | (addr & 0x00FF))
+        if (addr & 0xFF00) != (base & 0xFF00):
+            return 1
+        return 0
+
     cpdef uint16_t get_pc(self):
         '''Debug accessor: current program counter (cdef registers.PC).'''
         return self.registers.PC
@@ -227,9 +311,9 @@ cdef class CPU6502:
         '''
         Address Mode: Absolute with Y Offset
         '''
-        cdef uint8_t lo = self.read(self.registers.PC)
+        cdef uint8_t lo = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        cdef uint8_t hi = self.read(self.registers.PC)
+        cdef uint8_t hi = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
 
         cdef uint16_t base = (hi << 8) | lo
@@ -245,9 +329,9 @@ cdef class CPU6502:
         '''
         Address Mode: Indirect
         '''
-        cdef uint8_t ptr_lo = self.read(self.registers.PC)
+        cdef uint8_t ptr_lo = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
-        cdef uint8_t ptr_hi = self.read(self.registers.PC)
+        cdef uint8_t ptr_hi = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
         
         cdef uint16_t ptr = (ptr_hi << 8) | ptr_lo
@@ -262,7 +346,7 @@ cdef class CPU6502:
         '''
         Address Mode: Indirect X / Indexed Indirect
         '''
-        cdef uint8_t t = self.read(self.registers.PC)
+        cdef uint8_t t = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
 
         cdef uint8_t lo = self.read((t + self.registers.X) & 0x00FF)
@@ -275,7 +359,7 @@ cdef class CPU6502:
         '''
         Address Mode: Indirect Y / Indirect Indexed
         '''
-        cdef uint8_t t = self.read(self.registers.PC)
+        cdef uint8_t t = self.read_operand(self.registers.PC)
         self.registers.PC = self.registers.PC + 1
         
         cdef uint8_t lo = self.read(t & 0x00FF)
@@ -389,6 +473,11 @@ cdef class CPU6502:
                 # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
                 # last clock so the target executes first (blargg source header).
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -409,6 +498,11 @@ cdef class CPU6502:
                 # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
                 # last clock so the target executes first (blargg source header).
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -429,6 +523,11 @@ cdef class CPU6502:
                 # Non-page-crossing taken branch: ignore IRQ/NMI on the branch's
                 # last clock so the target executes first (blargg source header).
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -460,6 +559,11 @@ cdef class CPU6502:
                 self.remaining_cycles += 1
             else:
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
             self.registers.PC = self.addr_abs
         return 0
 
@@ -477,6 +581,11 @@ cdef class CPU6502:
                 self.remaining_cycles += 1
             else:
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -495,6 +604,11 @@ cdef class CPU6502:
                 self.remaining_cycles += 1
             else:
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
     
@@ -571,6 +685,11 @@ cdef class CPU6502:
                 self.remaining_cycles += 1
             else:
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -589,6 +708,11 @@ cdef class CPU6502:
                 self.remaining_cycles += 1
             else:
                 self.branch_ignore_irq = True
+                # The branch's third cycle fetches (and discards) the opcode at
+                # the target -- a real bus cycle, so a pending DMC DMA halts the
+                # CPU there rather than one cycle later (branch_dummy_reads).
+                self.branch_dummy_reads = 1
+                self.branch_dummy_addr = self.addr_abs
 
             self.registers.PC = self.addr_abs
         return 0
@@ -1453,7 +1577,7 @@ cdef class CPU6502:
             Op( "RTS", self.RTS, self.IMP, 6 ),Op( "ADC", self.ADC, self.IZX, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RRA", self.RRA, self.IZX, 8 ),Op( "DOP", self.NOP, self.ZP0, 3 ),Op( "ADC", self.ADC, self.ZP0, 3 ),Op( "ROR", self.ROR, self.ZP0, 5 ),Op( "RRA", self.RRA, self.ZP0, 5 ),Op( "PLA", self.PLA, self.IMP, 4 ),Op( "ADC", self.ADC, self.IMM, 2 ),Op( "ROR", self.ROR, self.IMP, 2 ),Op( "ARR", self.ARR, self.IMM, 2 ),Op( "JMP", self.JMP, self.IND, 5 ),Op( "ADC", self.ADC, self.ABS, 4 ),Op( "ROR", self.ROR, self.ABS, 6 ),Op( "RRA", self.RRA, self.ABS, 6 ),
             Op( "BVS", self.BVS, self.REL, 2 ),Op( "ADC", self.ADC, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "RRA", self.RRA, self.IZY, 8 ),Op( "DOP", self.NOP, self.ZPX, 4 ),Op( "ADC", self.ADC, self.ZPX, 4 ),Op( "ROR", self.ROR, self.ZPX, 6 ),Op( "RRA", self.RRA, self.ZPX, 6 ),Op( "SEI", self.SEI, self.IMP, 2 ),Op( "ADC", self.ADC, self.ABY, 4 ),Op( "???", self.NOP, self.IMP, 2 ),Op( "RRA", self.RRA, self.ABY, 7 ),Op( "SKW", self.NOP, self.ABX, 4 ),Op( "ADC", self.ADC, self.ABX, 4 ),Op( "ROR", self.ROR, self.ABX_RMW, 7 ),Op( "RRA", self.RRA, self.ABX_RMW, 7 ),
             Op( "DOP", self.NOP, self.IMM, 2 ),Op( "STA", self.STA, self.IZX, 6 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "SAX", self.SAX, self.IZX, 6 ),Op( "STY", self.STY, self.ZP0, 3 ),Op( "STA", self.STA, self.ZP0, 3 ),Op( "STX", self.STX, self.ZP0, 3 ),Op( "SAX", self.SAX, self.ZP0, 3 ),Op( "DEY", self.DEY, self.IMP, 2 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "TXA", self.TXA, self.IMP, 2 ),Op( "ANE", self.ANE, self.IMM, 2 ),Op( "STY", self.STY, self.ABS, 4 ),Op( "STA", self.STA, self.ABS, 4 ),Op( "STX", self.STX, self.ABS, 4 ),Op( "SAX", self.SAX, self.ABS, 4 ),
-            Op( "BCC", self.BCC, self.REL, 2 ),Op( "STA", self.STA, self.IZY, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SHA", self.SHA, self.IZY, 6 ),Op( "STY", self.STY, self.ZPX, 4 ),Op( "STA", self.STA, self.ZPX, 4 ),Op( "STX", self.STX, self.ZPY, 4 ),Op( "SAX", self.SAX, self.ZPY, 4 ),Op( "TYA", self.TYA, self.IMP, 2 ),Op( "STA", self.STA, self.ABY, 5 ),Op( "TXS", self.TXS, self.IMP, 2 ),Op( "TAS", self.TAS, self.ABY, 5 ),Op( "SHY", self.SHY, self.ABX, 5 ),Op( "STA", self.STA, self.ABX, 5 ),Op( "SHX", self.SHX, self.ABY, 5 ),Op( "SHA", self.SHA, self.ABY, 5 ),
+            Op( "BCC", self.BCC, self.REL, 2 ),Op( "STA", self.STA, self.IZY, 6 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "SHA", self.SHA, self.IZY, 6 ),Op( "STY", self.STY, self.ZPX, 4 ),Op( "STA", self.STA, self.ZPX, 4 ),Op( "STX", self.STX, self.ZPY, 4 ),Op( "SAX", self.SAX, self.ZPY, 4 ),Op( "TYA", self.TYA, self.IMP, 2 ),Op( "STA", self.STA, self.ABY_W, 5 ),Op( "TXS", self.TXS, self.IMP, 2 ),Op( "TAS", self.TAS, self.ABY, 5 ),Op( "SHY", self.SHY, self.ABX, 5 ),Op( "STA", self.STA, self.ABX_W, 5 ),Op( "SHX", self.SHX, self.ABY, 5 ),Op( "SHA", self.SHA, self.ABY, 5 ),
             Op( "LDY", self.LDY, self.IMM, 2 ),Op( "LDA", self.LDA, self.IZX, 6 ),Op( "LDX", self.LDX, self.IMM, 2 ),Op( "LAX", self.LAX, self.IZX, 6 ),Op( "LDY", self.LDY, self.ZP0, 3 ),Op( "LDA", self.LDA, self.ZP0, 3 ),Op( "LDX", self.LDX, self.ZP0, 3 ),Op( "LAX", self.LAX, self.ZP0, 3 ),Op( "TAY", self.TAY, self.IMP, 2 ),Op( "LDA", self.LDA, self.IMM, 2 ),Op( "TAX", self.TAX, self.IMP, 2 ),Op( "LXA", self.LXA, self.IMM, 2 ),Op( "LDY", self.LDY, self.ABS, 4 ),Op( "LDA", self.LDA, self.ABS, 4 ),Op( "LDX", self.LDX, self.ABS, 4 ),Op( "LAX", self.LAX, self.ABS, 4 ),
             Op( "BCS", self.BCS, self.REL, 2 ),Op( "LDA", self.LDA, self.IZY, 5 ),Op( "JAM", self.XXX, self.IMP, 2 ),Op( "LAX", self.LAX, self.IZY, 5 ),Op( "LDY", self.LDY, self.ZPX, 4 ),Op( "LDA", self.LDA, self.ZPX, 4 ),Op( "LDX", self.LDX, self.ZPY, 4 ),Op( "LAX", self.LAX, self.ZPY, 4 ),Op( "CLV", self.CLV, self.IMP, 2 ),Op( "LDA", self.LDA, self.ABY, 4 ),Op( "TSX", self.TSX, self.IMP, 2 ),Op( "LAS", self.LAS, self.ABY, 4 ),Op( "LDY", self.LDY, self.ABX, 4 ),Op( "LDA", self.LDA, self.ABX, 4 ),Op( "LDX", self.LDX, self.ABY, 4 ),Op( "LAX", self.LAX, self.ABY, 4 ),
             Op( "CPY", self.CPY, self.IMM, 2 ),Op( "CMP", self.CMP, self.IZX, 6 ),Op( "DOP", self.NOP, self.IMM, 2 ),Op( "DCP", self.DCP, self.IZX, 8 ),Op( "CPY", self.CPY, self.ZP0, 3 ),Op( "CMP", self.CMP, self.ZP0, 3 ),Op( "DEC", self.DEC, self.ZP0, 5 ),Op( "DCP", self.DCP, self.ZP0, 5 ),Op( "INY", self.INY, self.IMP, 2 ),Op( "CMP", self.CMP, self.IMM, 2 ),Op( "DEX", self.DEX, self.IMP, 2 ),Op( "SBX", self.SBX, self.IMM, 2 ),Op( "CPY", self.CPY, self.ABS, 4 ),Op( "CMP", self.CMP, self.ABS, 4 ),Op( "DEC", self.DEC, self.ABS, 6 ),Op( "DCP", self.DCP, self.ABS, 6 ),
@@ -1491,6 +1615,8 @@ cdef class CPU6502:
         self.nmi_pending = False
         # A1: /IRQ signal line state (level-triggered, no latch)
         self.irq_line = False
+        # No operand-byte read is in flight outside an addressing mode.
+        self.operand_fetch = False
         # A2: no instruction is mid-flight after a reset
         self.pending_execute = False
         # S2: nothing polled yet, and the reset sequence counts as an
@@ -1507,6 +1633,10 @@ cdef class CPU6502:
         # taken. Set by the branch's operate(); consumed by clock()'s boundary
         # poll, which tightens that one poll's margin (see clock()).
         self.branch_ignore_irq = False
+        # No taken branch is mid-flight after a reset, so no discarded target
+        # opcode fetch is pending on the extra cycle.
+        self.branch_dummy_reads = 0
+        self.branch_dummy_addr = 0
         # NMI hijack: no interrupt sequence is mid-flight after a reset.
         self.int_seq_deferred = False
         self.int_seq_start_dot = -1
@@ -1692,6 +1822,16 @@ cdef class CPU6502:
         prev_clock_dot = self.last_clock_dot
         stalled = (prev_clock_dot >= 0 and prev_clock_dot + 3 != tick)
         self.last_clock_dot = tick
+
+        # Taken-branch extra cycle: spend the discarded opcode fetch at the
+        # branch target that a real 6502 drives onto the bus here (the branch's
+        # operate() armed branch_dummy_reads when it extended the instruction).
+        # The byte is re-fetched as the next instruction's cycle 1, so only the
+        # bus cycle is modelled -- and that cycle is what a pending DMC DMA
+        # request halts the CPU on. See the field comment in cpu.pxd.
+        if self.branch_dummy_reads > 0:
+            self.read(self.branch_dummy_addr)
+            self.branch_dummy_reads -= 1
 
         if self.remaining_cycles == 0:
             # Instruction boundary. A real 6502 samples its interrupt inputs at

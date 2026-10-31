@@ -1,6 +1,7 @@
 # cython: language_level=3
 import numpy as np
 cimport numpy as np
+from libc.stdint cimport uint8_t, uint16_t
 
 cdef int LENGTH_TABLE[32]
 LENGTH_TABLE = [
@@ -72,22 +73,26 @@ cdef class APU2A03:
 
     # DMC channel (delta PCM). The channel reads samples from CPU memory via
     # DMA, so it needs a back-reference to the bus to fetch bytes.
-    cdef int dmc_irq_enable
-    cdef int dmc_loop
-    cdef int dmc_rate          # $4010 bits 3-0 index into DMC_RATE_TABLE
-    cdef int dmc_addr          # current sample address
-    cdef int dmc_addr_load     # address loaded from $4012
-    cdef int dmc_len           # bytes remaining
-    cdef int dmc_len_load      # length loaded from $4013
-    cdef int dmc_buffer        # 1-byte sample buffer, -1 when empty
-    cdef int dmc_shift         # output shift register (8 bits)
-    cdef int dmc_bits          # bits remaining in the shift register
-    cdef int dmc_timer         # countdown to the next bit
-    cdef int dmc_active        # 1 while a sample is playing
-    cdef int dmc_irq_flag      # DMC interrupt flag (bit 7 of $4015 read)
-    cdef int dmc_dma_pending   # >0 while a sample-byte DMA stall is in flight
-    cdef int dmc_first_fetch   # 1 until the first byte after a (re)start is read
-    cdef int dmc_output        # delta counter, 0-127
+    #
+    # State machine mirrors Mesen2's DeltaModulationChannel (Core/NES/APU/
+    # DeltaModulationChannel.cpp) field-for-field; names in (_parens) below.
+    cdef int dmc_irq_enable        # _irqEnabled
+    cdef int dmc_loop              # _loopFlag
+    cdef int dmc_rate              # $4010 bits 3-0 index into DMC_RATE_TABLE
+    cdef int dmc_addr              # _currentAddr  -- current sample fetch address
+    cdef int dmc_addr_load         # _sampleAddr   -- 0xC000 + (val<<6)
+    cdef int dmc_len               # _bytesRemaining
+    cdef int dmc_len_load          # _sampleLength -- (val<<4)|1
+    cdef int dmc_buffer            # _readBuffer   -- -1 when empty
+    cdef int dmc_shift             # _shiftRegister (8 bits)
+    cdef int dmc_bits              # _bitsRemaining
+    cdef int dmc_timer             # _timer        -- countdown; fires (reloads) when < 0
+    cdef int dmc_period            # _period       -- DMC_RATE_TABLE[rate] - 1 (Mesen2 stores table-1)
+    cdef int dmc_silence           # _silenceFlag  -- 1 while the output unit is silent
+    cdef int dmc_transfer_delay    # _transferStartDelay -- cycles until the first DMA after enable (2/3)
+    cdef int dmc_disable_delay     # _disableDelay -- cycles until the channel stops after $4015 bit4=0 (2/3)
+    cdef int dmc_irq_flag          # DMC interrupt flag (bit 7 of $4015 read)
+    cdef int dmc_output            # delta counter, 0-125
     cdef public object bus_ref
 
     cdef double last_output
@@ -143,20 +148,32 @@ cdef class APU2A03:
         self.dmc_irq_enable = 0
         self.dmc_loop = 0
         self.dmc_rate = 0
+        # Mesen2 Reset(): _timer.SetTimer(_timer.GetPeriod()) -- the bit timer
+        # starts at the FULL period so the first delta bit takes a full
+        # rate-period of CPU cycles. _period itself is table[0]-1 (Mesen2
+        # stores the lookup value minus one because ApuTimer does not decrement
+        # on SetPeriod). The DMC fires one bit every DMC_RATE_TABLE[rate]
+        # cycles, matching real hardware and blargg's timing windows.
+        self.dmc_period = DMC_RATE_TABLE[0] - 1
+        self.dmc_timer = self.dmc_period
         self.dmc_addr = 0xC000
         self.dmc_addr_load = 0xC000
         self.dmc_len = 0
         self.dmc_len_load = 1
         self.dmc_buffer = -1
         self.dmc_shift = 0
-        self.dmc_bits = 0
-        self.dmc_timer = 0
-        self.dmc_active = 0
+        self.dmc_bits = 8
+        self.dmc_silence = 1
+        self.dmc_transfer_delay = 0
+        self.dmc_disable_delay = 0
         self.dmc_irq_flag = 0
         self.dmc_output = 0
-        self.dmc_dma_pending = 0
-        self.dmc_first_fetch = 0
-        self.bus_ref = None
+        # bus_ref is structural wiring installed exactly once by Bus.__init__
+        # (self.apu.bus_ref = self) and MUST NOT be cleared here: bus.reset()
+        # and bus.power_up() both call this method again while the same Bus
+        # object is alive, and wiping bus_ref would leave the DMC channel unable
+        # to request its sample-byte DMA (the "if self.bus_ref is not None"
+        # guards would then skip the request push permanently).
 
         for i in range(4):
             self.channel_enabled[i] = 0
@@ -290,17 +307,17 @@ cdef class APU2A03:
             self._load_length(3, data)
         elif addr == 0x4010:
             # DMC control: bit7 = IRQ enable, bit6 = loop, bits 3-0 = rate.
+            # Mesen2 WriteRam(0x4010): _timer.SetPeriod(table[rate]-1). The
+            # ApuTimer then fires one bit every (period+1) cycles =
+            # DMC_RATE_TABLE[rate] cycles; the in-flight countdown is NOT
+            # reloaded here, so a rate change takes effect on the next bit
+            # boundary (one partial old-period bit, then the new period) --
+            # exactly what blargg 8-dmc_rates expects. Reloading the timer
+            # immediately (as older revisions did) stretched the sample and
+            # failed the +/-45 cycle window.
             new_rate = data & 0x0F
-            if new_rate != self.dmc_rate:
-                # >>> HARDWARE QUIRK: rate change reloads the bit timer <<<
-                # The bit countdown must be reloaded with the NEW period. If the
-                # old (shorter) countdown were left running it would expire
-                # first and delay the next bit by up to a full old-rate period,
-                # stretching the whole sample. blargg 8-dmc_rates measures the
-                # 17-byte sample against a window of only +/-45 cycles, so that
-                # leak showed up as "rate N's period is too long".
-                self.dmc_timer = DMC_RATE_TABLE[new_rate]
             self.dmc_rate = new_rate
+            self.dmc_period = DMC_RATE_TABLE[new_rate] - 1
             self.dmc_irq_enable = 1 if (data & 0x80) else 0
             self.dmc_loop = 1 if (data & 0x40) else 0
             # Clearing the IRQ-enable bit also clears the DMC interrupt flag.
@@ -333,11 +350,15 @@ cdef class APU2A03:
             if data & 0x10:
                 self.arm_dmc_sample()
             else:
-                # Stop: silence immediately (buffer/bits discarded).
-                self.dmc_active = 0
-                self.dmc_len = 0
-                self.dmc_buffer = -1
-                self.dmc_bits = 0
+                # Stop: Mesen2 SetEnabled(false) arms a 1-APU-cycle delay
+                # (_disableDelay = 2 on an even cycle, 3 on an odd one) after
+                # which ProcessClock zeroes _bytesRemaining and cancels any DMA
+                # that has not yet started. A DMA that actually begins during
+                # the delay still halts the CPU for one cycle (real hardware),
+                # so we only cancel the request flag here and let _clock_dmc's
+                # ProcessClock clear the rest when the delay elapses.
+                if self.dmc_disable_delay == 0:
+                    self.dmc_disable_delay = 2 if self.cycle_parity == 0 else 3
         elif addr == 0x4017:
             self._write_frame_counter(data)
 
@@ -487,138 +508,167 @@ cdef class APU2A03:
                             self.pulse_period[channel] = target
 
     cdef void _clock_dmc(self):
-        """Advance the DMC channel by one CPU cycle (cycle-accurate model).
+        """Advance the DMC channel by one CPU cycle.
 
-        Bit4 of $4015 reports bytes-remaining > 0 (clears the instant the last
-        byte is fetched into the 1-byte buffer), and the DMC IRQ (bit7) is
-        raised when that final fetch completes. Consecutive byte fetches land
-        ~8 * rate CPU cycles apart (the wiki-accurate model: the 1-4 cycle DMA
-        stall is absorbed by the rate timer, which keeps running during the
-        fetch). This keeps every blargg 7-dmc_basics subtest green (incl. #16
-        loop-clear and #19 one-byte buffer). NOTE: blargg 8-dmc_rates instead
-        expects ~8.44*rate -- only achieved via the rate-timer PHASE alignment
-        its sync_dmc_fast establishes; see doc/13 for that deep item.
+        Faithful port of Mesen2's DeltaModulationChannel (ProcessClock + Run)
+        and ApuTimer::Run, called once per APU/CPU cycle.
+
+        Two phases run each cycle:
+          * ProcessClock (the _disableDelay / _transferStartDelay countdowns).
+            When _transferStartDelay elapses it fires StartDmcTransfer() -- the
+            first sample-byte DMA after an enable is requested. When
+            _disableDelay elapses it zeroes _bytesRemaining and cancels any
+            not-yet-started DMA (the real "stop" path).
+          * Run (the bit timer). Mesen2 clocks the DMC timer from
+            NesApu::Run(), which fires on every APU register access and at
+            least once per frame-counter period, and which clocks the DMC
+            channel unconditionally once it runs. The timer therefore NEVER
+            freezes: while the channel is idle it keeps counting and firing,
+            with _silenceFlag blocking the delta output -- a free-running
+            hardware counter, not a gated one. The timer fires once every
+            DMC_RATE_TABLE[rate] CPU cycles; on each fire it outputs one
+            LSB-first delta bit, then at the 8-bit boundary it loads the next
+            byte out of the 1-byte buffer and -- crucially -- requests the
+            FOLLOWING byte immediately (the 1-byte lookahead that keeps the
+            buffer primed). That lookahead is what makes each DMC DMA land on
+            the same phase of the CPU's instruction stream every byte, which
+            is exactly what blargg's dmc_dma_during_read4 needs to observe its
+            extra $2007 reads.
+
+        An earlier model froze the timer once _bytesRemaining reached 0 (a
+        local reading of Mesen2's _needToRun gate). That was wrong: _needToRun
+        only decides whether NesApu::Run() is forced on every cycle, and Run()
+        clocks the DMC timer whenever it does fire, so the phase keeps
+        advancing through idle periods. Freezing left every post-idle restart
+        on a stale phase -- shifted by the idle gap modulo the rate period --
+        which pushed the byte-boundary DMA off the CPU read that blargg's
+        dma_2007_read measures.
+
+        Ref: Mesen2 Core/NES/APU/DeltaModulationChannel.cpp (Run, ProcessClock,
+        NeedToRun), Core/NES/APU/NesApu.cpp (Run, Exec, NeedToRun),
+        Core/NES/APU/ApuTimer.h (Run).
         """
-        cdef int byte, G
-        if not self.dmc_active:
-            return
-        # A sample-byte DMA is in flight: the CPU is halted and the channel is
-        # silent until the memory read completes.
-        if self.dmc_dma_pending > 0:
-            self.dmc_dma_pending -= 1
-            if self.dmc_dma_pending == 0:
-                self._dmc_complete_fetch()
-            return
-        # The shift register is 8 bits wide. The instant it runs dry (the last
-        # bit has shifted out) we must act on the NEXT cycle -- NOT wait for the
-        # rate timer to expire again, which would add a whole extra rate period
-        # per byte. Real silicon checks the empty condition every APU cycle.
-        if self.dmc_bits == 0:
-            # Refill from memory first, then load the shift register, BOTH in
-            # this same cycle. Doing the fetch and the load on separate cycles
-            # costs one extra cycle per byte -- 16 of them over a 17-byte
-            # sample, which is enough to miss blargg 8-dmc_rates' narrow window.
-            if self.dmc_buffer < 0 and self.dmc_len > 0:
-                self._dmc_initiate_fetch()
-            if self.dmc_buffer >= 0:
-                self.dmc_shift = self.dmc_buffer
-                self.dmc_buffer = -1
-                self.dmc_bits = 8
-            else:
-                # Buffer still empty after the fetch attempt => the sample is
-                # over: raise the IRQ (if enabled) and go idle.
-                if self.dmc_irq_enable:
-                    self.dmc_irq_flag = 1
-                self.dmc_active = 0
-                return
-        # Rate timer gates the actual bit shifting: one delta bit per rate period.
+        # ---- ProcessClock: delay countdowns (Mesen2 DeltaModulationChannel::ProcessClock) ----
+        if self.dmc_disable_delay > 0:
+            self.dmc_disable_delay -= 1
+            if self.dmc_disable_delay == 0:
+                # Stop: drop the sample and cancel any pending DMA that has not
+                # yet started fetching. A DMA already in flight still completes
+                # (real hardware halts the CPU for one cycle even on a cancelled
+                # transfer), so we only clear the request flag here.
+                self.dmc_len = 0
+                if self.bus_ref is not None:
+                    self.bus_ref.dmc_dma_request = False
+        if self.dmc_transfer_delay > 0:
+            self.dmc_transfer_delay -= 1
+            if self.dmc_transfer_delay == 0:
+                self.start_dmc_transfer()
+        # ---- Run: bit timer + byte-boundary lookahead (Mesen2 Run) ----
+        # ApuTimer fires when the cycles elapsed exceed the timer; with _timer
+        # initialised to _period = table[rate]-1 this is exactly one bit every
+        # DMC_RATE_TABLE[rate] CPU cycles. There is deliberately no idle gate
+        # here -- see the docstring on the free-running timer.
         self.dmc_timer -= 1
-        if self.dmc_timer > 0:
-            return
-        self.dmc_timer += DMC_RATE_TABLE[self.dmc_rate]
-        # Output the next delta bit (LSB first) into the delta counter.
-        if self.dmc_shift & 1:
-            self.dmc_output += 2
-            if self.dmc_output > 127:
-                self.dmc_output = 127
-        else:
-            self.dmc_output -= 2
-            if self.dmc_output < 0:
-                self.dmc_output = 0
-        self.dmc_shift >>= 1
-        self.dmc_bits -= 1
+        if self.dmc_timer < 0:
+            self.dmc_timer = self.dmc_period
+            # Output one delta bit (only when the output unit is not silent).
+            if not self.dmc_silence:
+                if self.dmc_shift & 1:
+                    self.dmc_output += 2
+                    if self.dmc_output > 125:
+                        self.dmc_output = 125
+                else:
+                    self.dmc_output -= 2
+                    if self.dmc_output < 0:
+                        self.dmc_output = 0
+                self.dmc_shift >>= 1
+            # Byte boundary: advance the bit count every fire, silent or not.
+            self.dmc_bits -= 1
+            if self.dmc_bits == 0:
+                self.dmc_bits = 8
+                if self.dmc_buffer < 0:
+                    # Buffer still empty: the output unit goes silent and waits
+                    # for the in-flight fetch (no bit is output).
+                    self.dmc_silence = 1
+                else:
+                    # Reload the output unit from the 1-byte buffer and, in the
+                    # SAME cycle, request the NEXT byte. This 1-byte lookahead
+                    # is the heart of the phase-correct model.
+                    self.dmc_silence = 0
+                    self.dmc_shift = self.dmc_buffer
+                    self.dmc_buffer = -1
+                    if self.dmc_transfer_delay == 0:
+                        self.start_dmc_transfer()
 
-    cdef void _dmc_initiate_fetch(self):
-        """Fetch the next sample byte.
+    cpdef uint16_t dmc_read_addr(self):
+        """Address the pending sample-byte fetch reads from (for the bus DMA)."""
+        return <uint16_t>self.dmc_addr
 
-        Modelled as an instantaneous fill of the 1-byte buffer: the real DMA
-        stall (1-4 CPU cycles) is absorbed by the rate timer, which keeps
-        running during the transfer, so the steady-state byte-to-byte interval
-        stays 8 * rate -- what blargg 7-dmc_basics #16 depends on.
+    cpdef void dmc_deliver(self, uint8_t byte):
+        """Receive a sample byte fetched through the CPU bus DMA.
 
-        Crucially this only runs when the OUTPUT UNIT is dry (dmc_bits == 0),
-        which is what gives #19 its two-sided behaviour: an idle output unit
-        fills immediately (bit4 drops at once), a busy one defers the fill
-        until the in-flight byte has shifted out (bit4 stays set).
+        Port of Mesen2's SetDmcReadBuffer: the byte fills the 1-byte buffer
+        ONLY -- the output unit is never touched here. Reader bookkeeping
+        (address increment with $8000 wrap, byte decrement, loop reload, and
+        end-of-sample DMC IRQ) is performed. The bus clears dmc_dma_request
+        when it starts the transfer; we also clear it here so a stale request
+        can never wedge the channel.
         """
-        self._dmc_complete_fetch()
-
-    cdef void _dmc_complete_fetch(self):
-        """Finish a sample-byte fetch: read memory, advance the address, and
-        decrement the remaining-byte count (raising the DMC IRQ on the last)."""
-        cdef int byte
+        if self.bus_ref is not None:
+            self.bus_ref.dmc_dma_request = False
         if self.dmc_len > 0:
-            if self.bus_ref is not None:
-                byte = self.bus_ref.read(self.dmc_addr, False)
-            else:
-                byte = 0
-            self.dmc_addr = (self.dmc_addr + 1) & 0xFFFF
-            if self.dmc_addr < 0x8000:
-                self.dmc_addr |= 0x8000
-            self.dmc_len -= 1
-            if self.dmc_len == 0 and self.dmc_loop:
-                self.dmc_len = self.dmc_len_load
-                self.dmc_addr = self.dmc_addr_load
             self.dmc_buffer = byte & 0xFF
-            if self.dmc_len == 0 and self.dmc_irq_enable and not self.dmc_loop:
-                self.dmc_irq_flag = 1
+            self.dmc_addr = (self.dmc_addr + 1) & 0xFFFF
+            if self.dmc_addr == 0:
+                self.dmc_addr = 0x8000
+            self.dmc_len -= 1
+            if self.dmc_len == 0:
+                if self.dmc_loop:
+                    self.init_dmc_sample()
+                elif self.dmc_irq_enable:
+                    self.dmc_irq_flag = 1
+
+    cdef void init_dmc_sample(self):
+        """Mesen2 InitSample(): reload the reader (address + remaining bytes).
+
+        The output unit (shift register, bit count, buffer, rate timer) is
+        deliberately left running so an in-flight byte finishes first. This is
+        what makes blargg 7-dmc_basics #19 and #3 behave correctly.
+        """
+        self.dmc_addr = self.dmc_addr_load
+        self.dmc_len = self.dmc_len_load
+
+    cdef void start_dmc_transfer(self):
+        """Mesen2 StartDmcTransfer(): request a sample-byte DMA.
+
+        Only fires when the 1-byte buffer is empty and bytes remain. Pushes the
+        request onto the bus; the bus performs the 3-4 cycle CPU stall on the
+        next CPU read and delivers the byte via dmc_deliver().
+        """
+        if self.dmc_buffer < 0 and self.dmc_len > 0 and self.bus_ref is not None:
+            self.bus_ref.dmc_dma_request = True
 
     cdef void arm_dmc_sample(self):
-        # >>> HARDWARE QUIRK: DMC (re)start gated on idle length counter <<<
-        # Writing bit4 of $4015 starts (or restarts) a DMC sample only when the
-        # channel is idle (dmc_len == 0). An already-playing sample is left
-        # untouched so the buffered bits finish first -- the real silicon gates
-        # the restart on the length counter being empty. The 1-byte buffer and
-        # shift register are reset and the bit timer primed to 1 so the next
-        # clocked cycle begins fetching the first sample byte.
-        # >>> HARDWARE QUIRK: DMC (re)start only reloads the READER <<<
-        # Writing bit4 of $4015 starts (or restarts) a DMC sample only when the
-        # byte counter is empty (dmc_len == 0) -- an already-running sample is
-        # left alone. Only the reader is reloaded (remaining bytes + address);
-        # the OUTPUT UNIT -- shift register, bit count, sample buffer and rate
-        # timer -- keeps running untouched. That split is what blargg
-        # 7-dmc_basics #19 ("there should be a one-byte buffer that's filled
-        # immediately if empty") checks:
-        #   * restart while the output unit is idle -> the single byte is
-        #     fetched at once, the 1-byte sample completes and raises the IRQ,
-        #     so $4015 reads back bit4=0 / bit7=1;
-        #   * restart while a byte is still shifting out -> the new sample's
-        #     first byte is fetched only when the output unit runs dry, so
-        #     bit4 stays set and should_be_playing passes.
-        # Resetting dmc_bits here (as we used to) destroyed the in-flight byte
-        # and made bit4 collapse immediately -> #19 FAILED.
+        """Mesen2 SetEnabled(true): (re)start the sample reader.
+
+        A restart only takes effect while the channel is idle
+        (_bytesRemaining == 0). An already-playing sample is left untouched so
+        its buffered bits finish first. Only the reader is reloaded
+        (InitSample); the output unit -- including the bit timer -- keeps
+        running, so the restart lands on whatever phase the free-running timer
+        happens to be at. This split is what blargg 7-dmc_basics #19 ("a
+        one-byte buffer that's filled immediately if empty") checks, and it is
+        why 08.irq_timing and 7-dmc_basics #3 (restart timing) behave.
+
+        transferStartDelay: 2 cycles on an even CPU cycle, 3 on an odd one
+        (Mesen2 SetEnabled). The countdown runs in _clock_dmc's ProcessClock;
+        when it hits 0 the first sample-byte DMA is requested.
+        """
         if self.dmc_len == 0:
-            self.dmc_len = self.dmc_len_load
-            self.dmc_addr = self.dmc_addr_load
-            self.dmc_active = 1
-            # Prime the bit timer so the first byte's fetch begins on the very
-            # next clocked cycle. Without this the timer keeps whatever value
-            # the previous sample left behind (up to a full rate period), and
-            # every restart would drift a byte late -- which is what broke the
-            # restart timing in blargg 7-dmc_basics #3.
-            self.dmc_timer = 1
-            self.dmc_first_fetch = 1
-            self.dmc_dma_pending = 0
+            if self.bus_ref is not None:
+                self.bus_ref.dmc_dma_request = False
+            self.init_dmc_sample()
+            self.dmc_transfer_delay = 2 if self.cycle_parity == 1 else 3
 
     cpdef bint irq_level(self):
         """
