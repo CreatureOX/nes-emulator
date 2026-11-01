@@ -62,6 +62,18 @@ cdef class APU2A03:
     cdef int channel_enabled[4]
     cdef int length_counter[4]
     cdef int length_halt[4]
+    # Deferred length-counter reload (port of Mesen2 ApuLengthCounter). A
+    # $4003/$4007 (or triangle/noise equivalent) write stores the reload value
+    # plus a snapshot of the counter *at write time*; the reload is applied on
+    # the cycle after the frame-counter step, not immediately. A reload write
+    # that coincides with the half-frame clock is therefore ignored when the
+    # counter was clocked in between (length > 0 at the clock) -- this is what
+    # makes blargg's len_reload_timing subtests 4 & 5 pass.
+    cdef int length_reload_pending[4]   # 0 = no pending reload
+    cdef int length_reload_prev[4]      # counter value snapshotted at write time
+    # Halt bit is applied after the frame-counter step too, so a halt write that
+    # coincides with the half-frame clock is seen one cycle late (len_halt_timing).
+    cdef int length_new_halt[4]
 
     # Frame counter ("frame sequencer"), driven from $4017.
     cdef int frame_mode          # 0 = 4-step, 1 = 5-step
@@ -179,6 +191,9 @@ cdef class APU2A03:
             self.channel_enabled[i] = 0
             self.length_counter[i] = 0
             self.length_halt[i] = 0
+            self.length_reload_pending[i] = 0
+            self.length_reload_prev[i] = 0
+            self.length_new_halt[i] = 0
 
         for i in range(2):
             self.pulse_duty[i] = 0
@@ -272,7 +287,7 @@ cdef class APU2A03:
                 # Bit 4:    constant volume
                 # Bits 3-0: envelope period / volume
                 self.pulse_duty[channel] = (data >> 6) & 0x03
-                self.length_halt[channel] = 1 if (data & 0x20) else 0
+                self.length_new_halt[channel] = 1 if (data & 0x20) else 0
                 self.pulse_constant[channel] = 1 if (data & 0x10) else 0
                 self.pulse_env_period[channel] = data & 0x0F
                 self.pulse_volume[channel] = data & 0x0F
@@ -297,12 +312,12 @@ cdef class APU2A03:
                 self.pulse_sweep_mute[channel] = 0
         elif addr == 0x4008:
             # Triangle linear counter control; bit 7 also halts its length.
-            self.length_halt[2] = 1 if (data & 0x80) else 0
+            self.length_new_halt[2] = 1 if (data & 0x80) else 0
         elif addr == 0x400B:
             self._load_length(2, data)
         elif addr == 0x400C:
             # Noise envelope register; bit 5 halts its length.
-            self.length_halt[3] = 1 if (data & 0x20) else 0
+            self.length_new_halt[3] = 1 if (data & 0x20) else 0
         elif addr == 0x400F:
             self._load_length(3, data)
         elif addr == 0x4010:
@@ -364,14 +379,18 @@ cdef class APU2A03:
 
     cdef void _load_length(self, int channel, int data):
         """
-        Load a length counter from the lookup table (bits 7-3 of the write).
-
-        Hardware ignores the load outright while the channel is disabled via
-        $4015 -- it is not queued for when the channel comes back.
+        Queue a length-counter reload (port of Mesen2 ApuLengthCounter
+        .LoadLengthCounter). The value is not applied immediately: it is stored
+        as a pending reload together with a snapshot of the current counter, and
+        applied on the cycle after the frame-counter step (see
+        _apply_pending_length). Hardware ignores the load outright while the
+        channel is disabled via $4015 -- it is not queued for when the channel
+        comes back.
         """
         if not self.channel_enabled[channel]:
             return
-        self.length_counter[channel] = LENGTH_TABLE[(data >> 3) & 0x1F]
+        self.length_reload_pending[channel] = LENGTH_TABLE[(data >> 3) & 0x1F]
+        self.length_reload_prev[channel] = self.length_counter[channel]
 
     cdef void _write_frame_counter(self, int data):
         """
@@ -392,6 +411,11 @@ cdef class APU2A03:
         self.frame_irq_inhibit = 1 if (data & 0x40) else 0
         if self.frame_irq_inhibit:
             self.frame_irq_flag = 0
+        # Apply any pending length reload/halt from writes that landed earlier in
+        # this same cycle (Mesen2 applies reloads before the immediate half-frame
+        # clock that a $4017 write can trigger in 5-step mode), so the immediate
+        # clock sees the freshly reloaded counter instead of the old one.
+        self._apply_pending_length()
         if self.frame_mode:
             self._quarter_frame()
             self._half_frame()
@@ -452,6 +476,28 @@ cdef class APU2A03:
                 self._half_frame()
             elif self.frame_cycle >= 37282:
                 self.frame_cycle = 0
+
+    cdef void _apply_pending_length(self):
+        """
+        Apply deferred length-counter reloads and the halt update (port of
+        Mesen2 ApuLengthCounter.ReloadCounter). Called once per APU cycle,
+        AFTER the frame-counter step, so a reload/halt write and the half-frame
+        clock that fall on the same cycle resolve as: clock first, then (ignore)
+        reload.
+
+        The reload only applies when the counter is unchanged since the write
+        (length_reload_prev); if a half-frame clock already decremented it in
+        between, the reload is dropped -- exactly the "reload ignored when ctr > 0
+        at the clock" quirk blargg's len_reload_timing relies on. The halt bit
+        likewise lags by one cycle, which is what len_halt_timing measures.
+        """
+        cdef int channel
+        for channel in range(4):
+            if self.length_reload_pending[channel] != 0:
+                if self.length_counter[channel] == self.length_reload_prev[channel]:
+                    self.length_counter[channel] = self.length_reload_pending[channel]
+                self.length_reload_pending[channel] = 0
+            self.length_halt[channel] = self.length_new_halt[channel]
 
     cdef void _quarter_frame(self):
         """Quarter-frame clock (~240 Hz): envelope generators."""
@@ -696,6 +742,7 @@ cdef class APU2A03:
         for cycle in range(cycles):
             self.cycle_parity ^= 1
             self._clock_frame_counter()
+            self._apply_pending_length()
             self._clock_dmc()
 
             for channel in range(2):
