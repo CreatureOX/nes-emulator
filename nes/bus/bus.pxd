@@ -16,6 +16,11 @@ cdef class CPUBus:
     cdef uint8_t dma_addr
     cdef uint8_t dma_data
 
+    # CPU data-bus open bus: the last value driven onto the bus. Reads of
+    # undriven space ($4000-$4014 write-only APU, $4018-$40FF unmapped,
+    # unmapped PRG) return it; every real read/write refreshes it. See read().
+    cdef uint8_t open_bus
+
     cdef bint dma_dummy
     cdef bint dma_transfer
 

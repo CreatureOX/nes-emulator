@@ -54,6 +54,12 @@ cdef class CPU6502:
     cdef uint16_t temp
     cdef uint8_t remaining_cycles
 
+    # Address of the opcode currently being executed. Saved at fetch time so a
+    # one-byte-opcode dummy read (RTS/RTI/BRK) can read the byte that follows
+    # the opcode -- the real 6502 drives that byte onto the bus even though it
+    # is never executed (blargg cpu_exec_space_ppuio #5/#14/#18).
+    cdef uint16_t last_opcode_addr
+
     cdef void set_temp(self, uint16_t)
     cdef uint8_t fetch(self)
 
