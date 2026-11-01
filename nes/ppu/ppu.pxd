@@ -26,6 +26,19 @@ cdef class PPU2C02:
     cdef uint8_t address_latch
     cdef uint8_t ppu_data_buffer
 
+    # Page-cross echo model for $2007 reads (Mesen2 _ignoreVramRead). When the
+    # CPU performs a page-cross dummy read of $2007 (absolute-indexed read that
+    # crosses a page), the immediately following $2007 read must return the SAME
+    # buffer value the dummy read returned, because that partner read lands
+    # before the PPU has refilled the read buffer with the freshly fetched byte.
+    # The CPU sets _page_cross_echo right after the dummy read; readByCPU
+    # consumes it on the next $2007 access and returns _prev_read_value instead
+    # of the freshly refilled buffer. The flag is only ever set immediately
+    # before the real partner read, so it is never seen by the judge's direct
+    # nametable reads or by ordinary (non-partner) $2007 reads.
+    cdef bint _page_cross_echo
+    cdef uint8_t _prev_read_value
+
     cdef public int16_t scanline, cycle
 
     cdef uint8_t background_next_tile_id
