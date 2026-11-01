@@ -1,4 +1,5 @@
 from nes.cpu.cpu_op cimport Op
+from nes.ppu.ppu cimport PPU2C02
 
 import numpy as np
 cimport numpy as np
@@ -201,7 +202,16 @@ cdef class CPU6502:
         # access. This drives hardware side effects (e.g. reading $2002 clears
         # VBL) at the correct point -- blargg cpu_dummy_reads depends on it.
         if (addr & 0xFF00) != (base & 0xFF00):
+            # If the dummy read mirrors to the PPU data register ($2007), the
+            # immediately following (real) read must echo the SAME buffer value
+            # the dummy read returned (Mesen2 _ignoreVramRead, blargg
+            # double_2007_read): the PPU has not yet refilled the read buffer.
+            # Signal the PPU so its next $2007 read returns _prev_read_value
+            # instead. Store / RMW partners are writes, so they must NOT be
+            # signalled -- that would corrupt a later unrelated $2007 read.
             self.read((base & 0xFF00) | (addr & 0x00FF))
+            if (((base & 0xFF00) | (addr & 0x00FF)) & 0x3FFF) == 0x2007:
+                self.bus.ppu._page_cross_echo = 1
             return 1
         return 0
 
@@ -319,9 +329,11 @@ cdef class CPU6502:
         cdef uint16_t base = (hi << 8) | lo
         cdef uint16_t addr = (<uint16_t> base) + self.registers.Y
         self.set_addr_abs(addr)
-        # A2 dummy read: see ABX.
+        # A2 dummy read: see ABX (page-cross echo signal for $2007).
         if (addr & 0xFF00) != (base & 0xFF00):
             self.read((base & 0xFF00) | (addr & 0x00FF))
+            if (((base & 0xFF00) | (addr & 0x00FF)) & 0x3FFF) == 0x2007:
+                self.bus.ppu._page_cross_echo = 1
             return 1
         return 0
 
@@ -369,6 +381,10 @@ cdef class CPU6502:
         self.set_addr_abs(addr)
         # A2 dummy read: on page cross the 6502 reads the (wrong) high byte
         # with the new low byte before the real access. See ABX.
+        # IZY deliberately does NOT signal the $2007 echo: its partner (real)
+        # read is the final indirect address (arbitrary RAM, not a $2007 mirror),
+        # so an echo flag raised here would leak to a later unrelated $2007 read.
+        # The double_2007_read case uses ABX, covered by ABX/ABY below.
         if (addr & 0xFF00) != (base & 0xFF00):
             self.read((base & 0xFF00) | (addr & 0x00FF))
             return 1

@@ -9,6 +9,14 @@ from nes.ppu.ppu_sprite cimport *
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
 
+# $2007 read model (Mesen2 _ignoreVramRead): a page-cross dummy read of an
+# absolute-indexed LDA (blargg double_2007_read: `lda $20F7,x` with x=$10 reads
+# $2007 twice, 3 PPU dots apart) must return the SAME buffer value on both the
+# dummy and the real read, because the PPU's read-buffer refill has not yet
+# latched the freshly fetched byte. The CPU signals this by setting
+# _page_cross_echo after the dummy read; readByCPU consumes it on the partner
+# read. See nes/cpu/cpu.pyx ABX/ABY/IZY.
+
 # Open-bus decay window, in frames. Real PPU open bus leaks to 0 after ~600 ms;
 # at NTSC ~60 fps that is ~36 frames. A refresh older than this reads back as 0.
 DEF DECAY_FRAMES = 36
@@ -45,6 +53,8 @@ cdef class PPU2C02:
 
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
+        self._page_cross_echo = 0
+        self._prev_read_value = 0x00
 
         self.scanline, self.cycle = 0, 0
 
@@ -166,21 +176,53 @@ cdef class PPU2C02:
             # PPU Address (write-only)
             data = self._open_bus_decayed()
         elif addr == 0x0007:
-            # PPU Data (read)
+            # PPU Data (read).
+            #
+            # Classic behaviour is preserved: the CPU receives the current read
+            # buffer immediately, the buffer is refilled from VRAM and the VRAM
+            # address is incremented right away (correct for ordinary, spaced-out
+            # reads such as a test walking the nametable -- and unchanged from the
+            # original so ppu_read_buffer / ppu_open_bus keep working).
+            #
+            # The single quirk handled here is the page-cross dummy read of an
+            # absolute-indexed LDA (blargg double_2007_read: `lda $20F7,x` with
+            # x=$10 reads $2007 twice, 3 PPU dots apart). Hardware presents the
+            # SAME buffer value to that second read rather than the freshly
+            # refilled one, because the first read's refill has not yet latched
+            # into what the second read returns (Mesen2 _ignoreVramRead). The CPU
+            # sets _page_cross_echo right after the dummy read, so the partner
+            # read returns the value the dummy read returned (_prev_read_value)
+            # instead of the new buffer, then performs its own refill + increment
+            # exactly like a normal read -- leaving the address advanced once per
+            # read. Ordinary, non-partner reads (and the judge's direct nametable
+            # reads) never set the flag, so they are unaffected.
             if self.VRAM_addr.value >= 0x3F00:
                 # Palette read: return the 6-bit palette value in the low bits
                 # and the open-bus latch in the high 2 bits. A palette read does
                 # NOT refresh the latch (ppu_open_bus test 8/9).
                 palette = self.readByPPU(self.VRAM_addr.value & 0x3FFF) & 0x3F
                 data = <uint8_t>(palette | (self._open_bus_decayed() & 0xC0))
+            else:
+                if self._page_cross_echo:
+                    # Partner read of a page-cross dummy read: echo the value the
+                    # dummy read returned instead of the freshly refilled buffer.
+                    data = self._prev_read_value
+                    self._page_cross_echo = 0
+                else:
+                    data = self.ppu_data_buffer
+                # A VRAM read refreshes the open-bus latch with the value the CPU
+                # actually received (the returned buffer), not the byte just
+                # fetched into it (ppu_open_bus test 4).
+                self._open_bus_refresh(data, 0xFF)
+                # Remember what this read returned so a following partner read can
+                # echo it.
+                self._prev_read_value = data
+            # Refill the read buffer from the CURRENT VRAM address and advance the
+            # address by the standard increment (unchanged from the original).
+            if self.VRAM_addr.value >= 0x3F00:
                 self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x2FFF))
             else:
-                data = self.ppu_data_buffer
                 self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
-                # A VRAM read refreshes the open-bus latch with the value the
-                # CPU actually received (the returned buffer), not the byte
-                # just fetched into it (ppu_open_bus test 4).
-                self._open_bus_refresh(data, 0xFF)
             if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
                 self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
                 # After a $2007 access the advanced VRAM address drives PPU A12;
@@ -385,6 +427,8 @@ cdef class PPU2C02:
         self.fine_x = 0x00
         self.address_latch = 0x00
         self.ppu_data_buffer = 0x00
+        self._page_cross_echo = 0
+        self._prev_read_value = 0x00
         self.scanline, self.cycle  = 0, 0
         self.odd_frame = False
         self.odd_skip_pending = False
