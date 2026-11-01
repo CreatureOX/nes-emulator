@@ -28,11 +28,23 @@ cdef class MapperNROM(Mapper):
         return mapping
 
     cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
-        """NROM has no writable PRG ROM (writes ignored)."""
+        """NROM has no writable PRG ROM, so writes to $8000+ are ignored.
+
+        On hardware PRG ROM is read-only; a CPU store to cartridge space simply
+        has no effect (it is not latched into ROM). The cartridge's PRG ROM
+        array must therefore never be modified by a CPU write, otherwise
+        self-modifying code (e.g. blargg ``cpu_dummy_writes``'s "ROM should not
+        be writable" subtest) would spuriously succeed.
+
+        Only PRG RAM at $6000-$7FFF would be writable, but these NROM test
+        carts carry none, and the existing mapping already left that range
+        unmapped, so all cartridge writes are reported unhandled here.
+
+        Ref: NESdev Wiki - "Writes to most registers and to PRG ROM are
+        ignored; only onboard battery-backed RAM is writable."
+        """
         cdef CPUWriteMapping mapping = CPUWriteMapping()
-        
-        mapping.success = 0x8000 <= addr <= 0xFFFF
-        mapping.addr = addr & (0x7FFF if self.PRG_banks > 1 else 0x3FFF)
+        mapping.success = False
         return mapping
 
     cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
