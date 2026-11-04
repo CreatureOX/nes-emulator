@@ -651,6 +651,12 @@ cdef class CPU6502:
 
         Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (BRK)
         '''
+        # One-byte-opcode dummy read (6502 quirk): the padding byte that
+        # follows the BRK opcode is driven onto the bus (blargg
+        # cpu_exec_space_ppuio's BRK subtest needs the dummy read of $2002 to
+        # reset the PPU $2006 address-latch toggle). last_opcode_addr points at
+        # the opcode, so +1 is the padding byte.
+        self.read(self.last_opcode_addr + 1)
         # Real 6502 BRK is 2 bytes (opcode + padding byte). By the time
         # this operate() runs, the dispatch already advanced PC past the
         # opcode and the IMM addressing mode advanced it past the padding
@@ -1110,6 +1116,11 @@ cdef class CPU6502:
         Function:    Pull status and PC from stack
         Return:      Require additional 0 clock cycle
         '''
+        # One-byte-opcode dummy read (6502 quirk): the byte following the
+        # opcode is driven onto the bus (blargg cpu_exec_space_ppuio's
+        # JMP+RTI subtest needs the dummy read of $2002 to reset the PPU
+        # $2006 address-latch toggle). last_opcode_addr points at the opcode.
+        self.read(self.last_opcode_addr + 1)
         # Real 6502 RTI loads the 6 real flags, ignores B (bit 4), and
         # forces U (bit 5) to 1.
         cdef uint8_t prev_b = self.registers.status.bits.B
@@ -1129,8 +1140,15 @@ cdef class CPU6502:
         Function:    Pull PC from stack, PC = PC + 1
         Return:      Require additional 0 clock cycle
         '''
+        # One-byte-opcode dummy read (6502 quirk): the byte following the opcode
+        # is driven onto the bus before the return address is pulled. For code
+        # executed from I/O space this has visible side effects -- blargg
+        # cpu_exec_space_ppuio's RTS subtest needs the dummy read of $2002 to
+        # reset the PPU $2006 address-latch toggle. last_opcode_addr points at
+        # the opcode, so +1 is the byte after it.
+        self.read(self.last_opcode_addr + 1)
         self.registers.PC = self.pull_2_bytes()
-    
+
         self.registers.PC = self.registers.PC + 1
         return 0
 
@@ -2022,6 +2040,9 @@ cdef class CPU6502:
             self.last_fetch_dot = now
             self.last_fetch_margin = now - eff_now + poll_margin
             self.opcode = self.read(self.registers.PC)
+            # Save the address the opcode was fetched from: a one-byte-opcode
+            # dummy read (RTS/RTI/BRK) targets the byte that follows it.
+            self.last_opcode_addr = self.registers.PC
             self.registers.status.bits.U = True
             self.registers.PC = self.registers.PC + 1
             # Look up instruction details

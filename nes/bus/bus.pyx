@@ -32,6 +32,10 @@ cdef class CPUBus:
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
+        # CPU data-bus open bus: the last value driven onto the bus. Reads of
+        # undriven space ($4000-$4014 write-only APU, $4018-$40FF unmapped,
+        # unmapped PRG) return it; every real read/write refreshes it. See read().
+        self.open_bus = 0x00
 
     cdef void _dma_halt_cycle(self, uint16_t dummy_addr, bint do_dummy_read):
         """Burn one CPU cycle with the CPU halted (a DMA stall cycle).
@@ -201,15 +205,33 @@ cdef class CPUBus:
         elif 0x4016 <= addr <= 0x4017:
             # Controller registers - shift data out serially.
             #
-            # The shift register shifts in 1s, so once the 8 button bits have
-            # been read it returns 1 forever. On hardware the register is
-            # filled with 1s, and a program that keeps reading past the eighth
-            # button sees 1s -- blargg's dma_4016_read counts bits until the
-            # register returns 1, and would hang forever on a register stuck
-            # at 0.
-            data = 1 if (self.controller_state[addr & 0x0001] & 0x80) > 0 else 0
-            self.controller_state[addr & 0x0001] = (
-                (self.controller_state[addr & 0x0001] << 1) | 1) & 0xFF
+            # Only D0 is driven by the standard NES controller; the upper bits
+            # (5-7) are undriven and float to the OPEN BUS, which on a read of
+            # $4016/$4017 is the address's most-significant byte (0x40) left on
+            # the data lines. blargg's cpu_exec_space test executes code
+            # straight out of I/O space, so a read of $4016 must return 0x40
+            # (RTI) when no button is pressed -- bits 5-7 must be 0x40, not 0.
+            # Ref: NESdev wiki "Standard controller" (the top bits retain the
+            # address MSB; Paperboy relies on reads returning exactly $40/$41).
+            port = addr & 0x0001
+            d0 = 1 if (self.controller_state[port] & 0x80) > 0 else 0
+            data = ((addr >> 8) & 0xE0) | d0
+            self.controller_state[port] = (
+                (self.controller_state[port] << 1) | 1) & 0xFF
+        else:
+            # Undriven CPU reads: write-only APU registers ($4000-$4014) and the
+            # unmapped APU range ($4018-$40FF) -- and any other unmapped space --
+            # leave the data bus floating, so the CPU samples the OPEN BUS, the
+            # last value driven onto it. This is what lets code executed from I/O
+            # space (blargg cpu_exec_space_apu / _ppuio) see the opcode/operand
+            # a previous read left behind (e.g. the JMP operand byte that becomes
+            # the RTI opcode at $40XX). Ref: NESdev wiki "CPU memory map" (open
+            # bus); Mesen2 Core/NES/CpuMemoryManager.cpp (ReadOnly).
+            data = self.open_bus
+        # Track the CPU data-bus open bus on every real (non-debugger) read;
+        # passive debugger disassembly reads (readOnly=True) must not perturb it.
+        if not readOnly:
+            self.open_bus = data
         return data
 
     cpdef void write(self, uint16_t addr, uint8_t data):
@@ -245,6 +267,10 @@ cdef class CPUBus:
         elif 0x4016 <= addr <= 0x4017:
             # Controller strobe - reset shift counters
             self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
+        # A write drives the data bus with `data`, so the open bus takes that
+        # value -- the next undriven read will see it. Ref: NESdev wiki
+        # "CPU memory map" (open bus).
+        self.open_bus = data
 
     cpdef void reset(self):
         """Reset all components and DMA state."""
@@ -261,6 +287,7 @@ cdef class CPUBus:
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
         self.dmc_dma_armed_prev = False
+        self.open_bus = 0x00
 
     cpdef void power_up(self):
         """Initialize all components as if power was just applied."""
@@ -277,6 +304,7 @@ cdef class CPUBus:
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
         self.dmc_dma_armed_prev = False
+        self.open_bus = 0x00
 
     cpdef void clock(self):
         """
