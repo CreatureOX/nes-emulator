@@ -133,13 +133,21 @@ def verdict_from_screen(console, detector, entry=None, state=None):
 
 
 def final_state(console):
-    """Runtime snapshot the judge may need: where the CPU ended up.
+    """Runtime snapshot the judge may need: where the CPU ended up, plus the
+    blargg $6000 result interface.
 
     Sampled before the screen is read, because read_nametable() is
     destructive (it touches $2001/$2007) and must not be the last thing that
-    happens to the machine.
+    happens to the machine. The $6000 reads are plain CPU-RAM accesses, so
+    they are unaffected by the later PPU address churn.
     """
-    return {"pc": console.bus.cpu.get_pc()}
+    bus = console.bus
+    st0 = bus.read(0x6000, False)
+    return {"pc": bus.cpu.get_pc(),
+            "status6000": (st0,
+                           bus.read(0x6001, False),
+                           bus.read(0x6002, False),
+                           bus.read(0x6003, False))}
 
 
 def needs_reset(entry):

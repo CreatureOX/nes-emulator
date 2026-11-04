@@ -902,6 +902,15 @@ expected = "pass"
 [[tests]]
 id = "ppu_read_buffer/test_ppu_read_buffer"
 expected = "pass"
+# Pass result for this suite is a painting on screen (Thomas Kinkade), not the
+# usual "Passed" text, so the nametable blargg scan sees nothing and times out.
+# blargg instead reports the result to the emulator via the $6000 status byte
+# (readme "Output at $6000"): $00 = passed, with a $DE $B0 $61 signature at
+# $6001-$6003. Use that interface directly. Reaches the exit dead-loop (~status
+# final) at ~1400 frames; 2400 keeps clear margin under the 300s watchdog.
+detector = "status6000"
+frames = 2400
+note = "Pass indicator is the on-screen painting; machine-readable result is the $6000 status byte ($00=pass, signature $DE $B0 $61 at $6001-$6003). Verified PASS via status6000 detector."
 
 [[tests]]
 id = "read_joy3/count_errors"
