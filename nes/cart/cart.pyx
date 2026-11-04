@@ -1,5 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 
+import numpy as np
+
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
 
 
@@ -16,7 +18,14 @@ cdef class Cartridge:
     address translation for bankswitching and mirroring.
     """
     def __init__(self, filename) -> None:
-        pass
+        # WRAM window at $6000-$7FFF. NES carts rarely wire this range to
+        # anything, but blargg's test framework (and many dev/homebrew ROMs)
+        # report their result to the emulator by writing $6000 (status byte)
+        # and a validity signature to $6001-$6003; the iNES header's PRG-RAM
+        # flag is frequently absent even when the ROM relies on this RAM. Always
+        # back the range so those writes are observable. Ref: blargg test
+        # readme "Output at $6000".
+        self.wram = np.zeros(8192, dtype=np.uint8)
 
     cdef void connect_bus(self, CPUBus bus):
         """Connect the cartridge to the system bus."""
@@ -69,6 +78,9 @@ cdef class Cartridge:
                 return (True, mapping.data)
             else:
                 return (True, self.PRG_ROM_data[mapping.addr])
+        elif 0x6000 <= addr <= 0x7FFF:
+            # WRAM window ($6000-$7FFF) when the mapper doesn't claim it.
+            return (True, self.wram[addr - 0x6000])
         else:
             return (False, mapping.data)   
 
@@ -91,6 +103,10 @@ cdef class Cartridge:
             else:
                self.PRG_ROM_data[mapping.addr] = data
                return True
+        elif 0x6000 <= addr <= 0x7FFF:
+            # WRAM window ($6000-$7FFF) when the mapper doesn't claim it.
+            self.wram[addr - 0x6000] = data
+            return True
         else:
             return False 
 

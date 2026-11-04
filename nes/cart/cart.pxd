@@ -17,6 +17,7 @@ cdef class Cartridge:
     cdef uint8_t[:] PRG_RAM_data
     cdef uint8_t[:] CHR_ROM_data
     cdef uint8_t[:] CHR_RAM_data
+    cdef uint8_t[:] wram          # WRAM window $6000-$7FFF (blargg result RAM)
 
     cdef CPUBus bus    
     cdef Mapper mapper

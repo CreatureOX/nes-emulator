@@ -13,6 +13,9 @@ cdef class INesCart(Cartridge):
     Handles PRG ROM, CHR ROM/RAM, trainer data, and PlayChoice10 ROMs.
     """
     def __init__(self, filename) -> None:
+        # WRAM at $6000-$7FFF (see nes.cart.Cartridge.__init__); blargg test
+        # ROMs write their result there and expect an emulator to back it.
+        self.wram = np.zeros(8192, dtype=np.uint8)
         with open(filename, 'rb') as ines:
             self.header = INesHeader(ines.read(16))
             if self.header.flags_6.present_trainer == 1:
