@@ -162,6 +162,32 @@ def _terminal_pc_verdict(raw, low, entry=None, state=None):
     return "FAIL", f" PC=${pc:04X} (want ${want:04X}..${want + 2:04X})"
 
 
+def _status6000_verdict(raw, low, entry=None, state=None):
+    """blargg's emulator-facing result interface (readme "Output at $6000").
+
+    The framework writes a status byte to $6000 and a validity signature
+    $DE $B0 $61 to $6001-$6003; $6000 == $00 means passed, $01 failed,
+    $80/$81 still running. This is the authoritative pass signal and does
+    not depend on the on-screen text -- this suite draws a painting on pass
+    (its "Passed" line is deferred/obscured), so the nametable scan would
+    otherwise see nothing and time out. If the signature is absent (a ROM
+    that never touched $6000), fall back to the nametable blargg scan.
+    """
+    st = (state or {}).get("status6000")
+    if st is None:
+        return _blargg_verdict(raw, low, entry, state)
+    b0, b1, b2, b3 = st
+    if (b1, b2, b3) != (0xDE, 0xB0, 0x61):
+        return _blargg_verdict(raw, low, entry, state)
+    if b0 == 0x00:
+        return "PASSED", ""
+    if b0 in (0x80, 0x81):
+        return "RUNNING/blank", ""
+    if b0 == 0x01:
+        return "FAIL", " (status $01)"
+    return "FAIL", f" #N={b0}"
+
+
 def _pass_pc(entry):
     """The entry's pass_pc config as an int, or None when it is not set."""
     if not entry:
@@ -205,7 +231,8 @@ def _first_int(low, pattern):
 
 # name -> verdict fn(raw, low, entry, state); unknown name -> RUNNING/blank
 DETECTORS = {"blargg": _blargg_verdict, "joy3": _joy3_verdict,
-             "crc": _crc_verdict, "terminal_pc": _terminal_pc_verdict}
+             "crc": _crc_verdict, "terminal_pc": _terminal_pc_verdict,
+             "status6000": _status6000_verdict}
 
 
 def judge_result(result):

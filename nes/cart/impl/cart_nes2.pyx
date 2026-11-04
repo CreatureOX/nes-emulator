@@ -14,6 +14,9 @@ cdef class Nes2Cart(Cartridge):
     NES 2.0 mappers (with mapper numbers > 255), and additional hardware info.
     """
     def __init__(self, filename) -> None:
+        # WRAM at $6000-$7FFF (see nes.cart.Cartridge.__init__); blargg test
+        # ROMs write their result there and expect an emulator to back it.
+        self.wram = np.zeros(8192, dtype=np.uint8)
         with open(filename, 'rb') as nes2:
             self.header = Nes2Header(nes2.read(16))
             if self.header.flags_6.present_trainer == 1:

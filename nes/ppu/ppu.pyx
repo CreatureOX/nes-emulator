@@ -196,7 +196,7 @@ cdef class PPU2C02:
             # exactly like a normal read -- leaving the address advanced once per
             # read. Ordinary, non-partner reads (and the judge's direct nametable
             # reads) never set the flag, so they are unaffected.
-            if self.VRAM_addr.value >= 0x3F00:
+            if (self.VRAM_addr.value & 0x3FFF) >= 0x3F00:
                 # Palette read: return the 6-bit palette value in the low bits
                 # and the open-bus latch in the high 2 bits. A palette read does
                 # NOT refresh the latch (ppu_open_bus test 8/9).
@@ -219,19 +219,23 @@ cdef class PPU2C02:
                 self._prev_read_value = data
             # Refill the read buffer from the CURRENT VRAM address and advance the
             # address by the standard increment (unchanged from the original).
-            if self.VRAM_addr.value >= 0x3F00:
+            if (self.VRAM_addr.value & 0x3FFF) >= 0x3F00:
                 self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x2FFF))
             else:
                 self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
-            if (self.PPUMASK.render_background == 0 and self.PPUMASK.render_sprites == 0) or (240 < self.scanline <= 260):
-                self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
-                # After a $2007 access the advanced VRAM address drives PPU A12;
-                # MMC3-class mappers clock their IRQ on the resulting edge
-                # (blargg mmc3_irq_tests sub-5/sub-6: $0fff -> $1000).
-                self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
-            else:
-                self._incr_coarseX()
-                self._incr_Y()
+            # A CPU $2007 access increments the VRAM address by 1 or 32 per
+            # PPUCTRL bit 2 -- ALWAYS, independent of rendering state. The
+            # scroll-aware step (_incr_coarseX/_incr_Y) belongs to the PPU's
+            # internal background-fetch sequence and must NOT be used here: when
+            # rendering is on, running the shared v register through the
+            # scroll-aware step corrupts the address the renderer fetches from on
+            # the following dots and the nametable comes out garbled
+            # (ppu_read_buffer renders scrambled text).
+            self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
+            # After a $2007 access the advanced VRAM address drives PPU A12;
+            # MMC3-class mappers clock their IRQ on the resulting edge
+            # (blargg mmc3_irq_tests sub-5/sub-6: $0fff -> $1000).
+            self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
         return data
 
     cdef void writeByCPU(self, uint16_t addr, uint8_t data):
