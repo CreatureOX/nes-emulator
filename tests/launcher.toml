@@ -894,6 +894,16 @@ note = "Blargg NTSC NMI-sync demo: timed $2001 writes draw a sync line, no machi
 [[tests]]
 id = "oam_stress/oam_stress"
 expected = "pass"
+# On NTSC this test only completes for one of four random PPU-CPU reset
+# synchronizations and takes ~30s (~1800 frames) to finish (readme.txt). The
+# default 1200-frame budget cuts it off mid-run (RUNNING/blank) even though the
+# PPU/OAM model is correct, so the prior verdict was a frame-budget artifact.
+# 2400 frames gives clear margin under the 300s watchdog. The result is reported
+# via the blargg $6000 status interface ($00=pass, signature $DE $B0 $61 at
+# $6001-$6003), not screen text, so judge it there.
+frames = 2400
+detector = "status6000"
+note = "RUNNING/blank at the 1200-frame default was a frame-budget artifact, not an OAM logic bug (verified: $6000=$00 + $DE $B0 $61 signature at 1800+ frames). Uses the blargg $6000 status interface for the verdict."
 
 [[tests]]
 id = "ppu_open_bus/ppu_open_bus"
