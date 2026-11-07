@@ -23,6 +23,23 @@ cdef class CPUBus:
 
     cdef bint dma_dummy
     cdef bint dma_transfer
+    # Set when an OAM DMA read has happened and the matching $2004 write is
+    # still owed. A DMC fetch that steals a get cycle leaves this clear, so
+    # the next put cycle becomes an alignment cycle instead of a write --
+    # this is what re-aligns OAM DMA after a DMC get (NESdev "DMA", "DMC DMA
+    # during OAM DMA"). Replaces a bare get/put parity test because a stolen
+    # get shifts the read/write pairing.
+    cdef bint dma_write_pending
+
+    # A DMC sample fetch that collided with an in-flight OAM DMA: the two DMA
+    # units share one get/put cadence. oam_dmc_running stays set until the
+    # fetch is performed, even past the end of the OAM DMA (the "last put"
+    # case extends the sequence by 3 cycles). The two need_* flags are the
+    # DMC DMA's halt and dummy cycles; OAM DMA cycles absorb them for free,
+    # which is why a collision in the middle of the copy costs only 2 cycles.
+    cdef bint oam_dmc_running
+    cdef bint oam_dmc_need_halt
+    cdef bint oam_dmc_need_dummy
 
     # DMC sample-byte DMA request (pushed by the APU) and its once-per-cycle
     # sample; public so the APU can push/clear the request through bus_ref.
@@ -33,6 +50,13 @@ cdef class CPUBus:
     cdef public bint dmc_dma_request
     cdef public bint dmc_dma_armed
     cdef bint dmc_dma_armed_prev
+
+    # Set at the end of an OAM copy. The DMC sequence overlapping the tail of
+    # the copy is still sharing OAM's get/put cadence, so the first standalone
+    # DMC DMA afterwards must let the next get choose its fetch cycle instead
+    # of assuming the reload's four-cycle length; that DMA clears the flag.
+    # Ref: NESdev "DMA" (DMC DMA during OAM DMA); dbhq-uk/6502 NesBus.RunDma.
+    cdef bint dmc_oam_tail_pending
 
     cdef public CPU6502 cpu 
     cdef public PPU2C02 ppu
