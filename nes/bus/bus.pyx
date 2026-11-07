@@ -19,10 +19,15 @@ cdef class CPUBus:
 
         self.dma_dummy = True
         self.dma_transfer = False
+        self.dma_write_pending = False
+        self.oam_dmc_running = False
+        self.oam_dmc_need_halt = False
+        self.oam_dmc_need_dummy = False
 
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
         self.dmc_dma_armed_prev = False
+        self.dmc_oam_tail_pending = False
 
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(self)
@@ -102,6 +107,18 @@ cdef class CPUBus:
         value of `nSystemClockCounter // 3` -- the same cycle Mesen2's even
         CycleCount selects.
 
+        Stolen-cycle count. A reload of the 1-byte sample buffer is asked for
+        on a put cycle: dbhq-uk/6502's DmcChannel sets `_fetchFrom = cycle +
+        2` when the output unit empties the buffer, so halt, dummy, alignment
+        and fetch take four cycles. A load is asked for on a get (`_fetchFrom
+        = writeCycle + 3/4` always picks an even cycle), so its fetch lands
+        on the next get and the CPU read's parity decides between three and
+        four cycles. The exception is the first standalone fetch after an OAM
+        DMA ends: the DMC sequence at the tail of the copy is still sharing
+        OAM's cadence, so the next get -- not a fixed count -- ends it.
+        Ref: dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel;
+        NESdev wiki "DMA" (DMC DMA during OAM DMA).
+
         Dummy reads at $4016/$4017. Mesen2 skips the alignment dummy reads
         when the CPU was reading a controller register: on an NES only the
         FIRST dummy read has side effects, so a controller loses exactly ONE
@@ -122,6 +139,9 @@ cdef class CPUBus:
                                        == (cpu_read_addr & 0x1F))
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
+        cdef int dmc_len = 1
+        cdef bint fixed_length = (self.apu.dmc_dma_request_kind() == 2
+                                  and not self.dmc_oam_tail_pending)
         # Initial halt cycle (dummy read of the CPU's address).
         self._dma_halt_cycle(cpu_read_addr, not skip_first_input_clock)
         cdef bint need_dummy = True
@@ -129,14 +149,19 @@ cdef class CPUBus:
             # The fetch runs on the first parity-allowed cycle after the
             # pending dummy read has been consumed; every other cycle is an
             # alignment dummy that reads the CPU's address again.
-            if (self.nSystemClockCounter // 3) % 2 == 1 and not need_dummy:
+            if (not need_dummy
+                    and ((fixed_length and dmc_len >= 3)
+                         or (not fixed_length
+                             and (self.nSystemClockCounter // 3) % 2 == 1))):
                 # Fetch cycle: read the sample byte and deliver it.
                 self._dma_halt_cycle(0, False)
                 self.apu.dmc_deliver(
                     self.read(self.apu.dmc_read_addr(), False))
+                self.dmc_oam_tail_pending = False
                 return
             # Alignment cycle: another dummy read of the CPU's address.
             self._dma_halt_cycle(cpu_read_addr, not skip_dummy_reads)
+            dmc_len += 1
             need_dummy = False
 
     cpdef uint8_t read(self, uint16_t addr, bint readOnly):
@@ -260,10 +285,15 @@ cdef class CPUBus:
             # APU registers
             self.apu.writeByCPU(addr, data)
         elif addr == 0x4014:
-            # Sprite DMA - copy 256 bytes from page to PPU OAM
+            # Sprite DMA - copy 256 bytes from page to PPU OAM. The halt cycle
+            # is the first CPU cycle after this write; dma_dummy starts the
+            # alignment prefix and dma_write_pending tracks whether a $2004
+            # put is owed (see clock()).
             self.dma_page = data
             self.dma_addr = 0x00
             self.dma_transfer = True
+            self.dma_dummy = True
+            self.dma_write_pending = False
         elif 0x4016 <= addr <= 0x4017:
             # Controller strobe - reset shift counters
             self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
@@ -284,9 +314,14 @@ cdef class CPUBus:
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+        self.dma_write_pending = False
+        self.oam_dmc_running = False
+        self.oam_dmc_need_halt = False
+        self.oam_dmc_need_dummy = False
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
         self.dmc_dma_armed_prev = False
+        self.dmc_oam_tail_pending = False
         self.open_bus = 0x00
 
     cpdef void power_up(self):
@@ -301,9 +336,14 @@ cdef class CPUBus:
         self.dma_data = 0x00
         self.dma_dummy = True
         self.dma_transfer = False
+        self.dma_write_pending = False
+        self.oam_dmc_running = False
+        self.oam_dmc_need_halt = False
+        self.oam_dmc_need_dummy = False
         self.dmc_dma_request = False
         self.dmc_dma_armed = False
         self.dmc_dma_armed_prev = False
+        self.dmc_oam_tail_pending = False
         self.open_bus = 0x00
 
     cpdef void clock(self):
@@ -320,6 +360,7 @@ cdef class CPUBus:
         """
         cdef uint8_t cycles = 0
         cdef unsigned long long cpu_cycle = 0
+        cdef bint dmc_ready = False
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
@@ -362,41 +403,103 @@ cdef class CPUBus:
         if is_cpu_cycle:
             # This is a CPU cycle
             cpu_cycle = <unsigned long long>(self.nSystemClockCounter // 3)
-            if self.dma_transfer:
-                # OAM DMA transfer: 512 transfer cycles (2 per byte) plus an
-                # alignment prefix. The CPU is halted for the whole transfer
-                # (cpu.clock() is not called), but the PPU and APU keep
-                # running and the interrupt lines keep being propagated, so a
-                # device IRQ raised mid-transfer is seen the moment the CPU
-                # resumes (see CPU6502.clock's stall-aware poll reference).
+            if self.dma_transfer or self.oam_dmc_running:
+                # OAM DMA (and any DMC DMA that collided with it) runs here.
                 #
-                # Phase rule (Mesen2 NesCpu::ProcessPendingDma): reads land on
-                # ODD cpu cycles and $2004 writes on EVEN ones. The alignment
-                # prefix is 1 halt cycle when the $4014 write fell on an odd
-                # cpu cycle (first read at W+2, total halt 513 cycles) and 2
-                # cycles -- halt + one dummy alignment read -- when it fell on
-                # an even one (first read at W+3, total 514). The dummy phase
-                # therefore waits for an EVEN cycle, and the transfer itself
-                # reads on odd / writes on even. Getting this backwards cost a
-                # full CPU cycle of halt on one parity and made
-                # 4-irq_and_dma's dly=526 row fire an instruction late.
-                # Ref: Mesen2 Core/NES/NesCpu.cpp (ProcessPendingDma)
+                # Both 2A03 DMA units share one get/put cadence: DMA can only
+                # read ("get") on one cycle type and write ("put") on the
+                # other. Reads land on ODD cpu cycles and $2004 writes on EVEN
+                # ones. The CPU is halted for the whole sequence (cpu.clock()
+                # is not called), but the PPU and APU keep running and the
+                # interrupt lines keep being propagated, so a device IRQ
+                # raised mid-transfer is seen the moment the CPU resumes (see
+                # CPU6502.clock's stall-aware poll reference).
+                #
+                # Alignment prefix: 1 halt cycle when the $4014 write fell on
+                # an odd cpu cycle (first read at W+2, total 513 cycles) and 2
+                # cycles -- halt + one alignment cycle -- when it fell on an
+                # even one (first read at W+3, total 514). The prefix waits for
+                # an EVEN cycle, and the transfer itself reads on odd / writes
+                # on even. Getting this backwards cost a full CPU cycle of halt
+                # on one parity and made 4-irq_and_dma's dly=526 row fire an
+                # instruction late. Ref: Mesen2 Core/NES/NesCpu.cpp
+                # (ProcessPendingDma); NESdev wiki "DMA" (Cadence).
+                #
+                # DMC DMA interaction (NESdev wiki "DMA", "DMC DMA during OAM
+                # DMA"): when both units want the bus on the same cycle the DMC
+                # get wins and the OAM DMA is paused. The two units otherwise
+                # share cycles, and every no-operation cycle (halt, DMC dummy,
+                # alignment) is free -- it overlaps useful work of the other
+                # unit:
+                #   * a DMC DMA that collides in the middle of the copy costs
+                #     2 cycles: 1 for the DMC get, then 1 for OAM to re-align
+                #     to a get (its $2004 put slot loses its data);
+                #   * one that schedules on the second-to-last put costs 1: its
+                #     halt and dummy cycles ride the last read/put pair and the
+                #     get lands on the first cycle after the DMA;
+                #   * one that schedules on the last put costs 3: after the DMA
+                #     its dummy and alignment cycles are still owed, and only
+                #     then does the get happen (past the end of the copy).
+                # Mesen2 models this by keeping the DMC request inside the OAM
+                # loop (`while(_dmcDmaRunning || _spriteDmaTransfer)`); the code
+                # below is the same state machine.
+                dmc_ready = (self.oam_dmc_running
+                             and not self.oam_dmc_need_halt
+                             and not self.oam_dmc_need_dummy)
+                if (self.dmc_dma_armed and self.dmc_dma_request
+                        and not self.oam_dmc_running):
+                    # A request armed before this cycle joins the running OAM
+                    # DMA instead of stalling the CPU afterwards. It is picked
+                    # up here, at the top of its first cycle, so this cycle's
+                    # branch above already saw "not ready" -- exactly Mesen2's
+                    # ordering (StartDmcTransfer during cycle N, first
+                    # needHalt consumed on N+1).
+                    self.oam_dmc_running = True
+                    self.oam_dmc_need_halt = True
+                    self.oam_dmc_need_dummy = True
+                    self.dmc_dma_request = False
+                    self.dmc_dma_armed = False
                 if self.dma_dummy:
-                    # Even cycle of dummy read - wait
+                    # Alignment prefix: wait for an even (put) cycle.
                     if cpu_cycle % 2 == 0:
                         self.dma_dummy = False
+                elif cpu_cycle % 2 == 1:
+                    # Get cycle: the DMC's sample fetch has priority over the
+                    # OAM copy's read.
+                    if dmc_ready:
+                        self.apu.dmc_deliver(
+                            self.read(self.apu.dmc_read_addr(), False))
+                        self.oam_dmc_running = False
+                        # No OAM byte was read this cycle, so no $2004 write
+                        # is owed: the next put cycle realigns instead.
+                        self.dma_write_pending = False
+                    elif self.dma_transfer:
+                        self.dma_data = self.read(
+                            (self.dma_page << 8) | self.dma_addr, False)
+                        self.dma_write_pending = True
                 else:
-                    # Odd cycle: read byte from PRG ROM
-                    if cpu_cycle % 2 == 1:
-                        self.dma_data = self.read((self.dma_page << 8) | self.dma_addr, False)
-                    else:
-                        # Even cycle: write byte to PPU OAM ($2004)
+                    # Put cycle: only write if a read is waiting to be put.
+                    if self.dma_transfer and self.dma_write_pending:
                         self.write(0x2004, self.dma_data)
                         self.dma_addr += 1
+                        self.dma_write_pending = False
                         if self.dma_addr == 0x00:
                             # DMA complete, reset transfer state
                             self.dma_transfer = False
-                            self.dma_dummy = True
+                            self.dmc_oam_tail_pending = True
+                            # A DMC DMA already in flight keeps the shared
+                            # get/put cadence going: re-arming the OAM
+                            # alignment prefix here would insert idle cycles
+                            # the reference RunDma loop never has.
+                            if not self.oam_dmc_running:
+                                self.dma_dummy = True
+                # One of the DMC DMA's setup cycles is absorbed by this cycle
+                # (halt first, then dummy). OAM DMA's own halt/alignment/
+                # read/write cycle above does double duty.
+                if self.oam_dmc_need_halt:
+                    self.oam_dmc_need_halt = False
+                elif self.oam_dmc_need_dummy:
+                    self.oam_dmc_need_dummy = False
             else:
                 # Normal CPU instruction execution
                 self.cpu.clock()

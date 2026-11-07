@@ -82,6 +82,11 @@ cdef class APU2A03:
     cdef int frame_cycle
     cdef int frame_reset_delay
     cdef int cycle_parity
+    # 1 = the current sample-byte request is a load (first fetch after $4015),
+    # 2 = a reload (the output unit emptied its 1-byte buffer). The 2A03 halts
+    # a load on a get and a reload on a put, which fixes the DMA's length; the
+    # bus uses this to keep the stolen-cycle count phase-independent.
+    cdef int dmc_request_kind
 
     # DMC channel (delta PCM). The channel reads samples from CPU memory via
     # DMA, so it needs a back-reference to the bus to fetch bytes.
@@ -156,6 +161,7 @@ cdef class APU2A03:
         self.frame_cycle = 0
         self.frame_reset_delay = 0
         self.cycle_parity = 0
+        self.dmc_request_kind = 0
 
         self.dmc_irq_enable = 0
         self.dmc_loop = 0
@@ -608,7 +614,7 @@ cdef class APU2A03:
         if self.dmc_transfer_delay > 0:
             self.dmc_transfer_delay -= 1
             if self.dmc_transfer_delay == 0:
-                self.start_dmc_transfer()
+                self.start_dmc_transfer(1)
         # ---- Run: bit timer + byte-boundary lookahead (Mesen2 Run) ----
         # ApuTimer fires when the cycles elapsed exceed the timer; with _timer
         # initialised to _period = table[rate]-1 this is exactly one bit every
@@ -644,7 +650,7 @@ cdef class APU2A03:
                     self.dmc_shift = self.dmc_buffer
                     self.dmc_buffer = -1
                     if self.dmc_transfer_delay == 0:
-                        self.start_dmc_transfer()
+                        self.start_dmc_transfer(2)
 
     cpdef uint16_t dmc_read_addr(self):
         """Address the pending sample-byte fetch reads from (for the bus DMA)."""
@@ -684,14 +690,21 @@ cdef class APU2A03:
         self.dmc_addr = self.dmc_addr_load
         self.dmc_len = self.dmc_len_load
 
-    cdef void start_dmc_transfer(self):
+    cpdef int dmc_dma_request_kind(self):
+        """Whether the pending sample fetch is a load (1) or a reload (2)."""
+        return self.dmc_request_kind
+
+    cdef void start_dmc_transfer(self, int kind=0):
         """Mesen2 StartDmcTransfer(): request a sample-byte DMA.
 
         Only fires when the 1-byte buffer is empty and bytes remain. Pushes the
         request onto the bus; the bus performs the 3-4 cycle CPU stall on the
-        next CPU read and delivers the byte via dmc_deliver().
+        next CPU read and delivers the byte via dmc_deliver(). The 2A03 starts
+        a load on a get cycle and a reload on a put cycle, so the bus needs to
+        know which one it is servicing (NESdev wiki "DMA").
         """
         if self.dmc_buffer < 0 and self.dmc_len > 0 and self.bus_ref is not None:
+            self.dmc_request_kind = kind
             self.bus_ref.dmc_dma_request = True
 
     cdef void arm_dmc_sample(self):
