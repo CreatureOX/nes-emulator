@@ -8,7 +8,7 @@ Up,Down,Left,Right order and later reads return 1. The upper data-bus bits
 are not driven by this device: they keep the address MSB from the open bus
 and are combined by CPUBus.read().
 
-Ref: NESdev wiki "Standard controller"; Mesen2 Core/NES/ControlManager.cpp.
+Ref: NESdev wiki "Standard controller".
 '''
 
 

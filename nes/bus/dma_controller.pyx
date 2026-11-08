@@ -182,10 +182,11 @@ cdef class DmaController:
         Stolen-cycle count. A reload of the 1-byte sample buffer is asked for
         on a put cycle: dbhq-uk/6502's DmcChannel sets `_fetchFrom = cycle +
         2` when the output unit empties the buffer, so halt, dummy, alignment
-        and fetch take four cycles. A load is asked for on a get (`_fetchFrom
-        = writeCycle + 3/4` always picks an even cycle), so its fetch lands
-        on the next get and the CPU read's parity decides between three and
-        four cycles. The exception is the first standalone fetch after an OAM
+        and fetch take four CPU cycles. A load is asked for on a get
+        (`_fetchFrom = writeCycle + 3/4` always picks an even CPU cycle), so
+        its fetch lands on the next get and the CPU read's parity decides
+        between three and four CPU cycles. The exception is the first
+        standalone fetch after an OAM
         DMA ends: the DMC sequence at the tail of the copy is still sharing
         OAM's cadence, so the next get -- not a fixed count -- ends it.
         Ref: dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel;
@@ -211,7 +212,7 @@ cdef class DmaController:
                                        == (cpu_read_addr & 0x1F))
         self.bus.dmc_dma_request = False
         self.request_armed = False
-        cdef int dmc_len = 1
+        cdef int stall_cycles = 1
         cdef bint fixed_length = (self.bus.apu.dmc_dma_request_kind() == 2
                                   and not self.dmc_oam_tail_pending)
         # Initial halt cycle (dummy read of the CPU's address).
@@ -222,18 +223,16 @@ cdef class DmaController:
             # pending dummy read has been consumed; every other cycle is an
             # alignment dummy that reads the CPU's address again.
             if (not need_dummy
-                    and ((fixed_length and dmc_len >= 3)
+                    and ((fixed_length and stall_cycles >= 3)
                          or (not fixed_length
                              and self.bus.divider.cpu_cycle % 2 == 1))):
-                # Fetch cycle: read the sample byte and deliver it.
                 self.halt_cycle(0, False)
                 self.bus.apu.dmc_deliver(
                     self.bus.read(self.bus.apu.dmc_read_addr(), False))
                 self.dmc_oam_tail_pending = False
                 return
-            # Alignment cycle: another dummy read of the CPU's address.
             self.halt_cycle(cpu_read_addr, not skip_dummy_reads)
-            dmc_len += 1
+            stall_cycles += 1
             need_dummy = False
 
     cdef void tick(self, uint64_t cpu_cycle):
@@ -246,10 +245,11 @@ cdef class DmaController:
         lines keep being propagated, so a device IRQ raised mid-transfer is
         seen the moment the CPU resumes.
 
-        Alignment prefix: 1 halt cycle when the $4014 write fell on an odd
-        cpu cycle (first read at W+2, total 513 cycles) and 2 cycles -- halt
-        plus one alignment cycle -- when it fell on an even one (first read at
-        W+3, total 514). The prefix waits for an EVEN cycle, and the transfer
+        Alignment prefix: one halt CPU cycle when the $4014 write fell on an
+        odd CPU cycle (first read at W+2, total 513 CPU cycles), and two CPU
+        cycles -- halt plus one alignment cycle -- when it fell on an even one
+        (first read at W+3, total 514 CPU cycles). The prefix waits for an
+        EVEN CPU cycle, and the transfer
         itself reads on odd / writes on even. Getting this backwards cost a
         full CPU cycle of halt on one parity and made 4-irq_and_dma's dly=526
         row fire an instruction late. Ref: Mesen2 Core/NES/NesCpu.cpp
@@ -259,12 +259,12 @@ cdef class DmaController:
         when both units want the bus on the same cycle the DMC get wins and
         the OAM DMA is paused. Every no-operation cycle (halt, DMC dummy,
         alignment) is free -- it overlaps useful work of the other unit:
-          * a DMC DMA that collides in the middle of the copy costs 2 cycles:
-            1 for the DMC get, then 1 for OAM to re-align to a get;
-          * one that schedules on the second-to-last put costs 1: its halt
-            and dummy cycles ride the last read/put pair;
-          * one that schedules on the last put costs 3: after the DMA its
-            dummy and alignment cycles are still owed.
+          * a DMC DMA that collides in the middle of the copy costs 2 CPU
+            cycles: 1 for the DMC get, then 1 for OAM to re-align to a get;
+          * one that schedules on the second-to-last put costs 1 CPU cycle:
+            its halt and dummy cycles ride the last read/put pair;
+          * one that schedules on the last put costs 3 CPU cycles: after the
+            DMA its dummy and alignment cycles are still owed.
         Mesen2 models this by keeping the DMC request inside the OAM loop
         (`while(_dmcDmaRunning || _spriteDmaTransfer)`); this is the same
         state machine.
@@ -302,13 +302,11 @@ cdef class DmaController:
                     (self.dma_page << 8) | self.dma_addr, False)
                 self.dma_write_pending = True
         else:
-            # Put cycle: only write if a read is waiting to be put.
             if self.dma_transfer and self.dma_write_pending:
                 self.bus.write(0x2004, self.dma_data)
                 self.dma_addr += 1
                 self.dma_write_pending = False
                 if self.dma_addr == 0x00:
-                    # DMA complete, reset transfer state.
                     self.dma_transfer = False
                     self.dmc_oam_tail_pending = True
                     # A DMC DMA already in flight keeps the shared get/put

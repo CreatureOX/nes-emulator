@@ -1744,7 +1744,7 @@ cdef class CPU6502:
         it with a local CPU cycle count would change the 5-/8-/10-dot poll
         margins and is deliberately out of scope for this edge-only change.
 
-        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (NMI).
+        Ref: NESdev wiki "CPU interrupts".
         '''
         if self.nmi_line and not self.nmi_prev_phi2_level:
             self.nmi_pending = True

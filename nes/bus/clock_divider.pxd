@@ -4,8 +4,8 @@ from libc.stdint cimport uint32_t, uint64_t
 cdef class ClockDivider:
     cdef public uint64_t dot
     cdef public uint64_t cpu_cycle
-    cdef public bint on_cpu_cycle
-    cdef public bint on_phi2
+    cdef public bint cpu_tick_edge
+    cdef public bint phi2_edge
     cdef readonly uint32_t ppu_divider
     cdef readonly uint32_t cpu_divider
     cdef uint32_t dots_per_cpu_cycle

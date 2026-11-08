@@ -55,8 +55,8 @@ cdef class ClockDivider:
         Caching keeps the per-PPU-dot hot loop free of division and modulo:
         the divider advances once per dot and every consumer reads a flag.
         '''
-        self.on_cpu_cycle = (self.phase == self.cpu_tick_dot)
-        self.on_phi2 = (self.phase == self.phi2_dot)
+        self.cpu_tick_edge = (self.phase == self.cpu_tick_dot)
+        self.phi2_edge = (self.phase == self.phi2_dot)
 
     cdef void reset(self):
         '''Return the time base to the power-up phase.
@@ -74,7 +74,7 @@ cdef class ClockDivider:
         '''Advance one PPU dot and publish the new clock edges.
 
         cpu_cycle increments only when the phase wraps, matching the prior
-        dot // 3 expression. Consumers see on_cpu_cycle and on_phi2 as
+        dot // 3 expression. Consumers see cpu_tick_edge and phi2_edge as
         signal lines rather than recomputing the phase themselves.
         '''
         self.dot += 1

@@ -82,13 +82,13 @@ cdef class Console:
         self.bus.run_frame()
 
     cpdef void control(self, list pressed):
-        """
+        '''
         Update controller input state.
         
         Args:
             pressed: List of 8 boolean values representing button states.
                      Indices: 0=X, 1=Z, 2=A, 3=S, 4=UP, 5=DOWN, 6=LEFT, 7=RIGHT
-        """
+        '''
         buttons = 0x00
         # Set bits for each pressed button (active low in hardware)
         if pressed[K_x]:

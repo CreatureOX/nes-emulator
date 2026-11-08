@@ -6,7 +6,7 @@ phi2 edges, DmaController owns the DMA stall cadence, and the CPU, PPU and
 APU keep their own state. Only the APU's DMC request line and the CPU
 data-bus open-bus latch are held here as routed signals.
 
-Ref: NESdev wiki "CPU memory map"; Mesen2 Core/NES/CpuMemoryManager.cpp.
+Ref: NESdev wiki "CPU memory map".
 '''
 
 from nes.apu.apu import APU2A03
@@ -25,6 +25,7 @@ cdef class CPUBus:
     DmaController is clocked on CPU-cycle edges.
     '''
     def __init__(self, Cartridge cartridge) -> None:
+        '''Bind the devices and start with a clean signal state.'''
         self.ram = [0x00] * 2 * 1024
         self.joy1 = Joypad()
         self.joy2 = Joypad()
@@ -52,7 +53,7 @@ cdef class CPUBus:
         are level sources too, so both are OR-ed in here rather than cleared
         on service. dot timestamps the signal for the CPU's poll margins.
 
-        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp.
+        Ref: NESdev wiki "CPU interrupts".
         '''
         self.cpu.set_nmi_line(self.ppu.nmi_line)
         self.cpu.set_irq_line(
@@ -60,7 +61,7 @@ cdef class CPUBus:
             or self.apu.irq_level(),
             dot
         )
-        if self.divider.on_phi2:
+        if self.divider.phi2_edge:
             self.cpu.on_phi2(dot)
 
     cpdef uint8_t read(self, uint16_t addr, bint readOnly):
@@ -189,30 +190,30 @@ cdef class CPUBus:
         '''
         Advance one PPU dot and dispatch the edges published by ClockDivider.
 
-        The PPU runs 3x faster than the CPU (3 PPU cycles per CPU cycle).
-        OAM DMA (sprite DMA) transfers take 512 cycles (256 bytes read + 256
-        bytes written) plus a 1-2 cycle alignment prefix, during which the CPU
-        is halted but the PPU/APU and interrupt lines keep running. The APU is
-        clocked on the same CPU cycle the CPU samples its interrupt lines, so
-        an APU frame/DMC IRQ is recognized without a one-cycle lag.
+        The PPU runs 3x faster than the CPU (3 PPU dots per CPU cycle).
+        OAM DMA (sprite DMA) transfers take 512 CPU cycles (256 bytes read +
+        256 bytes written) plus a 1-2 CPU-cycle alignment prefix, during which
+        the CPU is halted but the PPU/APU and interrupt lines keep running. The
+        APU is clocked on the same CPU cycle the CPU samples its interrupt
+        lines, so an APU frame/DMC IRQ is recognized without a one-CPU-cycle
+        lag.
         '''
         cdef unsigned long long cpu_cycle = 0
         cdef long long dot = <long long>self.divider.dot
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
-        cdef bint is_cpu_cycle = self.divider.on_cpu_cycle
+        cdef bint is_cpu_cycle = self.divider.cpu_tick_edge
         # The DMA unit latches the APU request BEFORE the APU is clocked, so a
-        # fetch asked for during this cycle does not halt this cycle's own read
-        # (Mesen2 calls ProcessPendingDma before StartCpuCycle).
+        # fetch asked for during this cycle does not halt this cycle's own read.
         if is_cpu_cycle:
             self.dma.on_cpu_cycle()
             self.apu.clock(1)
         self.propagate_lines(dot)
         # S3 (phase calibration): a CPU cycle spans three PPU dots. The 6502
         # samples its interrupt inputs at phi2, i.e. the MIDDLE dot of the
-        # three (dots 1,4,7,...), not the first. ClockDivider's on_cpu_cycle
-        # edge (phase == 1) puts the observation point at the middle dot,
+        # three (dots 1,4,7,...), not the first. ClockDivider's cpu_tick_edge
+        # flag (phase == 1) puts the observation point at the middle dot,
         # matching hardware; sampling on phase == 0 pushed NMI recognition a
         # full CPU cycle off for 7.nmi_timing's align1 subtests.
         if is_cpu_cycle:
