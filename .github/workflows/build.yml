@@ -53,13 +53,30 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
+      - name: Restore Cython build products
+        id: cython-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            nes/**/*.c
+            nes/**/*.pyd
+            nes/**/*.so
+            build
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+
       - name: Compile Cython extensions
         shell: bash
         run: |
-          rm -rf build
-          find . -name "*.c" -delete
-          find . -name "*.h" -not -name "status_register.h" -delete
+          if [ "${{ steps.cython-cache.outputs.cache-hit }}" = "true" ]; then
+            find nes \( -name "*.c" -o -name "*.pyd" -o -name "*.so" \) -exec touch {} +
+            if [ -d build ]; then find build -type f -exec touch {} +; fi
+          else
+            rm -rf build
+            find . -name "*.c" -delete
+            find . -name "*.h" -not -name "status_register.h" -delete
+          fi
           python setup.py build_ext --inplace
+          python -c "from nes.console import Console"
 
       - name: Self-check (serial, all must-pass ROMs)
         env:
@@ -112,13 +129,30 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
+      - name: Restore Cython build products
+        id: cython-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            nes/**/*.c
+            nes/**/*.pyd
+            nes/**/*.so
+            build
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+
       - name: Compile Cython extensions
         shell: bash
         run: |
-          rm -rf build
-          find . -name "*.c" -delete
-          find . -name "*.h" -not -name "status_register.h" -delete
+          if [ "${{ steps.cython-cache.outputs.cache-hit }}" = "true" ]; then
+            find nes \( -name "*.c" -o -name "*.pyd" -o -name "*.so" \) -exec touch {} +
+            if [ -d build ]; then find build -type f -exec touch {} +; fi
+          else
+            rm -rf build
+            find . -name "*.c" -delete
+            find . -name "*.h" -not -name "status_register.h" -delete
+          fi
           python setup.py build_ext --inplace
+          python -c "from nes.console import Console"
 
       - name: Self-check (serial, all must-pass ROMs)
         env:
@@ -175,13 +209,30 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
+      - name: Restore Cython build products
+        id: cython-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            nes/**/*.c
+            nes/**/*.pyd
+            nes/**/*.so
+            build
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+
       - name: Compile Cython extensions
         shell: bash
         run: |
-          rm -rf build
-          find . -name "*.c" -delete
-          find . -name "*.h" -not -name "status_register.h" -delete
+          if [ "${{ steps.cython-cache.outputs.cache-hit }}" = "true" ]; then
+            find nes \( -name "*.c" -o -name "*.pyd" -o -name "*.so" \) -exec touch {} +
+            if [ -d build ]; then find build -type f -exec touch {} +; fi
+          else
+            rm -rf build
+            find . -name "*.c" -delete
+            find . -name "*.h" -not -name "status_register.h" -delete
+          fi
           python setup.py build_ext --inplace
+          python -c "from nes.console import Console"
 
       - name: Download icon
         run: |
@@ -228,13 +279,30 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
+      - name: Restore Cython build products
+        id: cython-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            nes/**/*.c
+            nes/**/*.pyd
+            nes/**/*.so
+            build
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+
       - name: Compile Cython extensions
         shell: bash
         run: |
-          rm -rf build
-          find . -name "*.c" -delete
-          find . -name "*.h" -not -name "status_register.h" -delete
+          if [ "${{ steps.cython-cache.outputs.cache-hit }}" = "true" ]; then
+            find nes \( -name "*.c" -o -name "*.pyd" -o -name "*.so" \) -exec touch {} +
+            if [ -d build ]; then find build -type f -exec touch {} +; fi
+          else
+            rm -rf build
+            find . -name "*.c" -delete
+            find . -name "*.h" -not -name "status_register.h" -delete
+          fi
           python setup.py build_ext --inplace
+          python -c "from nes.console import Console"
 
       - name: Download icon
         run: |

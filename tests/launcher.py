@@ -5,10 +5,16 @@ results, set the exit code. No judgement here -- every pass/fail rule lives in
 test_judge.py (the single judge), so changing expectations
 never touches this file.
 
-Gating: every expected=pass ROM must pass. A hung ROM is killed (TIMEOUT) and
-a crashed worker is CRASH; both count as red-line failures, but stay non-fatal
-to the sweep -- the watchdog only kills the offending worker, so the remaining
-ROMs still run. Exit code is non-zero when any must-pass ROM fails to PASS.
+Gating: every expected=pass ROM must pass. A ROM past its watchdog is TIMEOUT
+and a crashed worker is CRASH; both are red-line failures, but stay non-fatal
+to the sweep -- watchdog state is per-ROM, so the remaining ROMs still run.
+Exit code is non-zero when any must-pass ROM fails to PASS.
+
+Frame budgets: rom_runner.prepare_run supplies each ROM's official runframes
+budget; tests/frame_budgets.json may shorten individual jobs to a calibrated
+frame count. Every shortened job carries retry_frames back at its official
+budget, so a RUNNING/blank at the short count still reaches its verdict.
+Only the number of emulated frames changes -- the ROM set and the judge do not.
 
 Excluded ROMs (PAL, demo/other, no usable detector, unmapped mapper) are NEVER
 run, by any invocation. A run report is written to tests/reports/latest.md;
@@ -41,6 +47,7 @@ import rom_runner  # noqa: E402
 import test_picker  # noqa: E402
 
 REPORT_DIR = os.path.join(ROOT, "tests", "reports")
+BUDGET_PATH = os.path.join(ROOT, "tests", "frame_budgets.json")
 
 # Per-ROM watchdog: a ROM running longer than this is killed and reported
 # TIMEOUT instead of freezing the sweep / hitting the CI job limit.
@@ -101,17 +108,59 @@ def _print_progress(done, total, d, rid, verdict, pass_n, fail_n):
           f"PASSED={pass_n} FAIL={fail_n}", flush=True)
 
 
+def _effective_cpus():
+    """CPU count actually granted to this process, not the host's total.
+
+    Containers publish a quota in cgroup v2's cpu.max ("<quota> <period>");
+    mp.cpu_count() ignores it and reports the host (32 on a 4-core sandbox),
+    which oversubscribes the pool and loses throughput. Affinity is the next
+    best signal; on a bare runner cpu_count() already matches real cores.
+    Ref: Linux cgroup v2 cpu.max; os.sched_getaffinity(2).
+    """
+    try:
+        with open("/sys/fs/cgroup/cpu.max", encoding="ascii") as f:
+            quota, period = f.read().split()[:2]
+        if quota != "max":
+            return max(1, int(quota) // int(period))
+    except (OSError, ValueError):
+        pass
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        pass
+    return max(1, mp.cpu_count())
+
+
+def _load_frame_budgets():
+    """Read tests/frame_budgets.json, or {} when the file is absent.
+
+    The table is optional: without it every ROM keeps its official runframes
+    budget, so a fresh clone or a stale checkout still gates correctly.
+    """
+    try:
+        with open(BUDGET_PATH, encoding="utf-8") as f:
+            payload = json.load(f)
+        return {str(k): int(v) for k, v in payload["budgets"].items()}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
 def _pick_workers(total):
-    """Worker count for the process pool: one per CPU by default, narrowed by
-    NES_SELFTEST_WORKERS when set (each worker imports numpy/OpenBLAS and can
-    exhaust RAM in a low-memory sandbox). Never widens past the CPU count."""
+    """Worker count for the pool, capped by the CPU quota actually available.
+
+    NES_SELFTEST_WORKERS narrows it further (each worker imports numpy/OpenBLAS
+    and can exhaust RAM in a low-memory sandbox), but can never widen past the
+    effective CPU count: oversubscription is what made the pool slower than a
+    quarter of its size on quota-limited hosts.
+    """
+    cpus = _effective_cpus()
     env_w = os.environ.get("NES_SELFTEST_WORKERS")
     if env_w:
         try:
-            env_w = max(1, min(int(env_w), mp.cpu_count()))
+            return max(1, min(int(env_w), cpus, total))
         except ValueError:
-            env_w = None
-    return env_w if env_w else min(total, mp.cpu_count())
+            pass
+    return max(1, min(total, cpus))
 
 
 def _watchdog_result(j, timeout, verdict):
@@ -123,85 +172,64 @@ def _watchdog_result(j, timeout, verdict):
             "path": j.get("path")}
 
 
-def _drain_remaining(inflight, dir_label, timeout, counters, done, total, res):
-    """After a pool kill, mark every still-inflight job TIMEOUT and emit progress.
+def _run_all_watched(pool, jobs, timeout, counters, workers):
+    """Fan every ROM across one pool, with watchdog state on each future.
 
-    Shared by the TIMEOUT and CRASH sweep-downs so the bookkeeping lives in one
-    place; a poisoned/terminated pool means the rest can't be trusted, so they
-    are reported TIMEOUT (red-line, but non-fatal to the sweep). They are lost
-    for this run; re-run the suite to retry them.
+    One global pool removes the per-directory barrier: a suite with two ROMs
+    used to hold its own pool while the rest of the machine sat idle. Only
+    `workers` futures are in flight at once, so the watchdog clock starts when
+    a ROM is actually picked up -- submitting all 165 at once made queued ROMs
+    time out on a 2-core runner before they ever ran. ready() is non-blocking,
+    so polling costs one short loop, not one wait per future. A ROM past
+    `timeout` is TIMEOUT and a dead worker is CRASH, each on its own row: the
+    pool is never terminated, so a slow ROM cannot turn the rest TIMEOUT.
     """
-    for ar2 in list(inflight):
-        j2, _ = inflight.pop(ar2)
-        r2 = _watchdog_result(j2, timeout, "TIMEOUT")
-        counters["done"] += 1
-        counters["fail_n"] += 1
-        done += 1
-        _print_progress(done, total, dir_label, r2["id"], r2["verdict"],
-                        counters["pass_n"], counters["fail_n"])
-        res.append(r2)
-    return done
+    total = len(jobs)
+    pending = iter(jobs)
+    inflight = {}
 
+    def fill():
+        """Keep the pool saturated without letting queued ROMs age."""
+        while len(inflight) < workers:
+            try:
+                j = next(pending)
+            except StopIteration:
+                break
+            inflight[pool.apply_async(_run_one, (j,))] = (j, time.time())
 
-def _run_batch_watched(pool, jobs, dir_label, timeout, counters):
-    """Fan one directory's jobs across *pool* with a per-ROM watchdog.
-
-    A ROM past `timeout` is killed (TIMEOUT); a worker that crashes is CRASH.
-    Both are red-line failures that stay non-fatal to the sweep, so one bad ROM
-    can't wedge it. The pool is per-directory, so a kill/restart in one suite
-    stays local to it.
-    """
-    print(f"\n=== directory: {dir_label}  ({len(jobs)} ROMs) ===", flush=True)
-    inflight = {pool.apply_async(_run_one, (j,)): (j, time.time())
-                for j in jobs}
+    fill()
     res = []
     done = 0
     while inflight:
         progressed = False
         for ar in list(inflight):
             j, t0 = inflight[ar]
-            try:
-                r = ar.get(timeout=0.5)
-            except mp.TimeoutError:
+            if not ar.ready():
                 if time.time() - t0 > timeout:
-                    pool.terminate()
-                    pool.join()
-                    done = _drain_remaining(inflight, dir_label, timeout,
-                                            counters, done, len(jobs), res)
-                    return res
-                continue
-            except Exception:
-                # Worker process died (segfault). It is CRASH; the rest of this
-                # directory can't be trusted on a poisoned pool, so they are
-                # reported TIMEOUT (red-line, non-fatal to the sweep). Lost for
-                # this run; re-run the suite to retry them.
+                    inflight.pop(ar)
+                    r = _watchdog_result(j, timeout, "TIMEOUT")
+                else:
+                    continue
+            else:
                 inflight.pop(ar)
-                r = _watchdog_result(j, timeout, "CRASH")
-                counters["done"] += 1
-                counters["fail_n"] += 1
-                done += 1
-                _print_progress(done, len(jobs), dir_label, r["id"],
-                                r["verdict"], counters["pass_n"],
-                                counters["fail_n"])
-                res.append(r)
-                pool.terminate()
-                pool.join()
-                done = _drain_remaining(inflight, dir_label, timeout,
-                                        counters, done, len(jobs), res)
-                return res
-            inflight.pop(ar)
+                try:
+                    r = ar.get()
+                except Exception:
+                    r = _watchdog_result(j, timeout, "CRASH")
             counters["done"] += 1
             if r["verdict"] == "PASSED":
                 counters["pass_n"] += 1
             else:
                 counters["fail_n"] += 1
             done += 1
-            _print_progress(done, len(jobs), dir_label, r["id"],
-                            r["verdict"], counters["pass_n"], counters["fail_n"])
+            _print_progress(done, total, test_judge.top_dir(j["id"]),
+                            r["id"], r["verdict"],
+                            counters["pass_n"], counters["fail_n"])
             res.append(r)
             progressed = True
+        fill()
         if not progressed:
-            time.sleep(0.2)
+            time.sleep(0.1)
     return res
 
 
@@ -503,28 +531,37 @@ def main():
               file=sys.stderr)
         return 2
 
-    # Group by top-level dir so each suite runs as one batch.
+    # One global job list: the pool stays saturated from the first ROM to the
+    # last instead of draining between every directory.
     default_frames = int(settings["frames"])
-    jobs_by_dir = {}
+    budgets = _load_frame_budgets()
+    jobs = []
     for t in selected:
         j = rom_runner.prepare_run(t, settings)
+        full = int(j["frames"])
         if args.frames:
-            j["frames"] = args.frames
+            j["frames"] = int(args.frames)
+        elif budgets.get(t["id"]):
+            j["frames"] = max(1, min(int(budgets[t["id"]]), full))
+        # A short budget ALWAYS carries a retry at the official budget, so a
+        # RUNNING/blank at the short count can still reach its verdict. The old
+        # if/elif only injected a retry below [settings].frames and skipped it
+        # for explicit --frames overrides.
+        if int(j["frames"]) < full:
+            j["retry_frames"] = max(full, default_frames)
         elif int(j["frames"]) < default_frames:
             j["retry_frames"] = default_frames
-        jobs_by_dir.setdefault(test_judge.top_dir(t["id"]), []).append(j)
+        jobs.append(j)
 
-    dirs = sorted(jobs_by_dir.keys())
+    dirs = sorted({test_judge.top_dir(j["id"]) for j in jobs})
     counters = {"done": 0, "pass_n": 0, "fail_n": 0}
+    workers = _pick_workers(len(jobs))
 
     timeout = args.timeout if args.timeout and args.timeout > 0 else DEFAULT_ROM_TIMEOUT
-    print(f"Running {len(selected)} ROMs across {len(dirs)} directories "
-          f"(watchdog={timeout}s) ...", flush=True)
-    results = []
-    for d in dirs:
-        with mp.Pool(_pick_workers(len(jobs_by_dir[d]))) as pool:
-            results += _run_batch_watched(pool, jobs_by_dir[d], d, timeout,
-                                          counters)
+    print(f"Running {len(jobs)} ROMs across {len(dirs)} directories "
+          f"({workers} workers, watchdog={timeout}s) ...", flush=True)
+    with mp.Pool(workers) as pool:
+        results = _run_all_watched(pool, jobs, timeout, counters, workers)
     results.sort(key=lambda r: r["id"])
     print(f"\nDone: {counters['done']}/{len(selected)}  "
           f"PASSED={counters['pass_n']} FAIL={counters['fail_n']}", flush=True)
