@@ -1,7 +1,7 @@
 from libc.stdint cimport uint8_t, uint16_t
 
 from nes.bus.clock_divider cimport ClockDivider
-from nes.bus.dma_controller cimport DmaController
+from nes.bus.dma_controller cimport DMAController
 from nes.bus.joypad cimport Joypad
 from nes.cart.cart cimport Cartridge
 from nes.cpu.cpu cimport CPU6502
@@ -19,7 +19,7 @@ cdef class CPUBus:
     # publishes PPU-dot, CPU-cycle and phi2 edges as signals instead.
     cdef public ClockDivider divider
 
-    # APU-driven DMC request signal line. DmaController latches it on each
+    # APU-driven DMC request signal line. DMAController latches it on each
     # CPU-cycle edge; the bus routes it but never interprets it.
     cdef public bint dmc_dma_request
 
@@ -28,7 +28,7 @@ cdef class CPUBus:
     # unmapped PRG) return it; every real read/write refreshes it. See read().
     cdef uint8_t open_bus
 
-    cdef public DmaController dma
+    cdef public DMAController dma
     cdef public CPU6502 cpu
     cdef public PPU2C02 ppu
     cdef public object apu

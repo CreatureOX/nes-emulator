@@ -13,7 +13,7 @@ dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel.
 from libc.stdint cimport uint8_t, uint16_t, uint64_t
 
 
-cdef class DmaController:
+cdef class DMAController:
     '''
     First-class DMA device with its own stall cadence.
 
@@ -75,7 +75,7 @@ cdef class DmaController:
     cdef bint may_halt_on_read(self, bint operand_fetch):
         '''Decide whether a CPU read must be delayed by a DMC sample fetch.
 
-        Only CPU reads trigger it: readOnly reads are the debugger's passive
+        Only CPU reads trigger it: read_only reads are the debugger's passive
         disassembly, an in-flight OAM DMA services its own reads, and a store's
         final cycle is a write, so a request armed there waits for the next
         read. The armed latch is this cycle's sample of the request line, and

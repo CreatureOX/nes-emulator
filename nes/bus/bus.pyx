@@ -2,7 +2,7 @@
 CPU bus: address decoding, signal routing and clock-edge dispatch.
 
 The bus owns no chip phase. ClockDivider publishes the PPU-dot / CPU-cycle /
-phi2 edges, DmaController owns the DMA stall cadence, and the CPU, PPU and
+phi2 edges, DMAController owns the DMA stall cadence, and the CPU, PPU and
 APU keep their own state. Only the APU's DMC request line and the CPU
 data-bus open-bus latch are held here as routed signals.
 
@@ -22,7 +22,7 @@ cdef class CPUBus:
     model: clock() advances one PPU dot; the divider decides which chips see
     an edge. Interfaces: read()/write() decode the CPU address space,
     propagate_lines() drives the /NMI and /IRQ signal lines, and
-    DmaController is clocked on CPU-cycle edges.
+    DMAController is clocked on CPU-cycle edges.
     '''
     def __init__(self, Cartridge cartridge) -> None:
         '''Bind the devices and start with a clean signal state.'''
@@ -40,7 +40,7 @@ cdef class CPUBus:
         self.cartridge = cartridge
         self.cartridge.connect_bus(self)
         self.ppu.connectCartridge(self.cartridge)
-        self.dma = DmaController(self)
+        self.dma = DMAController(self)
         # CPU data-bus open bus: the last value driven onto the bus.
         self.open_bus = 0x00
 
@@ -64,7 +64,7 @@ cdef class CPUBus:
         if self.divider.phi2_edge:
             self.cpu.on_phi2(dot)
 
-    cpdef uint8_t read(self, uint16_t addr, bint readOnly):
+    cpdef uint8_t read(self, uint16_t addr, bint read_only):
         '''
         Read a byte from the system bus.
 
@@ -78,8 +78,8 @@ cdef class CPUBus:
         cdef Joypad pad
         # A pending DMC sample fetch stalls this read before the address is
         # decoded. The DMA unit owns the age test and the stall cadence; see
-        # DmaController.may_halt_on_read.
-        if not readOnly and self.dma.may_halt_on_read(self.cpu.operand_fetch):
+        # DMAController.may_halt_on_read.
+        if not read_only and self.dma.may_halt_on_read(self.cpu.operand_fetch):
             self.dma.run_dmc_dma(addr)
         # Try cartridge space first
         success, data = self.cartridge.readByCPU(addr)
@@ -90,7 +90,7 @@ cdef class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             # PPU registers at $2000-$2007, mirrored every 8 bytes
-            data = self.ppu.readByCPU(addr & 0x0007, readOnly)
+            data = self.ppu.readByCPU(addr & 0x0007, read_only)
         elif addr == 0x4015:
             # APU status register
             data = self.apu.readByCPU(addr)
@@ -121,8 +121,8 @@ cdef class CPUBus:
             # bus); Mesen2 Core/NES/CpuMemoryManager.cpp (ReadOnly).
             data = self.open_bus
         # Track the CPU data-bus open bus on every real (non-debugger) read;
-        # passive debugger disassembly reads (readOnly=True) must not perturb it.
-        if not readOnly:
+        # passive debugger disassembly reads (read_only=True) must not perturb it.
+        if not read_only:
             self.open_bus = data
         return data
 

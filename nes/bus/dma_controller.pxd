@@ -3,7 +3,7 @@ from libc.stdint cimport uint8_t, uint16_t, uint64_t
 from nes.bus.bus cimport CPUBus
 
 
-cdef class DmaController:
+cdef class DMAController:
     cdef CPUBus bus
 
     cdef uint8_t dma_page

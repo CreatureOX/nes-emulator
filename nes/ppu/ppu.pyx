@@ -127,12 +127,12 @@ cdef class PPU2C02:
                     self.open_bus &= <uint8_t>(~(1 << i))
                 self.open_bus_frame[i] = self.frame_count
 
-    cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
+    cdef uint8_t readByCPU(self, uint16_t addr , bint read_only):
         cdef uint8_t data = 0x00
         cdef uint8_t palette
 
         # NOTE: readByCPU is only ever invoked for CPU *reads* (writes go through
-        # writeByCPU). The `readonly` flag is therefore always False from callers.
+        # writeByCPU). The `read_only` flag is therefore always False from callers.
         # Reading $2002 clears VBL (bit7) and sprite-zero (bit6); reading it on
         # the exact dot VBL is set suppresses VBL for that frame (the classic
         # status-read race).
