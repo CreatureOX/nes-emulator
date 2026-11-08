@@ -1,18 +1,5 @@
 from libc.stdint cimport uint32_t
 
-cdef extern from "status_register.h" nogil:
-    ctypedef union StatusUnion:
-        uint32_t value
-    
-    cdef int STATUS_CARRY
-    cdef int STATUS_ZERO
-    cdef int STATUS_INTERRUPT
-    cdef int STATUS_DECIMAL
-    cdef int STATUS_BREAK
-    cdef int STATUS_UNUSED
-    cdef int STATUS_OVERFLOW
-    cdef int STATUS_NEGATIVE
-
 cdef class StatusRegister:
     """
     MOS 6502 Processor Status Register.

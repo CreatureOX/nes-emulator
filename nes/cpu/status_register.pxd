@@ -1,4 +1,4 @@
-from libc.stdint cimport uint32_t, uint8_t
+from libc.stdint cimport uint32_t
 
 cdef extern from "status_register.h":
     ctypedef union StatusUnion:
