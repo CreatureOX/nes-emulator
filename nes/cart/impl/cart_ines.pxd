@@ -6,8 +6,8 @@ from nes.cart.cart cimport Header, Cartridge
 cdef class INesCart(Cartridge):
     cdef INesHeader header
     # PlayChoice-10 INST-ROM and PROM data that follow the CHR ROM data.
-    cdef bytes pc10_inst_rom
-    cdef bytes pc10_prom
+    cdef bytes playchoice10_inst_rom
+    cdef bytes playchoice10_prom
 
 cdef class INesHeader(Header):
     cdef bytes constant
