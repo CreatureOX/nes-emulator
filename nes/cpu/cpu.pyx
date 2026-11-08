@@ -1714,40 +1714,56 @@ cdef class CPU6502:
         self.in_interrupt = True
 
     cdef void set_nmi_line(self, bint level):
-        """Drive the /NMI input line (called by the bus every system clock).
+        '''Drive the /NMI input line level on every PPU dot.
+
+        The PPU drives the level through the signal line; it never reaches
+        into the CPU. Edge detection is deliberately NOT here: on_phi2()
+        samples the level on the phi2 edge published by ClockDivider, so the
+        CPU only needs to know that an edge arrived, not which system-wide
+        counter produced it.
+        '''
+        self.nmi_line = level
+
+    cdef void on_phi2(self, long long dot):
+        '''Sample the /NMI line on the phi2 edge and latch a pending NMI.
 
         The 6502 NMI input is edge-sensitive: a low->high transition of the
         internal signal (here modeled as False->True) latches a pending NMI,
-        which is serviced at the next instruction boundary. The PPU only
-        drives the level; it never reaches into the CPU.
+        which is serviced at the next instruction boundary. The edge is
+        detected SYNCHRONOUSLY, by sampling the line level at phi2 (one PPU
+        dot after the CPU's cycle tick) and comparing against the previous
+        phi2 sample. A pulse that rises and falls entirely between two phi2
+        instants is never seen (6.nmi_disable: disabling NMI 0-1 PPU clocks
+        after VBL must NOT fire, 3-4 clocks after MUST fire). The pending
+        flag stays latched once set, so a sustained high line produces
+        exactly one NMI.
 
-        S2: the edge is detected SYNCHRONOUSLY, by sampling the line level at
-        phi2 (bus dot % 3 == 2, one dot after the CPU's cycle tick) and
-        comparing against the previous phi2 sample. A pulse that rises and
-        falls entirely between two phi2 instants is never seen (6.nmi_disable:
-        disabling NMI 0-1 PPU clocks after VBL must NOT fire, 3-4 clocks
-        after MUST fire). The pending flag stays latched once set, so a
-        sustained high line produces exactly one NMI.
-        """
-        if self.bus.divider.dot % 3 == 2:
-            if level and not self.nmi_prev_phi2_level:
-                self.nmi_pending = True
-                self.nmi_latch_dot = <long long>self.bus.divider.dot
-            self.nmi_prev_phi2_level = level
-        self.nmi_line = level
+        dot is the PPU-dot timestamp delivered with the phi2 edge. It is
+        compared against instruction-boundary dots in clock(), so it stays in
+        PPU-dot units; the CPU does not read a system-wide counter. Replacing
+        it with a local CPU cycle count would change the 5-/8-/10-dot poll
+        margins and is deliberately out of scope for this edge-only change.
 
-    cdef void set_irq_line(self, bint level):
-        """Drive the /IRQ input line (called by the bus every system clock).
+        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (NMI).
+        '''
+        if self.nmi_line and not self.nmi_prev_phi2_level:
+            self.nmi_pending = True
+            self.nmi_latch_dot = dot
+        self.nmi_prev_phi2_level = self.nmi_line
+
+    cdef void set_irq_line(self, bint level, long long dot):
+        '''Drive the /IRQ input line level on every PPU dot.
 
         Unlike NMI, the 6502 IRQ input is level-sensitive: there is no edge
         latch. The CPU simply samples the current level at each instruction
         boundary and services it when the I flag is clear. The asserting
         device must hold the line until it is acknowledged through its own
         registers (MMC3 $E000, APU $4015 read, ...); the bus never
-        force-clears it on service.
-        """
+        force-clears it on service. dot timestamps the rising edge in PPU
+        dots, delivered with the signal rather than read from a global clock.
+        '''
         if level and not self.irq_line:
-            self.irq_latch_dot = <long long>self.bus.divider.dot
+            self.irq_latch_dot = dot
         self.irq_line = level
 
     cdef void irq(self):
@@ -1848,7 +1864,7 @@ cdef class CPU6502:
         # one-cycle (3-dot) latency error that throws the NMI timing tests.
         self.remaining_cycles = 7
         
-    cdef uint8_t clock(self) except *:
+    cdef uint8_t clock(self, long long dot) except *:
         '''
         Perform one clock cycle of CPU execution.
 
@@ -1861,6 +1877,12 @@ cdef class CPU6502:
         halted since the previous clock, so edges latched during the halt are
         not attributed one instruction early. Then decrement the cycle
         counter.
+
+        dot is the PPU-dot timestamp of this CPU-cycle edge, delivered by
+        ClockDivider. The CPU reads no system-wide counter: every time value
+        it compares arrives with a clock edge or a signal line. Replacing the
+        dot unit with a local CPU cycle count would change the 5-/8-/10-dot
+        poll margins and is deliberately out of scope for this change.
         '''
         cdef Op op
         cdef uint8_t op_cycles = 0
@@ -1886,7 +1908,7 @@ cdef class CPU6502:
         cdef long long eff_now = 0
         cdef bint stalled = False
 
-        tick = <long long>self.bus.divider.dot
+        tick = dot
         prev_clock_dot = self.last_clock_dot
         stalled = (prev_clock_dot >= 0 and prev_clock_dot + 3 != tick)
         self.last_clock_dot = tick
@@ -1913,7 +1935,7 @@ cdef class CPU6502:
             # late" that breaks 7.nmi_timing's align1 subtest.
             #
             # NMI is edge-triggered: self.nmi_pending is latched by the rising
-            # edge in set_nmi_line() and cleared when the NMI is taken, so a
+            # edge in on_phi2() and cleared when the NMI is taken, so a
             # single edge produces exactly one NMI. IRQ is level-triggered: we
             # read the live line and gate on the I flag.
             #

@@ -156,7 +156,10 @@ cdef class CPU6502:
     # the current phi2 sample against this to detect a low->high transition.
     cdef bint nmi_prev_phi2_level
     cdef bint nmi_pending
+    # Level propagation runs on every PPU dot; the edge detector runs only on
+    # the phi2 edge published by ClockDivider.
     cdef void set_nmi_line(self, bint level)
+    cdef void on_phi2(self, long long dot)
 
     # A1: /IRQ signal line (level driven by mapper/APU, sampled by CPU at
     # instruction boundaries and masked by the I flag; no edge latch)
@@ -166,7 +169,7 @@ cdef class CPU6502:
                                     # DMC DMA may halt there -- see CPUBus.read)
     cdef uint8_t read(self, uint16_t addr)
     cdef uint8_t read_operand(self, uint16_t addr)
-    cdef void set_irq_line(self, bint level)
+    cdef void set_irq_line(self, bint level, long long dot)
 
     # HARDWARE QUIRK method: page-cross dummy read (see doc/13-quirk-method-extraction.md)
     cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr)
@@ -275,5 +278,5 @@ cdef class CPU6502:
 
     cdef int clock_count
 
-    cdef uint8_t clock(self) except *
+    cdef uint8_t clock(self, long long dot) except *
     cpdef bint complete(self)

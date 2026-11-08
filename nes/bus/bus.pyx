@@ -56,7 +56,13 @@ cdef class CPUBus:
         whose result is discarded: on hardware the halted CPU's address is what
         sits on the bus, so the side effects of that address fire an extra
         time (Mesen2 ProcessPendingDma).
+
+        The three dots advance the shared ClockDivider, and the interrupt
+        levels are propagated once at the end together with the current dot
+        timestamp. A phi2 edge is dispatched to the CPU only when the final
+        dot is one, preserving the old per-dot edge-detection cadence.
         """
+        cdef long long dot
         self.divider.advance()
         self.ppu.clock()
         self.divider.advance()
@@ -64,11 +70,15 @@ cdef class CPUBus:
         self.divider.advance()
         self.ppu.clock()
         self.apu.clock(1)
+        dot = <long long>self.divider.dot
         self.cpu.set_nmi_line(self.ppu.nmi_line)
         self.cpu.set_irq_line(
             (self.cartridge.mapper.IRQ_state() != 0)
-            or self.apu.irq_level()
+            or self.apu.irq_level(),
+            dot
         )
+        if self.divider.on_phi2:
+            self.cpu.on_phi2(dot)
         if do_dummy_read:
             self.read(dummy_addr, False)
 
@@ -361,6 +371,7 @@ cdef class CPUBus:
         cdef uint8_t cycles = 0
         cdef unsigned long long cpu_cycle = 0
         cdef bint dmc_ready = False
+        cdef long long dot = <long long>self.divider.dot
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
@@ -391,8 +402,13 @@ cdef class CPUBus:
         self.cpu.set_nmi_line(self.ppu.nmi_line)
         self.cpu.set_irq_line(
             (self.cartridge.mapper.IRQ_state() != 0)
-            or self.apu.irq_level()
+            or self.apu.irq_level(),
+            dot
         )
+        # The CPU edge-detects /NMI only on the phi2 edge; the divider owns
+        # that phase, so the CPU never asks which dot it is.
+        if self.divider.on_phi2:
+            self.cpu.on_phi2(dot)
         # S3 (phase calibration): a CPU cycle spans three PPU dots. The 6502
         # samples its interrupt inputs at phi2, i.e. the MIDDLE dot of the
         # three (dots 1,4,7,...), not the first. Clocking the CPU on
@@ -502,7 +518,7 @@ cdef class CPUBus:
                     self.oam_dmc_need_dummy = False
             else:
                 # Normal CPU instruction execution
-                self.cpu.clock()
+                self.cpu.clock(dot)
 
         self.divider.advance()
 
