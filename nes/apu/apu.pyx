@@ -31,96 +31,6 @@ cdef class APU2A03:
     Implements two pulse channels with sweep, envelope, and length counters.
     Uses a NES-like filter chain for authentic audio output.
     """
-    cdef public int sample_rate
-    cdef public double cpu_rate
-    cdef double cycles_per_sample
-    cdef double sample_accum
-    cdef object _samples
-
-    cdef int pulse_duty[2]
-    cdef int pulse_volume[2]
-    cdef int pulse_constant[2]
-    cdef int pulse_env_period[2]
-    cdef int pulse_env_divider[2]
-    cdef int pulse_env_decay[2]
-    cdef int pulse_env_start[2]
-    cdef int pulse_timer[2]
-    cdef int pulse_period[2]
-    cdef int pulse_step[2]
-    cdef int pulse_sweep_enabled[2]
-    cdef int pulse_sweep_period[2]
-    cdef int pulse_sweep_negate[2]
-    cdef int pulse_sweep_shift[2]
-    cdef int pulse_sweep_divider[2]
-    cdef int pulse_sweep_reload[2]
-    cdef int pulse_sweep_mute[2]
-
-    # Length counters exist for all four main channels -- pulse 1, pulse 2,
-    # triangle, noise -- even though only the pulse channels are synthesised.
-    # $4015 reports them and the frame counter clocks them, so they have to be
-    # modelled independently of whether the channel makes any sound.
-    cdef int channel_enabled[4]
-    cdef int length_counter[4]
-    cdef int length_halt[4]
-    # Deferred length-counter reload (port of Mesen2 ApuLengthCounter). A
-    # $4003/$4007 (or triangle/noise equivalent) write stores the reload value
-    # plus a snapshot of the counter *at write time*; the reload is applied on
-    # the cycle after the frame-counter step, not immediately. A reload write
-    # that coincides with the half-frame clock is therefore ignored when the
-    # counter was clocked in between (length > 0 at the clock) -- this is what
-    # makes blargg's len_reload_timing subtests 4 & 5 pass.
-    cdef int length_reload_pending[4]   # 0 = no pending reload
-    cdef int length_reload_prev[4]      # counter value snapshotted at write time
-    # Halt bit is applied after the frame-counter step too, so a halt write that
-    # coincides with the half-frame clock is seen one cycle late (len_halt_timing).
-    cdef int length_new_halt[4]
-
-    # Frame counter ("frame sequencer"), driven from $4017.
-    cdef int frame_mode          # 0 = 4-step, 1 = 5-step
-    cdef int frame_irq_inhibit
-    cdef int frame_irq_flag
-    cdef int frame_cycle
-    cdef int frame_reset_delay
-    cdef int cycle_parity
-    # 1 = the current sample-byte request is a load (first fetch after $4015),
-    # 2 = a reload (the output unit emptied its 1-byte buffer). The 2A03 halts
-    # a load on a get and a reload on a put, which fixes the DMA's length; the
-    # bus uses this to keep the stolen-cycle count phase-independent.
-    cdef int dmc_request_kind
-
-    # DMC channel (delta PCM). The channel reads samples from CPU memory via
-    # DMA, so it needs a back-reference to the bus to fetch bytes.
-    #
-    # State machine mirrors Mesen2's DeltaModulationChannel (Core/NES/APU/
-    # DeltaModulationChannel.cpp) field-for-field; names in (_parens) below.
-    cdef int dmc_irq_enable        # _irqEnabled
-    cdef int dmc_loop              # _loopFlag
-    cdef int dmc_rate              # $4010 bits 3-0 index into DMC_RATE_TABLE
-    cdef int dmc_addr              # _currentAddr  -- current sample fetch address
-    cdef int dmc_addr_load         # _sampleAddr   -- 0xC000 + (val<<6)
-    cdef int dmc_len               # _bytesRemaining
-    cdef int dmc_len_load          # _sampleLength -- (val<<4)|1
-    cdef int dmc_buffer            # _readBuffer   -- -1 when empty
-    cdef int dmc_shift             # _shiftRegister (8 bits)
-    cdef int dmc_bits              # _bitsRemaining
-    cdef int dmc_timer             # _timer        -- countdown; fires (reloads) when < 0
-    cdef int dmc_period            # _period       -- DMC_RATE_TABLE[rate] - 1 (Mesen2 stores table-1)
-    cdef int dmc_silence           # _silenceFlag  -- 1 while the output unit is silent
-    cdef int dmc_transfer_delay    # _transferStartDelay -- cycles until the first DMA after enable (2/3)
-    cdef int dmc_disable_delay     # _disableDelay -- cycles until the channel stops after $4015 bit4=0 (2/3)
-    cdef int dmc_irq_flag          # DMC interrupt flag (bit 7 of $4015 read)
-    cdef int dmc_output            # delta counter, 0-125
-    cdef public object bus_ref
-
-    cdef double last_output
-    cdef double hp1_last_input
-    cdef double hp1_last_output
-    cdef double hp2_last_input
-    cdef double hp2_last_output
-    cdef double lp_last_output
-    cdef double hp1_coef
-    cdef double hp2_coef
-    cdef double lp_coef
 
     def __cinit__(self, object bus, int sample_rate=44100,
                   double cpu_rate=1789772.5):
@@ -132,7 +42,7 @@ cdef class APU2A03:
             sample_rate: Audio sample rate in Hz (default: 44100)
             cpu_rate: CPU clock rate in Hz (default: 1789772.5 for NTSC NES)
         """
-        self.bus_ref = bus
+        self.bus = bus
         self.sample_rate = sample_rate
         self.cpu_rate = cpu_rate
         self.cycles_per_sample = self.cpu_rate / self.sample_rate
@@ -189,7 +99,7 @@ cdef class APU2A03:
         self.dmc_disable_delay = 0
         self.dmc_irq_flag = 0
         self.dmc_output = 0
-        # bus_ref is structural wiring installed by __cinit__ and MUST NOT
+        # bus is structural wiring installed by __cinit__ and MUST NOT
         # be cleared here: bus.reset() and bus.power_up() call this method
         # again while the same bus is alive, and wiping it would leave the
         # DMC channel unable to request its sample-byte DMA.
@@ -225,13 +135,13 @@ cdef class APU2A03:
         """Initialize APU state at power-up."""
         self.reset()
 
-    cpdef int readByCPU(self, int addr):
+    cpdef uint8_t read(self, int addr):
         """
         Read from APU registers (0x4015 status register).
         
         Returns channel enable status bits.
         """
-        cdef int status
+        cdef uint8_t status
         cdef int channel
         if addr == 0x4015:
             status = 0
@@ -262,7 +172,7 @@ cdef class APU2A03:
             return status
         return 0
 
-    cpdef void writeByCPU(self, int addr, int data):
+    cpdef void write(self, int addr, int data):
         """
         Write to an APU register.
 
@@ -428,7 +338,7 @@ cdef class APU2A03:
             self._half_frame()
         self.frame_reset_delay = 3 if self.cycle_parity else 4
 
-    cdef inline bint _pulse_active(self, int channel):
+    cdef bint _pulse_active(self, int channel):
         """A pulse channel runs while it is enabled and its length is non-zero."""
         return self.channel_enabled[channel] and self.length_counter[channel] > 0
 
@@ -610,8 +520,8 @@ cdef class APU2A03:
                 # (real hardware halts the CPU for one cycle even on a cancelled
                 # transfer), so we only clear the request flag here.
                 self.dmc_len = 0
-                if self.bus_ref is not None:
-                    self.bus_ref.dmc_dma_request = False
+                if self.bus is not None:
+                    self.bus.dmc_dma_request = False
         if self.dmc_transfer_delay > 0:
             self.dmc_transfer_delay -= 1
             if self.dmc_transfer_delay == 0:
@@ -667,8 +577,8 @@ cdef class APU2A03:
         when it starts the transfer; we also clear it here so a stale request
         can never wedge the channel.
         """
-        if self.bus_ref is not None:
-            self.bus_ref.dmc_dma_request = False
+        if self.bus is not None:
+            self.bus.dmc_dma_request = False
         if self.dmc_len > 0:
             self.dmc_buffer = byte & 0xFF
             self.dmc_addr = (self.dmc_addr + 1) & 0xFFFF
@@ -695,7 +605,7 @@ cdef class APU2A03:
         """Whether the pending sample fetch is a load (1) or a reload (2)."""
         return self.dmc_request_kind
 
-    cdef void start_dmc_transfer(self, int kind=0):
+    cdef void start_dmc_transfer(self, int kind):
         """Mesen2 StartDmcTransfer(): request a sample-byte DMA.
 
         Only fires when the 1-byte buffer is empty and bytes remain. Pushes the
@@ -704,9 +614,9 @@ cdef class APU2A03:
         a load on a get cycle and a reload on a put cycle, so the bus needs to
         know which one it is servicing (NESdev wiki "DMA").
         """
-        if self.dmc_buffer < 0 and self.dmc_len > 0 and self.bus_ref is not None:
+        if self.dmc_buffer < 0 and self.dmc_len > 0 and self.bus is not None:
             self.dmc_request_kind = kind
-            self.bus_ref.dmc_dma_request = True
+            self.bus.dmc_dma_request = True
 
     cdef void arm_dmc_sample(self):
         """Mesen2 SetEnabled(true): (re)start the sample reader.
@@ -725,8 +635,8 @@ cdef class APU2A03:
         when it hits 0 the first sample-byte DMA is requested.
         """
         if self.dmc_len == 0:
-            if self.bus_ref is not None:
-                self.bus_ref.dmc_dma_request = False
+            if self.bus is not None:
+                self.bus.dmc_dma_request = False
             self.init_dmc_sample()
             self.dmc_transfer_delay = 2 if self.cycle_parity == 1 else 3
 

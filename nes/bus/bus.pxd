@@ -6,7 +6,7 @@ from nes.bus.joypad cimport Joypad
 from nes.cart.cart cimport Cartridge
 from nes.cpu.cpu cimport CPU6502
 from nes.ppu.ppu cimport PPU2C02
-# from nes.apu.apu cimport APU2A03
+from nes.apu.apu cimport APU2A03
 
 
 cdef class CPUBus:
@@ -31,7 +31,7 @@ cdef class CPUBus:
     cdef public DMAController dma
     cdef public CPU6502 cpu
     cdef public PPU2C02 ppu
-    cdef public object apu
+    cdef public APU2A03 apu
     cdef Cartridge cartridge
 
     cdef void propagate_lines(self, long long dot)

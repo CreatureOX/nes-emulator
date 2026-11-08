@@ -9,9 +9,6 @@ data-bus open-bus latch are held here as routed signals.
 Ref: NESdev wiki "CPU memory map".
 '''
 
-from nes.apu.apu import APU2A03
-
-
 cdef class CPUBus:
     '''
     Signal router connecting the CPU, PPU, APU, cartridge and DMA unit.
@@ -72,6 +69,8 @@ cdef class CPUBus:
         - $4020-$FFFF: Cartridge space (PRG ROM/RAM)
         '''
         cdef Joypad pad
+        cdef uint8_t data
+        cdef bint success
         # A pending DMC sample fetch stalls this read before the address is
         # decoded. The DMA unit owns the age test and the stall cadence; see
         # DMAController.may_halt_on_read.
@@ -89,7 +88,7 @@ cdef class CPUBus:
             data = self.ppu.readByCPU(addr & 0x0007, read_only)
         elif addr == 0x4015:
             # APU status register
-            data = self.apu.readByCPU(addr)
+            data = self.apu.read(addr)
         elif 0x4016 <= addr <= 0x4017:
             # Controller registers - shift data out serially.
             #
@@ -105,7 +104,7 @@ cdef class CPUBus:
                 pad = self.joy1
             else:
                 pad = self.joy2
-            data = ((addr >> 8) & 0xE0) | pad.read()
+            data = <uint8_t>(((addr >> 8) & 0xE0) | pad.read())
         else:
             # Undriven CPU reads: write-only APU registers ($4000-$4014) and the
             # unmapped APU range ($4018-$40FF) -- and any other unmapped space --
@@ -146,7 +145,7 @@ cdef class CPUBus:
             self.ppu.writeByCPU(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
             # APU registers
-            self.apu.writeByCPU(addr, data)
+            self.apu.write(addr, data)
         elif addr == 0x4014:
             # Sprite DMA - the DMA unit owns the 256-byte copy and its halt
             # cadence; the bus only routes the register write.
