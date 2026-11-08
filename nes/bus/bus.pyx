@@ -16,17 +16,18 @@ cdef class CPUBus:
     '''
     Signal router connecting the CPU, PPU, APU, cartridge and DMA unit.
 
-    State owned: the 2 KiB CPU RAM mirror, the controller button bytes, the
-    APU-driven DMC request line, the CPU data-bus open-bus latch and the
-    master clock divider. Timing model: clock() advances one PPU dot; the
-    divider decides which chips see an edge. Interfaces: read()/write()
-    decode the CPU address space, propagate_lines() drives the /NMI and /IRQ
-    signal lines, and DmaController is clocked on CPU-cycle edges.
+    State owned: the 2 KiB CPU RAM mirror, the APU-driven DMC request line,
+    the CPU data-bus open-bus latch and the master clock divider. The two
+    Joypad devices own their own button latches and shift registers. Timing
+    model: clock() advances one PPU dot; the divider decides which chips see
+    an edge. Interfaces: read()/write() decode the CPU address space,
+    propagate_lines() drives the /NMI and /IRQ signal lines, and
+    DmaController is clocked on CPU-cycle edges.
     '''
     def __init__(self, Cartridge cartridge) -> None:
         self.ram = [0x00] * 2 * 1024
-        self.controller = [0x00,0x00]
-        self.controller_state = [0x00,0x00]
+        self.joy1 = Joypad()
+        self.joy2 = Joypad()
         self.divider = ClockDivider()
         self.dmc_dma_request = False
 
@@ -73,6 +74,7 @@ cdef class CPUBus:
         - $4016-$4017: Controller I/O registers
         - $4020-$FFFF: Cartridge space (PRG ROM/RAM)
         '''
+        cdef Joypad pad
         # A pending DMC sample fetch stalls this read before the address is
         # decoded. The DMA unit owns the age test and the stall cadence; see
         # DmaController.may_halt_on_read.
@@ -102,11 +104,11 @@ cdef class CPUBus:
             # (RTI) when no button is pressed -- bits 5-7 must be 0x40, not 0.
             # Ref: NESdev wiki "Standard controller" (the top bits retain the
             # address MSB; Paperboy relies on reads returning exactly $40/$41).
-            port = addr & 0x0001
-            d0 = 1 if (self.controller_state[port] & 0x80) > 0 else 0
-            data = ((addr >> 8) & 0xE0) | d0
-            self.controller_state[port] = (
-                (self.controller_state[port] << 1) | 1) & 0xFF
+            if (addr & 0x0001) == 0:
+                pad = self.joy1
+            else:
+                pad = self.joy2
+            data = ((addr >> 8) & 0xE0) | pad.read()
         else:
             # Undriven CPU reads: write-only APU registers ($4000-$4014) and the
             # unmapped APU range ($4018-$40FF) -- and any other unmapped space --
@@ -152,9 +154,10 @@ cdef class CPUBus:
             # Sprite DMA - the DMA unit owns the 256-byte copy and its halt
             # cadence; the bus only routes the register write.
             self.dma.start_oam(data)
-        elif 0x4016 <= addr <= 0x4017:
-            # Controller strobe - reset shift counters
-            self.controller_state[addr & 0x0001] = self.controller[addr & 0x0001]
+        elif addr == 0x4016:
+            # Controller strobe - latch port 1's button byte. $4017 is the
+            # APU frame-counter write, decoded by the APU branch above.
+            self.joy1.strobe()
         # A write drives the data bus with `data`, so the open bus takes that
         # value -- the next undriven read will see it. Ref: NESdev wiki
         # "CPU memory map" (open bus).

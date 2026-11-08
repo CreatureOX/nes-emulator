@@ -2,6 +2,7 @@ from libc.stdint cimport uint8_t, uint16_t
 
 from nes.bus.clock_divider cimport ClockDivider
 from nes.bus.dma_controller cimport DmaController
+from nes.bus.joypad cimport Joypad
 from nes.cart.cart cimport Cartridge
 from nes.cpu.cpu cimport CPU6502
 from nes.ppu.ppu cimport PPU2C02
@@ -10,8 +11,10 @@ from nes.ppu.ppu cimport PPU2C02
 
 cdef class CPUBus:
     cdef uint8_t[2048] ram
-    cdef public uint8_t[2] controller
-    cdef uint8_t[2] controller_state
+    # Controller ports are first-class devices; the bus holds no button or
+    # shift-register state of its own.
+    cdef public Joypad joy1
+    cdef public Joypad joy2
     # The single time base. No chip owns a system-wide counter; the divider
     # publishes PPU-dot, CPU-cycle and phi2 edges as signals instead.
     cdef public ClockDivider divider

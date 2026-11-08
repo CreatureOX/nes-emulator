@@ -89,25 +89,25 @@ cdef class Console:
             pressed: List of 8 boolean values representing button states.
                      Indices: 0=X, 1=Z, 2=A, 3=S, 4=UP, 5=DOWN, 6=LEFT, 7=RIGHT
         """
-        # Clear the controller state byte
-        self.bus.controller[0] = 0x00
+        buttons = 0x00
         # Set bits for each pressed button (active low in hardware)
         if pressed[K_x]:
-            self.bus.controller[0] |= 0x80
+            buttons |= 0x80
         if pressed[K_z]:
-            self.bus.controller[0] |= 0x40
+            buttons |= 0x40
         if pressed[K_a]:
-            self.bus.controller[0] |= 0x20
+            buttons |= 0x20
         if pressed[K_s]:
-            self.bus.controller[0] |= 0x10
+            buttons |= 0x10
         if pressed[K_UP]:
-            self.bus.controller[0] |= 0x08
+            buttons |= 0x08
         if pressed[K_DOWN]:
-            self.bus.controller[0] |= 0x04
+            buttons |= 0x04
         if pressed[K_LEFT]:
-            self.bus.controller[0] |= 0x02
+            buttons |= 0x02
         if pressed[K_RIGHT]:
-            self.bus.controller[0] |= 0x01
+            buttons |= 0x01
+        self.bus.joy1.buttons = buttons
 
     cpdef void save_state(self, str archive_path):
         """Serialize complete console state to a file."""
