@@ -9,7 +9,7 @@ from nes.ppu.ppu_sprite cimport *
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
 
-# $2007 read model (Mesen2 _ignoreVramRead): a page-cross dummy read of an
+# $2007 read model: a page-cross dummy read of an
 # absolute-indexed LDA (blargg double_2007_read: `lda $20F7,x` with x=$10 reads
 # $2007 twice, 3 PPU dots apart) must return the SAME buffer value on both the
 # dummy and the real read, because the PPU's read-buffer refill has not yet
@@ -308,8 +308,8 @@ cdef class PPU2C02:
             # x=$10 reads $2007 twice, 3 PPU dots apart). Hardware presents the
             # SAME buffer value to that second read rather than the freshly
             # refilled one, because the first read's refill has not yet latched
-            # into what the second read returns (Mesen2 _ignoreVramRead). The CPU
-            # sets _page_cross_echo right after the dummy read, so the partner
+            # into what the second read returns. The CPU sets
+            # _page_cross_echo right after the dummy read, so the partner
             # read returns the value the dummy read returned (_prev_read_value)
             # instead of the new buffer, then performs its own refill + increment
             # exactly like a normal read -- leaving the address advanced once per

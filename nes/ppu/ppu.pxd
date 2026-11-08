@@ -30,7 +30,7 @@ cdef class PPU2C02:
     cdef uint8_t address_latch
     cdef uint8_t ppu_data_buffer
 
-    # Page-cross echo model for $2007 reads (Mesen2 _ignoreVramRead). When the
+    # Page-cross echo model for $2007 reads. When the
     # CPU performs a page-cross dummy read of $2007 (absolute-indexed read that
     # crosses a page), the immediately following $2007 read must return the SAME
     # buffer value the dummy read returned, because that partner read lands

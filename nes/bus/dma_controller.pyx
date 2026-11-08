@@ -6,8 +6,8 @@ cycles, and the latched APU request. The CPUBus is only a signal router: it
 forwards $4014 writes, APU request levels and CPU reads here, and clocks this
 unit on CPU-cycle edges. No chip state is kept on the bus.
 
-Ref: Mesen2 Core/NES/NesCpu.cpp (ProcessPendingDma); NESdev wiki "DMA";
-dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel.
+Ref: NESdev wiki "DMA"; dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel;
+blargg dmc_dma_during_read4 / dma_4016_read / 4-irq_and_dma.
 '''
 
 from libc.stdint cimport uint8_t, uint16_t, uint64_t
@@ -28,8 +28,8 @@ cdef class DMAController:
     ClockDivider supplies the CPU-cycle parity. The CPU is never clocked while
     this device owns the bus.
 
-    Ref: Mesen2 Core/NES/NesCpu.cpp (ProcessPendingDma); NESdev wiki "DMA";
-    dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel.
+    Ref: NESdev wiki "DMA"; dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel;
+    blargg dmc_dma_during_read4 / dma_4016_read / 4-irq_and_dma.
     '''
     def __init__(self, CPUBus bus):
         '''Bind the signal router and start with no transfer in flight.'''
@@ -64,7 +64,7 @@ cdef class DMAController:
         read path uses it to tell a fresh request from an older one. This is
         the DMA unit's own stall cadence, not a bus-wide age flag.
 
-        Ref: Mesen2 Core/NES/NesCpu.cpp (ProcessPendingDma).
+        Ref: NESdev wiki "DMA"; dbhq-uk/6502 NesBus.RunDma.
         '''
         self.request_armed = self.bus.dmc_dma_request
         if self.request_armed:
@@ -91,8 +91,8 @@ cdef class DMAController:
         deferred operand fetches themselves, which really do read the bus on
         silicon, so halting there is correct.
 
-        Ref: NESdev wiki "CPU memory access"; Mesen2 Core/NES/NesCpu.cpp
-        (MemoryRead -> ProcessPendingDma).
+        Ref: NESdev wiki "CPU memory access"; NESdev wiki "DMA";
+        blargg dmc_dma_during_read4 / dmc_test.
         '''
         return (not self.dma_transfer
                 and self.request_armed
@@ -129,7 +129,7 @@ cdef class DMAController:
         When do_dummy_read is set the cycle ends with a read of dummy_addr
         whose result is discarded: on hardware the halted CPU's address is
         what sits on the bus, so the side effects of that address fire an
-        extra time (Mesen2 ProcessPendingDma).
+        extra time (blargg dmc_dma_during_read4, double_2007_read).
         '''
         cdef long long dot
         self.bus.divider.advance()
@@ -147,8 +147,8 @@ cdef class DMAController:
     cdef void run_dmc_dma(self, uint16_t cpu_read_addr):
         '''Halt the CPU and run a DMC sample-byte DMA.
 
-        Port of Mesen2 NesCpu::ProcessPendingDma for the DMC-only case (no
-        OAM DMA in flight, no abort). The transfer is
+        Standalone case: no OAM DMA is in flight and the transfer is never
+        aborted. The transfer consists of:
 
           * one halt cycle, whose dummy read targets the address the CPU was
             about to read;
@@ -163,21 +163,20 @@ cdef class DMAController:
         Dummy-read count. The halt cycle plus the alignment cycles give 2 or
         3 extra reads of the CPU's address, and the CPU is stalled for 3 or 4
         cycles -- exactly the "2-3 extra $2007 reads" that blargg's
-        dmc_dma_during_read4 measures. Mesen2 consumes its pending
-        _needDummyRead on the FIRST cycle of the alignment loop, whatever that
-        cycle's parity is, and only then may the fetch run; the fetch itself
-        is the first EVEN CycleCount after that. Doing it any other way costs
-        one dummy read too many, which shifts the VRAM pointer one byte too
-        far and lands blargg's corruption on the wrong iteration.
+        dmc_dma_during_read4 measures. The pending alignment dummy read is
+        consumed on the FIRST cycle of the alignment loop, whatever that
+        cycle's parity is, and only then may the fetch run. Doing it any
+        other way costs one dummy read too many, which shifts the VRAM
+        pointer one byte too far and lands blargg's corruption on the wrong
+        iteration.
 
-        Parity. Mesen2 fetches on an EVEN CycleCount (`getCycle =
-        (CycleCount & 1) == 0`), tested before the next cycle is started --
-        i.e. against the cycle that just ran. This unit counts differently:
-        at the loop head `ClockDivider.cpu_cycle` is the cycle that is ABOUT
-        to run, one past the halt cycle Mesen2's CycleCount names. The two
-        parities are therefore opposite, and the fetch waits for an ODD
-        value of `ClockDivider.cpu_cycle` -- the same cycle Mesen2's even
-        CycleCount selects.
+        Parity. The hardware schedules the DMA get on an even cycle count,
+        tested before the next cycle is started -- i.e. against the cycle
+        that just ran. This unit counts differently: at the loop head
+        `ClockDivider.cpu_cycle` is the cycle that is ABOUT to run, one past
+        the cycle the hardware counter names. The two parities are therefore
+        opposite, and the fetch waits for an ODD value of
+        `ClockDivider.cpu_cycle` -- the even cycle the hardware selects.
 
         Stolen-cycle count. A reload of the 1-byte sample buffer is asked for
         on a put cycle: dbhq-uk/6502's DmcChannel sets `_fetchFrom = cycle +
@@ -186,28 +185,28 @@ cdef class DMAController:
         (`_fetchFrom = writeCycle + 3/4` always picks an even CPU cycle), so
         its fetch lands on the next get and the CPU read's parity decides
         between three and four CPU cycles. The exception is the first
-        standalone fetch after an OAM
-        DMA ends: the DMC sequence at the tail of the copy is still sharing
-        OAM's cadence, so the next get -- not a fixed count -- ends it.
+        standalone fetch after an OAM DMA ends: the DMC sequence at the tail
+        of the copy is still sharing OAM's cadence, so the next get -- not a
+        fixed count -- ends it.
+
+        Dummy reads at $4016/$4017. Alignment dummy reads are skipped when
+        the CPU was reading a controller register: on an NES only the FIRST
+        dummy read has side effects, so a controller loses exactly ONE bit
+        per DMA instead of one per dummy cycle. The halt cycle's read still
+        happens -- that is what makes blargg's dma_4016_read count 07 instead
+        of 08 on the iteration where the DMA lands on the $4016 read.
+
         Ref: dbhq-uk/6502 NesBus.RunDma / ApuChannels.DmcChannel;
         NESdev wiki "DMA" (DMC DMA during OAM DMA).
-
-        Dummy reads at $4016/$4017. Mesen2 skips the alignment dummy reads
-        when the CPU was reading a controller register: on an NES only the
-        FIRST dummy read has side effects, so a controller loses exactly ONE
-        bit per DMA instead of one per dummy cycle. The halt cycle's read
-        still happens -- that is what makes blargg's dma_4016_read count 07
-        instead of 08 on the iteration where the DMA lands on the $4016 read.
         '''
         cdef bint internal_reg_read = (cpu_read_addr & 0xFFE0) == 0x4000
         cdef bint skip_first_input_clock = False
         cdef bint skip_dummy_reads = (cpu_read_addr == 0x4016
                                       or cpu_read_addr == 0x4017)
         if internal_reg_read:
-            # Mesen2's skipFirstInputClock: with /OE asserted for the whole
-            # DMA, a DMC sample address that shares the CPU's register number
-            # hides the halt cycle's dummy read, so the controller never sees
-            # it and loses no bit.
+            # With /OE asserted for the whole DMA, a DMC sample address that
+            # shares the CPU's register number hides the halt cycle's dummy
+            # read, so the controller never sees it and loses no bit.
             skip_first_input_clock = ((self.bus.apu.dmc_read_addr() & 0x1F)
                                        == (cpu_read_addr & 0x1F))
         self.bus.dmc_dma_request = False
@@ -249,11 +248,9 @@ cdef class DMAController:
         odd CPU cycle (first read at W+2, total 513 CPU cycles), and two CPU
         cycles -- halt plus one alignment cycle -- when it fell on an even one
         (first read at W+3, total 514 CPU cycles). The prefix waits for an
-        EVEN CPU cycle, and the transfer
-        itself reads on odd / writes on even. Getting this backwards cost a
-        full CPU cycle of halt on one parity and made 4-irq_and_dma's dly=526
-        row fire an instruction late. Ref: Mesen2 Core/NES/NesCpu.cpp
-        (ProcessPendingDma); NESdev wiki "DMA" (Cadence).
+        EVEN CPU cycle, and the transfer itself reads on odd / writes on even.
+        Getting this backwards cost a full CPU cycle of halt on one parity and
+        made 4-irq_and_dma's dly=526 row fire an instruction late.
 
         DMC DMA interaction (NESdev wiki "DMA", "DMC DMA during OAM DMA"):
         when both units want the bus on the same cycle the DMC get wins and
@@ -265,9 +262,12 @@ cdef class DMAController:
             its halt and dummy cycles ride the last read/put pair;
           * one that schedules on the last put costs 3 CPU cycles: after the
             DMA its dummy and alignment cycles are still owed.
-        Mesen2 models this by keeping the DMC request inside the OAM loop
-        (`while(_dmcDmaRunning || _spriteDmaTransfer)`); this is the same
-        state machine.
+        The shared get/put loop therefore keeps running until BOTH transfers
+        are done; an in-flight DMC request is not allowed to restart the OAM
+        alignment prefix.
+
+        Ref: NESdev wiki "DMA" (cadence, DMC DMA during OAM DMA);
+        dbhq-uk/6502 NesBus.RunDma; blargg 4-irq_and_dma.
         '''
         cdef bint dmc_ready = (self.oam_dmc_running
                                and not self.oam_dmc_need_halt
@@ -277,7 +277,8 @@ cdef class DMAController:
             # A request armed before this cycle joins the running OAM DMA
             # instead of stalling the CPU afterwards. It is picked up here,
             # at the top of its first cycle, so this cycle's branch above
-            # already saw "not ready" -- exactly Mesen2's ordering.
+            # already saw "not ready": the request joins one cycle late,
+            # which is what the shared get/put cadence requires.
             self.oam_dmc_running = True
             self.oam_dmc_need_halt = True
             self.oam_dmc_need_dummy = True

@@ -111,8 +111,8 @@ cdef class CPUBus:
             # last value driven onto it. This is what lets code executed from I/O
             # space (blargg cpu_exec_space_apu / _ppuio) see the opcode/operand
             # a previous read left behind (e.g. the JMP operand byte that becomes
-            # the RTI opcode at $40XX). Ref: NESdev wiki "CPU memory map" (open
-            # bus); Mesen2 Core/NES/CpuMemoryManager.cpp (ReadOnly).
+            # the RTI opcode at $40XX). Ref: NESdev wiki "CPU memory map"
+            # (open bus); blargg cpu_exec_space_apu / cpu_exec_space_ppuio.
             data = self.open_bus
         # Track the CPU data-bus open bus on every real (non-debugger) read;
         # passive debugger disassembly reads (read_only=True) must not perturb it.

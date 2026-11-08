@@ -25,8 +25,8 @@ cdef class CPU6502:
         correct (and is what lets the transfer land inside a store before its
         write, re-arming blargg's dmc_test sample between its two $4015
         writes). The bus performs the age test; see CPUBus.read.
-        Ref: NESdev wiki "CPU memory access" per-cycle bus activity;
-        Mesen2 Core/NES/NesCpu.cpp (MemoryRead -> ProcessPendingDma).
+        Ref: NESdev wiki "CPU memory access" (per-cycle bus activity);
+        blargg dmc_test / dmc_dma_during_read4.
         """
         self.operand_fetch = True
         cdef uint8_t value = self.read(addr)
@@ -204,8 +204,8 @@ cdef class CPU6502:
         if (addr & 0xFF00) != (base & 0xFF00):
             # If the dummy read mirrors to the PPU data register ($2007), the
             # immediately following (real) read must echo the SAME buffer value
-            # the dummy read returned (Mesen2 _ignoreVramRead, blargg
-            # double_2007_read): the PPU has not yet refilled the read buffer.
+            # the dummy read returned (blargg double_2007_read): the PPU has
+            # not yet refilled its read buffer.
             # Signal the PPU so its next $2007 read returns _prev_read_value
             # instead. Store / RMW partners are writes, so they must NOT be
             # signalled -- that would corrupt a later unrelated $2007 read.
@@ -649,7 +649,7 @@ cdef class CPU6502:
         during BRK fired at the very next boundary, one instruction too
         early.
 
-        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (BRK)
+        Ref: NESdev wiki "CPU interrupts"; blargg cpu_interrupts_v2 2-nmi_and_brk
         '''
         # One-byte-opcode dummy read (6502 quirk): the padding byte that
         # follows the BRK opcode is driven onto the bus (blargg
@@ -683,16 +683,16 @@ cdef class CPU6502:
 
         # The BRK instruction's own 7 cycles ARE the interrupt sequence, and
         # the vector fetch is deferred to their end (finish_interrupt_sequence)
-        # so an NMI edge latched during the sequence can hijack it to $FFFA
-        # (Mesen2 NesCpu::BRK tests _needNmi between the PC push and the P
-        # push). Mesen also clears its one-cycle NMI poll latch right after
-        # BRK so that the handler's FIRST instruction runs before a pending
-        # NMI is taken ("needed for nmi_and_brk test"); in_interrupt=True
-        # here is this model's equivalent -- it blocks the boundary polls
-        # until the sequence's 7 cycles have run out. Without it an NMI
-        # latched during the BRK fired at the very next boundary, one
-        # instruction too early (2-nmi_and_brk rows 4-10 pushed P with C=0
-        # instead of hijacking / firing after the handler's SEC).
+        # so an NMI edge latched during the sequence can hijack it to $FFFA:
+        # the 6502 decides the vector between the PC push and the P push, so
+        # an NMI latched in that window wins. Hardware also lets the handler's
+        # FIRST instruction run before a pending NMI is taken ("needed for
+        # nmi_and_brk test"); in_interrupt=True here is this model's
+        # equivalent -- it blocks the boundary polls until the sequence's
+        # 7 cycles have run out. Without it an NMI latched during the BRK
+        # fired at the very next boundary, one instruction too early
+        # (2-nmi_and_brk rows 4-10 pushed P with C=0 instead of hijacking /
+        # firing after the handler's SEC).
         self.in_interrupt = True
         self.int_seq_deferred = True
         self.int_seq_start_dot = self.last_fetch_dot
@@ -1774,15 +1774,15 @@ cdef class CPU6502:
         VECTOR FETCH IS DEFERRED to the sequence's end
         (finish_interrupt_sequence, called by clock() at the boundary where
         the 7 cycles complete) so that an NMI edge arriving during the
-        sequence can hijack it: Mesen2 NesCpu::IRQ tests _needNmi between
-        push16(PC) and push(P), which in this boundary-poll model is
-        equivalent to deciding the vector once the sequence has run. A hijack
-        takes $FFFA and consumes the pending NMI; the pushed PC/P are
-        untouched, so a hijacked IRQ still pushes P with B=0. The /IRQ line
-        is level-triggered and never cleared here, so a hijacked IRQ is
+        sequence can hijack it: the 6502 picks its vector between the PC push
+        and the P push, which in this boundary-poll model is equivalent to
+        deciding the vector once the sequence has run. A hijack takes $FFFA
+        and consumes the pending NMI; the pushed PC/P are untouched, so a
+        hijacked IRQ still pushes P with B=0. The /IRQ line is
+        level-triggered and never cleared here, so a hijacked IRQ is
         re-recognized after the NMI handler's RTI.
 
-        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (IRQ)
+        Ref: NESdev wiki "CPU interrupts"; blargg cpu_interrupts_v2 3-nmi_and_irq
         '''
         cdef uint8_t pushed_p
 
@@ -1814,11 +1814,11 @@ cdef class CPU6502:
 
         Called by clock() at the instruction boundary where the sequence's
         7 cycles have run out; the pushes (PC, P) already happened when the
-        sequence began. The vector decision is what Mesen2 NesCpu::IRQ /
-        NesCpu::BRK make between push16(PC) and push(P): if an NMI edge was
-        latched after the start boundary's poll sample (so that poll could
-        not have taken it as an NMI) and no later than the sequence's 4th
-        cycle (phi2 dots start+1/+4/+7/+10), the NMI hijacks the sequence:
+        sequence began. The 6502 decides the vector between push16(PC) and
+        push(P): if an NMI edge was latched after the start boundary's poll
+        sample (so that poll could not have taken it as an NMI) and no later
+        than the sequence's 4th cycle (phi2 dots start+1/+4/+7/+10), the NMI
+        hijacks the sequence:
         the vector comes from $FFFA and the pending NMI is consumed. The
         saved PC/P are untouched, so a hijacked BRK still returns with B set
         in the saved status (2-nmi_and_brk rows 4-8). Otherwise the sequence
@@ -1829,7 +1829,7 @@ cdef class CPU6502:
         IRQ, unless the NMI handler acknowledged it), the CPU re-recognizes
         it at the first boundary after the NMI handler's RTI.
 
-        Ref: NESdev wiki "CPU interrupts"; Mesen2 Core/NES/NesCpu.cpp (IRQ/BRK)
+        Ref: NESdev wiki "CPU interrupts"; blargg cpu_interrupts_v2 2-nmi_and_brk
         '''
         cdef uint16_t vector = 0xFFFE
 
@@ -1977,13 +1977,12 @@ cdef class CPU6502:
             # boundary would have fallen without the halt, so the poll asks
             # whether the edge was visible at the penultimate phi2 of the
             # instruction that ACTUALLY ended, and anything later waits for
-            # the next boundary. Mesen2 reaches the same attribution by
-            # keeping _runIrq/_prevRunIrq sampled every cycle through the DMA
-            # (NesCpu::EndCpuCycle) while deciding only at the instruction's
-            # end (NesCpu::Exec); this model decides at the boundary, so the
-            # reference must be rebased.
+            # the next boundary. Sampling the interrupt lines on every cycle
+            # through the stall and deciding only at the instruction's end
+            # reaches the same attribution; this model decides at the
+            # boundary, so its reference dot must be rebased instead.
             # Ref: NESdev wiki "PPU OAM" (DMA halts the CPU);
-            # Mesen2 Core/NES/NesCpu.cpp (EndCpuCycle, Exec)
+            # blargg 4-irq_and_dma (dly=11..13 rows).
             if stalled:
                 eff_now = prev_clock_dot + 3
             else:
@@ -2031,7 +2030,7 @@ cdef class CPU6502:
                     # NMI hijack: this sequence's vector fetch is DEFERRED to
                     # its end (finish_interrupt_sequence) so an NMI edge
                     # arriving during the 7 cycles can redirect it to $FFFA.
-                    # Mesen2 NesCpu::IRQ tests _needNmi between push16(PC) and
+                    # The 6502 tests the pending NMI between push16(PC) and
                     # push(P); in this boundary-poll model that decision point
                     # is equivalent to the sequence's end. int_seq_start_dot is
                     # the bus dot of this cycle (the sequence's cycle 1) and
