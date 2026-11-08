@@ -43,7 +43,7 @@ cdef class PPUVRAMPort:
         addr &= 0x3FFF
 
         # Try cartridge first
-        success, data = self.ppu.cartridge.readByPPU(addr)
+        success, data = self.ppu.cartridge.ppu.read(addr)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
@@ -99,7 +99,7 @@ cdef class PPUVRAMPort:
         cdef bint success
         addr &= 0x3FFF
 
-        success = self.ppu.cartridge.writeByPPU(addr, data)
+        success = self.ppu.cartridge.ppu.write(addr, data)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:

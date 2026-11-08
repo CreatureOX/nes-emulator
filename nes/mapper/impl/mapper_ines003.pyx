@@ -16,7 +16,7 @@ cdef class MapperINES003(Mapper):
         
         self.CHR_bank_select = 0x00    
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM (no bankswitching)."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
@@ -28,7 +28,7 @@ cdef class MapperINES003(Mapper):
                 mapping.addr = addr & 0x7FFF
         return mapping
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         """Write to switch CHR bank."""
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
@@ -37,7 +37,7 @@ cdef class MapperINES003(Mapper):
             mapping.addr = addr
         return mapping
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         """Map PPU read to CHR bank."""
         cdef PPUReadMapping mapping = PPUReadMapping()
 
@@ -46,7 +46,7 @@ cdef class MapperINES003(Mapper):
             mapping.addr = self.CHR_bank_select * 0x2000 + addr
         return mapping
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         """Mapper 3 has no writable CHR."""
         cdef PPUWriteMapping mapping = PPUWriteMapping()
         return mapping

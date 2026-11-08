@@ -50,7 +50,7 @@ cdef class CPUBus:
         '''
         self.cpu.set_nmi_line(self.ppu.nmi_line)
         self.cpu.set_irq_line(
-            (self.cartridge.mapper.IRQ_state() != 0)
+            (self.cartridge.mapper.irq_line() != 0)
             or self.apu.irq_level(),
             dot
         )
@@ -77,7 +77,7 @@ cdef class CPUBus:
         if not read_only and self.dma.may_halt_on_read(self.cpu.operand_fetch):
             self.dma.run_dmc_dma(addr)
         # Try cartridge space first
-        success, data = self.cartridge.readByCPU(addr)
+        success, data = self.cartridge.cpu.read(addr)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
@@ -134,7 +134,7 @@ cdef class CPUBus:
         - $4020-$FFFF: Cartridge space
         '''
         # Try cartridge space first
-        success = self.cartridge.writeByCPU(addr, data)
+        success = self.cartridge.cpu.write(addr, data)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
