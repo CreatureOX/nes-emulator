@@ -5,8 +5,9 @@ from nes.cart.cart cimport Header, Cartridge
 
 cdef class INesCart(Cartridge):
     cdef INesHeader header
-    cdef bytes PlayChoice_INST_ROM
-    cdef bytes PlayChoice_PROM
+    # PlayChoice-10 INST-ROM and PROM data that follow the CHR ROM data.
+    cdef bytes pc10_inst_rom
+    cdef bytes pc10_prom
 
 cdef class INesHeader(Header):
     cdef bytes constant
@@ -46,8 +47,8 @@ cdef class Flags7:
     ++++----- Upper nybble of mapper number
     '''
     cdef:
-        uint8_t has_VS_Unisystem
-        uint8_t is_PlayChoice10
+        uint8_t has_vs_unisystem
+        uint8_t is_playchoice10
         uint8_t is_nes2
         uint8_t mapper_no_upper_nybble
 

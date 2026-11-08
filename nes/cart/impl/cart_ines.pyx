@@ -10,7 +10,7 @@ cdef class INesCart(Cartridge):
     iNES format cartridge loader.
     
     Parses iNES 1.0 format ROM files and initializes the appropriate mapper.
-    Handles PRG ROM, CHR ROM/RAM, trainer data, and PlayChoice10 ROMs.
+    Handles PRG ROM, CHR ROM/RAM, trainer data, and PlayChoice-10 data.
     """
     def __init__(self, filename) -> None:
         # WRAM at $6000-$7FFF (see nes.cart.Cartridge.__init__); blargg test
@@ -39,9 +39,9 @@ cdef class INesCart(Cartridge):
                 self.CHR_RAM_data = np.frombuffer(ines.read(self.CHR_RAM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_RAM_data) == 0:
                     self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
-            if self.header.flags_7.is_PlayChoice10 == 1:
-                self.PlayChoice_INST_ROM = ines.read(8192)
-                self.PlayChoice_PROM = ines.read(16)
+            if self.header.flags_7.is_playchoice10 == 1:
+                self.pc10_inst_rom = ines.read(8192)
+                self.pc10_prom = ines.read(16)
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
 
@@ -75,8 +75,8 @@ cdef class Flags6:
 cdef class Flags7:
     """iNES flags byte 7: mapper and hardware info (upper 4 bits)."""
     def __init__(self, uint8_t value) -> None:
-        self.has_VS_Unisystem = value & 0b1
-        self.is_PlayChoice10 = (value & 0b10) >> 1
+        self.has_vs_unisystem = value & 0b1
+        self.is_playchoice10 = (value & 0b10) >> 1
         self.is_nes2 = (value & 0b1100) >> 2
         self.mapper_no_upper_nybble = (value & 0xF0) >> 4
 
