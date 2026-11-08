@@ -91,7 +91,8 @@ cdef class PPUVRAMPort:
             if addr == 0x001C:
                 addr = 0x000C
             # Apply greyscale mask if needed
-            data = self.ppu._palette_table[addr] & (0x30 if self.ppu.PPUMASK.greyscale == 1 else 0x3F)
+            data = self.ppu._palette_table[addr] & (
+                0x30 if self.ppu.PPUMASK.greyscale == 1 else 0x3F)
         return data
 
     cdef void write(self, uint16_t addr, uint8_t data):
@@ -150,7 +151,8 @@ cdef class PPU2C02:
     palette management, and PPU register I/O. Renders 256x240 pixels
     per frame at 60fps (NTSC) with 262 scanlines per frame.
     """
-    def __init__(self, bus: CPUBus, Cartridge cartridge) -> None:
+    def __init__(self, Cartridge cartridge) -> None:
+        '''Bind the cartridge that answers CHR and nametable fetches.'''
         self._pattern_table = np.array([[0x00] * 64 * 64] * 2, dtype = np.uint8)
         self._nametable = np.array([[0x00] * 32 * 32] * 2, dtype = np.uint8)
         self._palette_table = np.array([
@@ -197,7 +199,6 @@ cdef class PPU2C02:
         self.nmi_line = False
         self.frame_complete = False
 
-        self.bus = bus
         self.cartridge = cartridge
         self.vram = PPUVRAMPort(self)
         self._set_palette_panel()

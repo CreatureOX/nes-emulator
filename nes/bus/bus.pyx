@@ -13,9 +13,9 @@ cdef class CPUBus:
     '''
     Signal router connecting the CPU, PPU, APU, cartridge and DMA unit.
 
-    State owned: the 2 KiB CPU RAM mirror, the APU-driven DMC request line,
-    the CPU data-bus open-bus latch and the master clock divider. The two
-    Joypad devices own their own button latches and shift registers. Timing
+    State owned: the APU-driven DMC request line, the CPU data-bus
+    open-bus latch and the master clock divider. The CPU owns the 2 KiB
+    RAM; the Joypads own their button latches and shift registers. Timing
     model: clock() advances one PPU dot; the divider decides which chips see
     an edge. Interfaces: read()/write() decode the CPU address space,
     propagate_lines() drives the /NMI and /IRQ signal lines, and
@@ -23,7 +23,6 @@ cdef class CPUBus:
     '''
     def __init__(self, Cartridge cartridge) -> None:
         '''Bind the devices and start with a clean signal state.'''
-        self.ram = [0x00] * 2 * 1024
         self.joy1 = Joypad()
         self.joy2 = Joypad()
         self.divider = ClockDivider()
@@ -31,7 +30,7 @@ cdef class CPUBus:
 
         self.cartridge = cartridge
         self.cpu = CPU6502(self)
-        self.ppu = PPU2C02(self, cartridge)
+        self.ppu = PPU2C02(cartridge)
         self.apu = APU2A03(self)
         self.dma = DMAController(self)
         # CPU data-bus open bus: the last value driven onto the bus.

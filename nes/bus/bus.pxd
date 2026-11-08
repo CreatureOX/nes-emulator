@@ -10,7 +10,6 @@ from nes.apu.apu cimport APU2A03
 
 
 cdef class CPUBus:
-    cdef uint8_t[2048] ram
     # Controller ports are first-class devices; the bus holds no button or
     # shift-register state of its own.
     cdef public Joypad joy1

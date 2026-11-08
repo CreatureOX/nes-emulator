@@ -1,6 +1,5 @@
 from libc.stdint cimport uint8_t, uint16_t, int16_t
 
-from nes.bus.bus cimport CPUBus
 from nes.cart.cart cimport Cartridge
 from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, BackgroundShiftRegister
 
@@ -88,7 +87,6 @@ cdef class PPU2C02:
     cdef long long open_bus_frame[8]
     cdef long long frame_count
 
-    cdef CPUBus bus
 
     cdef int screen_width, screen_height
 
