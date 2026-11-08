@@ -172,20 +172,32 @@ def _watchdog_result(j, timeout, verdict):
             "path": j.get("path")}
 
 
-def _run_all_watched(pool, jobs, timeout, counters):
+def _run_all_watched(pool, jobs, timeout, counters, workers):
     """Fan every ROM across one pool, with watchdog state on each future.
 
     One global pool removes the per-directory barrier: a suite with two ROMs
-    used to hold its own pool while the rest of the machine sat idle. ready()
-    is non-blocking, so polling 165 futures costs one short loop, not 165
-    half-second waits. A ROM past `timeout` is TIMEOUT and a dead worker is
-    CRASH, each on its own row: the pool is never terminated, so a slow ROM
-    cannot turn every remaining ROM TIMEOUT. An abandoned future still runs
-    to its frame budget, then its worker returns to the pool.
+    used to hold its own pool while the rest of the machine sat idle. Only
+    `workers` futures are in flight at once, so the watchdog clock starts when
+    a ROM is actually picked up -- submitting all 165 at once made queued ROMs
+    time out on a 2-core runner before they ever ran. ready() is non-blocking,
+    so polling costs one short loop, not one wait per future. A ROM past
+    `timeout` is TIMEOUT and a dead worker is CRASH, each on its own row: the
+    pool is never terminated, so a slow ROM cannot turn the rest TIMEOUT.
     """
     total = len(jobs)
-    inflight = {pool.apply_async(_run_one, (j,)): (j, time.time())
-                for j in jobs}
+    pending = iter(jobs)
+    inflight = {}
+
+    def fill():
+        """Keep the pool saturated without letting queued ROMs age."""
+        while len(inflight) < workers:
+            try:
+                j = next(pending)
+            except StopIteration:
+                break
+            inflight[pool.apply_async(_run_one, (j,))] = (j, time.time())
+
+    fill()
     res = []
     done = 0
     while inflight:
@@ -215,6 +227,7 @@ def _run_all_watched(pool, jobs, timeout, counters):
                             counters["pass_n"], counters["fail_n"])
             res.append(r)
             progressed = True
+        fill()
         if not progressed:
             time.sleep(0.1)
     return res
@@ -548,7 +561,7 @@ def main():
     print(f"Running {len(jobs)} ROMs across {len(dirs)} directories "
           f"({workers} workers, watchdog={timeout}s) ...", flush=True)
     with mp.Pool(workers) as pool:
-        results = _run_all_watched(pool, jobs, timeout, counters)
+        results = _run_all_watched(pool, jobs, timeout, counters, workers)
     results.sort(key=lambda r: r["id"])
     print(f"\nDone: {counters['done']}/{len(selected)}  "
           f"PASSED={counters['pass_n']} FAIL={counters['fail_n']}", flush=True)
