@@ -171,9 +171,6 @@ cdef class CPU6502:
     cdef uint8_t read_operand(self, uint16_t addr)
     cdef void set_irq_line(self, bint level, long long dot)
 
-    # HARDWARE QUIRK method: page-cross dummy read (see doc/13-quirk-method-extraction.md)
-    cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr)
-
     # A2: instruction execution is deferred to the LAST cycle of the
     # instruction's cycle budget, so that bus accesses (PPU registers in
     # particular) land at the right dot instead of up to N-1 CPU cycles early.

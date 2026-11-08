@@ -6,6 +6,3 @@ cdef extern from "status_register.h":
 
 cdef class StatusRegister:
     cdef StatusUnion c_status
-    
-    cdef StatusUnion get_union(self)
-    cdef void set_union(self, StatusUnion val)

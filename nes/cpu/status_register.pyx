@@ -32,12 +32,6 @@ cdef class StatusRegister:
         """Initialize status register to 0x20 (U bit always set)."""
         self.c_status.value = 0
     
-    cdef StatusUnion get_union(self):
-        return self.c_status
-    
-    cdef void set_union(self, StatusUnion val):
-        self.c_status = val
-    
     @property
     def bits(self):
         """Returns self, supports .bits.C, .bits.Z access"""

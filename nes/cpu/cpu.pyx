@@ -172,19 +172,6 @@ cdef class CPU6502:
         self.set_addr_abs((hi << 8) | lo)
         return 0
 
-    cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr):
-        # >>> HARDWARE QUIRK: page-cross dummy read <<<
-        # On a page-crossing access (ABX/ABY/IZY) a real 6502 performs a dummy
-        # read at the (wrong) high byte combined with the new low byte BEFORE
-        # the real access. This drives hardware side effects (e.g. reading
-        # $2002 clears VBL) at the correct point -- blargg cpu_dummy_reads
-        # depends on it. Returns True when a cross occurred (so the caller adds
-        # the extra cycle).
-        if (addr & 0xFF00) != (base & 0xFF00):
-            self.read((base & 0xFF00) | (addr & 0x00FF))
-            return True
-        return False
-
     cpdef uint8_t ABX(self):
         '''
         Address Mode: Absolute with X Offset

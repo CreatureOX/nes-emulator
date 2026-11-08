@@ -189,9 +189,6 @@ cdef class MapperMMC3(Mapper):
     cdef bint irq_line(self):
         return self.IRQ_active
 
-    cdef void IRQ_clear(self):
-        self.IRQ_active = False
-
     cdef void a12_notify(self, uint16_t addr):
         # MMC3 IRQ counter is clocked on the rising edge of the (filtered) PPU
         # A12 line. A12 is bit 12 of the CHR/pattern address bus ($0000-$1FFF).

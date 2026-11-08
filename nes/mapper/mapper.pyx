@@ -50,10 +50,6 @@ cdef class Mapper:
         """Check if IRQ is pending."""
         return False
 
-    cdef void IRQ_clear(self):
-        """Clear pending IRQ."""
-        pass
-
     cdef void scanline(self):
         """Called on each PPU scanline (for scanline-based IRQs)."""
         pass

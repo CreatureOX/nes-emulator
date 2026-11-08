@@ -19,8 +19,7 @@ cdef class Mapper:
     cdef uint8_t mirror(self)
 
     cdef bint irq_line(self)
-    cdef void IRQ_clear(self)
-    
+
     cdef void scanline(self)
 
     cdef void a12_notify(self, uint16_t addr)
