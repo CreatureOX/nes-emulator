@@ -176,7 +176,7 @@ cdef class CPU6502:
     # particular) land at the right dot instead of up to N-1 CPU cycles early.
     cdef bint pending_execute
 
-    # S2: bus dot (nSystemClockCounter) at the moment the /NMI edge latched or
+    # S2: PPU dot (ClockDivider.dot) at the moment the /NMI edge latched or
     # the /IRQ line went high. A 6502 samples its interrupt inputs at phi2 of
     # the SECOND-TO-LAST cycle of the instruction in progress (the last cycle
     # is reserved for the instruction's final bus operation and cannot be

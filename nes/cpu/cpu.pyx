@@ -1729,10 +1729,10 @@ cdef class CPU6502:
         after MUST fire). The pending flag stays latched once set, so a
         sustained high line produces exactly one NMI.
         """
-        if self.bus.nSystemClockCounter % 3 == 2:
+        if self.bus.divider.dot % 3 == 2:
             if level and not self.nmi_prev_phi2_level:
                 self.nmi_pending = True
-                self.nmi_latch_dot = self.bus.nSystemClockCounter
+                self.nmi_latch_dot = <long long>self.bus.divider.dot
             self.nmi_prev_phi2_level = level
         self.nmi_line = level
 
@@ -1747,7 +1747,7 @@ cdef class CPU6502:
         force-clears it on service.
         """
         if level and not self.irq_line:
-            self.irq_latch_dot = self.bus.nSystemClockCounter
+            self.irq_latch_dot = <long long>self.bus.divider.dot
         self.irq_line = level
 
     cdef void irq(self):
@@ -1886,7 +1886,7 @@ cdef class CPU6502:
         cdef long long eff_now = 0
         cdef bint stalled = False
 
-        tick = <long long>self.bus.nSystemClockCounter
+        tick = <long long>self.bus.divider.dot
         prev_clock_dot = self.last_clock_dot
         stalled = (prev_clock_dot >= 0 and prev_clock_dot + 3 != tick)
         self.last_clock_dot = tick

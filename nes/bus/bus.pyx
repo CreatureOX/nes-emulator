@@ -11,7 +11,7 @@ cdef class CPUBus:
         self.ram = [0x00] * 2 * 1024
         self.controller = [0x00,0x00]
         self.controller_state = [0x00,0x00]
-        self.nSystemClockCounter = 0
+        self.divider = ClockDivider()
 
         self.dma_page = 0x00
         self.dma_addr = 0x00
@@ -57,11 +57,11 @@ cdef class CPUBus:
         sits on the bus, so the side effects of that address fire an extra
         time (Mesen2 ProcessPendingDma).
         """
-        self.nSystemClockCounter += 1
+        self.divider.advance()
         self.ppu.clock()
-        self.nSystemClockCounter += 1
+        self.divider.advance()
         self.ppu.clock()
-        self.nSystemClockCounter += 1
+        self.divider.advance()
         self.ppu.clock()
         self.apu.clock(1)
         self.cpu.set_nmi_line(self.ppu.nmi_line)
@@ -101,10 +101,10 @@ cdef class CPUBus:
         Parity. Mesen2 fetches on an EVEN CycleCount (`getCycle =
         (CycleCount & 1) == 0`), tested before the next cycle is started --
         i.e. against the cycle that just ran. This bus counts differently: at
-        the loop head `nSystemClockCounter // 3` is the cycle that is ABOUT
+        the loop head `ClockDivider.cpu_cycle` is the cycle that is ABOUT
         to run, one past the halt cycle Mesen2's CycleCount names. The two
         parities are therefore opposite, and the fetch waits for an ODD
-        value of `nSystemClockCounter // 3` -- the same cycle Mesen2's even
+        value of `ClockDivider.cpu_cycle` -- the same cycle Mesen2's even
         CycleCount selects.
 
         Stolen-cycle count. A reload of the 1-byte sample buffer is asked for
@@ -152,7 +152,7 @@ cdef class CPUBus:
             if (not need_dummy
                     and ((fixed_length and dmc_len >= 3)
                          or (not fixed_length
-                             and (self.nSystemClockCounter // 3) % 2 == 1))):
+                             and self.divider.cpu_cycle % 2 == 1))):
                 # Fetch cycle: read the sample byte and deliver it.
                 self._dma_halt_cycle(0, False)
                 self.apu.dmc_deliver(
@@ -308,7 +308,7 @@ cdef class CPUBus:
         self.cpu.reset()
         self.ppu.reset()
         self.apu.reset()
-        self.nSystemClockCounter = 0
+        self.divider.reset()
         self.dma_page = 0x00
         self.dma_addr = 0x00
         self.dma_data = 0x00
@@ -330,7 +330,7 @@ cdef class CPUBus:
         self.cpu.power_up()
         self.ppu.reset()
         self.apu.power_up()
-        self.nSystemClockCounter = 0
+        self.divider.reset()
         self.dma_page = 0x00
         self.dma_addr = 0x00
         self.dma_data = 0x00
@@ -364,7 +364,7 @@ cdef class CPUBus:
 
         # Always clock the PPU (runs at 3x CPU speed)
         self.ppu.clock()
-        cdef bint is_cpu_cycle = (self.nSystemClockCounter % 3 == 1)
+        cdef bint is_cpu_cycle = self.divider.on_cpu_cycle
         # Clock the APU on the SAME CPU cycle the CPU samples its interrupt
         # lines, so a frame/DMC IRQ raised by the APU this cycle is recognised
         # at phi2 of that cycle instead of one cycle late. The mapper line
@@ -396,13 +396,13 @@ cdef class CPUBus:
         # S3 (phase calibration): a CPU cycle spans three PPU dots. The 6502
         # samples its interrupt inputs at phi2, i.e. the MIDDLE dot of the
         # three (dots 1,4,7,...), not the first. Clocking the CPU on
-        # `counter % 3 == 0` observed the bus one dot too early, which pushed
+        # `phase == 0` observed the bus one dot too early, which pushed
         # NMI recognition a full CPU cycle off for 7.nmi_timing's align1
-        # subtests. Sampling on `% 3 == 1` puts the observation point at the
-        # middle dot, matching hardware.
+        # subtests. ClockDivider's on_cpu_cycle edge (phase == 1) puts the
+        # observation point at the middle dot, matching hardware.
         if is_cpu_cycle:
             # This is a CPU cycle
-            cpu_cycle = <unsigned long long>(self.nSystemClockCounter // 3)
+            cpu_cycle = <unsigned long long>self.divider.cpu_cycle
             if self.dma_transfer or self.oam_dmc_running:
                 # OAM DMA (and any DMC DMA that collided with it) runs here.
                 #
@@ -504,7 +504,7 @@ cdef class CPUBus:
                 # Normal CPU instruction execution
                 self.cpu.clock()
 
-        self.nSystemClockCounter += 1
+        self.divider.advance()
 
     cpdef void run_frame(self):
         """Execute a complete video frame.
