@@ -7,6 +7,11 @@ from nes.ppu.registers cimport Controller, Mask, Status, LoopRegister, Backgroun
 
 cdef int LOW_NIBBLE, HIGH_NIBBLE
 
+cdef class PPUVRAMPort:
+    cdef PPU2C02 ppu
+    cdef uint8_t read(self, uint16_t)
+    cdef void write(self, uint16_t, uint8_t)
+
 cdef class PPU2C02:
     cdef uint8_t[:,:] _pattern_table
     cdef uint8_t[:,:] _nametable
@@ -31,7 +36,7 @@ cdef class PPU2C02:
     # crosses a page), the immediately following $2007 read must return the SAME
     # buffer value the dummy read returned, because that partner read lands
     # before the PPU has refilled the read buffer with the freshly fetched byte.
-    # The CPU sets _page_cross_echo right after the dummy read; readByCPU
+    # The CPU sets _page_cross_echo right after the dummy read; read()
     # consumes it on the next $2007 access and returns _prev_read_value instead
     # of the freshly refilled buffer. The flag is only ever set immediately
     # before the real partner read, so it is never seen by the judge's direct
@@ -89,10 +94,9 @@ cdef class PPU2C02:
 
     cpdef uint8_t[:,:,:] screen(self)
 
-    cdef uint8_t readByCPU(self, uint16_t, bint)
-    cdef void writeByCPU(self, uint16_t, uint8_t)
-    cdef uint8_t readByPPU(self, uint16_t)
-    cdef void writeByPPU(self, uint16_t, uint8_t)
+    cdef PPUVRAMPort vram
+    cdef uint8_t read(self, uint16_t)
+    cdef void write(self, uint16_t, uint8_t)
 
     cdef void _set_palette_panel(self)
     cdef tuple fetch_color(self, uint8_t, uint8_t)

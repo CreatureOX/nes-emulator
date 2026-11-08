@@ -85,7 +85,7 @@ cdef class CPUBus:
             data = self.cpu.ram[addr & 0x07FF]
         elif 0x2000 <= addr <= 0x3FFF:
             # PPU registers at $2000-$2007, mirrored every 8 bytes
-            data = self.ppu.readByCPU(addr & 0x0007, read_only)
+            data = self.ppu.read(addr & 0x0007)
         elif addr == 0x4015:
             # APU status register
             data = self.apu.read(addr)
@@ -142,7 +142,7 @@ cdef class CPUBus:
             self.cpu.ram[addr & 0x07FF] = data
         elif 0x2000 <= addr <= 0x3FFF:
             # PPU registers
-            self.ppu.writeByCPU(addr & 0x0007, data)
+            self.ppu.write(addr & 0x0007, data)
         elif 0x4000 <= addr <= 0x4013 or addr == 0x4015 or addr == 0x4017:
             # APU registers
             self.apu.write(addr, data)
