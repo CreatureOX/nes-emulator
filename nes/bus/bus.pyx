@@ -32,14 +32,10 @@ cdef class CPUBus:
         self.divider = ClockDivider()
         self.dmc_dma_request = False
 
-        self.cpu = CPU6502(self)
-        self.ppu = PPU2C02(self)
-        self.apu = APU2A03()
-        # Let the DMC channel DMA-fetch samples from CPU memory.
-        self.apu.bus_ref = self
         self.cartridge = cartridge
-        self.cartridge.connect_bus(self)
-        self.ppu.connectCartridge(self.cartridge)
+        self.cpu = CPU6502(self)
+        self.ppu = PPU2C02(self, cartridge)
+        self.apu = APU2A03(self)
         self.dma = DMAController(self)
         # CPU data-bus open bus: the last value driven onto the bus.
         self.open_bus = 0x00

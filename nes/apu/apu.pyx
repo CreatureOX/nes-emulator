@@ -122,14 +122,17 @@ cdef class APU2A03:
     cdef double hp2_coef
     cdef double lp_coef
 
-    def __cinit__(self, int sample_rate=44100, double cpu_rate=1789772.5):
+    def __cinit__(self, object bus, int sample_rate=44100,
+                  double cpu_rate=1789772.5):
         """
         Initialize the APU.
         
         Args:
+            bus: CPU bus that services DMC sample-fetch requests.
             sample_rate: Audio sample rate in Hz (default: 44100)
             cpu_rate: CPU clock rate in Hz (default: 1789772.5 for NTSC NES)
         """
+        self.bus_ref = bus
         self.sample_rate = sample_rate
         self.cpu_rate = cpu_rate
         self.cycles_per_sample = self.cpu_rate / self.sample_rate
@@ -186,12 +189,10 @@ cdef class APU2A03:
         self.dmc_disable_delay = 0
         self.dmc_irq_flag = 0
         self.dmc_output = 0
-        # bus_ref is structural wiring installed exactly once by Bus.__init__
-        # (self.apu.bus_ref = self) and MUST NOT be cleared here: bus.reset()
-        # and bus.power_up() both call this method again while the same Bus
-        # object is alive, and wiping bus_ref would leave the DMC channel unable
-        # to request its sample-byte DMA (the "if self.bus_ref is not None"
-        # guards would then skip the request push permanently).
+        # bus_ref is structural wiring installed by __cinit__ and MUST NOT
+        # be cleared here: bus.reset() and bus.power_up() call this method
+        # again while the same bus is alive, and wiping it would leave the
+        # DMC channel unable to request its sample-byte DMA.
 
         for i in range(4):
             self.channel_enabled[i] = 0

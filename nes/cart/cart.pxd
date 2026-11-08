@@ -1,7 +1,6 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
 from nes.mapper.mapper cimport Mapper
-from nes.bus.bus cimport CPUBus
 
 
 cdef class Header:
@@ -19,11 +18,9 @@ cdef class Cartridge:
     cdef uint8_t[:] CHR_RAM_data
     cdef uint8_t[:] wram          # WRAM window $6000-$7FFF (blargg result RAM)
 
-    cdef CPUBus bus    
     cdef Mapper mapper
     cdef uint8_t mirror_mode
 
-    cdef void connect_bus(self, CPUBus)
     cdef void reset(self)
     cdef uint8_t mapper_no(self)
 

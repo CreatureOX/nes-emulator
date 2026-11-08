@@ -29,7 +29,7 @@ cdef class PPU2C02:
     palette management, and PPU register I/O. Renders 256x240 pixels
     per frame at 60fps (NTSC) with 262 scanlines per frame.
     """
-    def __init__(self, bus: CPUBus) -> None:
+    def __init__(self, bus: CPUBus, Cartridge cartridge) -> None:
         self._pattern_table = np.array([[0x00] * 64 * 64] * 2, dtype = np.uint8)
         self._nametable = np.array([[0x00] * 32 * 32] * 2, dtype = np.uint8)
         self._palette_table = np.array([
@@ -77,11 +77,8 @@ cdef class PPU2C02:
         self.frame_complete = False
 
         self.bus = bus
+        self.cartridge = cartridge
         self._set_palette_panel()
-
-    cdef void connectCartridge(self, Cartridge cartridge):
-        """Connect the cartridge for PPU bus access."""
-        self.cartridge = cartridge   
 
     cdef void _update_nmi_line(self):
         """Recompute the /NMI line level (A1 signal-line architecture).

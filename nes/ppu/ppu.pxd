@@ -87,7 +87,6 @@ cdef class PPU2C02:
 
     cdef int screen_width, screen_height
 
-    cdef void connectCartridge(self, Cartridge)
     cpdef uint8_t[:,:,:] screen(self)
 
     cdef uint8_t readByCPU(self, uint16_t, bint)

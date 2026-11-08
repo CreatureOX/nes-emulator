@@ -27,10 +27,6 @@ cdef class Cartridge:
         # readme "Output at $6000".
         self.wram = np.zeros(8192, dtype=np.uint8)
 
-    cdef void connect_bus(self, CPUBus bus):
-        """Connect the cartridge to the system bus."""
-        self.bus = bus 
-
     cdef void reset(self):
         """Reset the mapper state."""
         if self.mapper is None:
