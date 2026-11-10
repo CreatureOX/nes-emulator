@@ -34,7 +34,7 @@ cdef class MapperMMC3(Mapper):
 
         self.RAM_static = np.zeros(32 * 1024).astype(np.uint8)
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM or SRAM."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
@@ -56,7 +56,7 @@ cdef class MapperMMC3(Mapper):
             mapping.addr = self.PRG_bank[3] + (addr & 0x1FFF)
         return mapping
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
         if 0x6000 <= addr <= 0x7FFF:
@@ -117,7 +117,7 @@ cdef class MapperMMC3(Mapper):
 
         return mapping
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         cdef PPUReadMapping mapping = PPUReadMapping()
 
         # MMC3 IRQ is clocked by a rising edge of the PPU A12 address line,
@@ -153,7 +153,7 @@ cdef class MapperMMC3(Mapper):
 
         return mapping
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         cdef PPUWriteMapping mapping = PPUWriteMapping()
         # Same A12 edge detection as the read path (covers $2007 writes).
         self.a12_notify(addr)
@@ -186,11 +186,8 @@ cdef class MapperMMC3(Mapper):
     cdef uint8_t mirror(self):
         return self.mirrormode  
 
-    cdef bint IRQ_state(self):
+    cdef bint irq_line(self):
         return self.IRQ_active
-
-    cdef void IRQ_clear(self):
-        self.IRQ_active = False
 
     cdef void a12_notify(self, uint16_t addr):
         # MMC3 IRQ counter is clocked on the rising edge of the (filtered) PPU

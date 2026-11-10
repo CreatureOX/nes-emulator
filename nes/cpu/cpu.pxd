@@ -156,7 +156,10 @@ cdef class CPU6502:
     # the current phi2 sample against this to detect a low->high transition.
     cdef bint nmi_prev_phi2_level
     cdef bint nmi_pending
+    # Level propagation runs on every PPU dot; the edge detector runs only on
+    # the phi2 edge published by ClockDivider.
     cdef void set_nmi_line(self, bint level)
+    cdef void on_phi2(self, long long dot)
 
     # A1: /IRQ signal line (level driven by mapper/APU, sampled by CPU at
     # instruction boundaries and masked by the I flag; no edge latch)
@@ -166,17 +169,14 @@ cdef class CPU6502:
                                     # DMC DMA may halt there -- see CPUBus.read)
     cdef uint8_t read(self, uint16_t addr)
     cdef uint8_t read_operand(self, uint16_t addr)
-    cdef void set_irq_line(self, bint level)
-
-    # HARDWARE QUIRK method: page-cross dummy read (see doc/13-quirk-method-extraction.md)
-    cdef bint emulate_page_cross_dummy_read(self, uint16_t base, uint16_t addr)
+    cdef void set_irq_line(self, bint level, long long dot)
 
     # A2: instruction execution is deferred to the LAST cycle of the
     # instruction's cycle budget, so that bus accesses (PPU registers in
     # particular) land at the right dot instead of up to N-1 CPU cycles early.
     cdef bint pending_execute
 
-    # S2: bus dot (nSystemClockCounter) at the moment the /NMI edge latched or
+    # S2: PPU dot (ClockDivider.dot) at the moment the /NMI edge latched or
     # the /IRQ line went high. A 6502 samples its interrupt inputs at phi2 of
     # the SECOND-TO-LAST cycle of the instruction in progress (the last cycle
     # is reserved for the instruction's final bus operation and cannot be
@@ -228,9 +228,9 @@ cdef class CPU6502:
     # matches), so they are unaffected.
     cdef bint branch_ignore_irq
 
-    # Taken-branch dummy opcode fetch (6502 cycle-by-cycle bus activity; Mesen2
-    # NesCpu.cpp performs the same discarded read for every instruction cycle,
-    # so its ProcessPendingDma can halt the CPU there). The THIRD cycle of a
+    # Taken-branch dummy opcode fetch (6502 cycle-by-cycle bus activity: every
+    # instruction cycle drives a read, even one whose result is discarded, so
+    # a pending DMC DMA can halt the CPU there). The THIRD cycle of a
     # taken branch fetches the opcode at the branch target and DISCARDS it --
     # the next instruction's cycle 1 re-fetches it, so the instruction stream
     # and cycle counts are unchanged. The bus cycle itself is real, though: a
@@ -241,8 +241,8 @@ cdef class CPU6502:
     # opcode fetch -- which inverts the 3-vs-4 stall parity and phase-locks
     # blargg's sync_dmc fine loop (dmc_dma_during_read4): its period must be
     # 3421+4 = 3425 (odd) to out-drift the 3424-cycle DMC byte period.
-    # Ref: NESdev wiki "CPU memory access" per-cycle bus activity;
-    # Mesen2 Core/NES/NesCpu.cpp (MemoryRead -> ProcessPendingDma).
+    # Ref: NESdev wiki "CPU memory access" (per-cycle bus activity);
+    # blargg dmc_dma_during_read4 / sync_dmc.
     cdef uint8_t branch_dummy_reads
     cdef uint16_t branch_dummy_addr
 
@@ -250,8 +250,8 @@ cdef class CPU6502:
     # 2-nmi_and_brk / 3-nmi_and_irq): an IRQ or BRK interrupt sequence defers
     # its VECTOR FETCH to the end of the 7-cycle sequence. If an NMI edge is
     # latched after the boundary poll's sample and before the sequence's
-    # 4th-cycle check (Mesen2 NesCpu::IRQ tests _needNmi between push16(PC)
-    # and push(P)), the vector is taken from $FFFA instead and the pending NMI
+    # 4th-cycle check (the 6502 tests the pending NMI between push16(PC) and
+    # push(P)), the vector is taken from $FFFA instead and the pending NMI
     # is consumed. The pushes already happened, so the saved PC/P are
     # untouched -- a hijacked BRK still pushes P with B=1. The /IRQ line is
     # level-triggered and never cleared here, so a hijacked IRQ is
@@ -275,5 +275,5 @@ cdef class CPU6502:
 
     cdef int clock_count
 
-    cdef uint8_t clock(self) except *
+    cdef uint8_t clock(self, long long dot) except *
     cpdef bint complete(self)

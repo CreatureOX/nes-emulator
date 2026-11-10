@@ -17,7 +17,7 @@ cdef class MapperGxROM(Mapper):
         self.CHR_bank_select = 0x00
         self.PRG_bank_select = 0x00    
             
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
@@ -26,7 +26,7 @@ cdef class MapperGxROM(Mapper):
             mapping.addr = self.PRG_bank_select * 0x8000 + (addr & 0x7FFF)
         return mapping
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         """Write to switch PRG and CHR banks."""
         if addr >= 0x8000 and addr <= 0xFFFF:
             self.CHR_bank_select = data & 0x03
@@ -35,7 +35,7 @@ cdef class MapperGxROM(Mapper):
         cdef CPUWriteMapping mapping = CPUWriteMapping()
         return mapping
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         """Map PPU read to CHR ROM."""
         cdef PPUReadMapping mapping = PPUReadMapping()
         
@@ -45,7 +45,7 @@ cdef class MapperGxROM(Mapper):
             mapping.addr = self.CHR_bank_select * 0x2000 + addr
         return mapping
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         """GxROM has no writable CHR."""
         cdef PPUWriteMapping mapping = PPUWriteMapping()
         return mapping

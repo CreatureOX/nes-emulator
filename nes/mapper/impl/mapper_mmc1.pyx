@@ -23,7 +23,7 @@ cdef class MapperMMC1(Mapper):
         self.load_register, self.load_register_count, self.control_register = 0x00, 0x00, 0x00  
         self.mirrormode = HORIZONTAL
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM or SRAM."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
@@ -44,7 +44,7 @@ cdef class MapperMMC1(Mapper):
                 mapping.addr = self.PRG_bank_select_32 * 0x8000 + (addr & 0x7FFF)
         return mapping
     
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
         if 0x6000 <= addr <= 0x7FFF:
@@ -95,7 +95,7 @@ cdef class MapperMMC1(Mapper):
                     self.load_register_count = 0
         return mapping                     
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         cdef PPUReadMapping mapping = PPUReadMapping()
 
         if addr < 0x2000:
@@ -115,7 +115,7 @@ cdef class MapperMMC1(Mapper):
                     mapping.addr = self.CHR_bank_select_8 * 0x2000 + addr & 0x1FFF
         return mapping
         
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         cdef PPUWriteMapping mapping = PPUWriteMapping()
 
         if addr < 0x2000:

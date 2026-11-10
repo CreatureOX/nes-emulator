@@ -1,6 +1,4 @@
 from libc.stdint cimport uint8_t, uint16_t
-import numpy as np
-cimport numpy as np
 
 from nes.ppu.ppu cimport PPU2C02
 

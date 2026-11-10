@@ -1,18 +1,5 @@
 from libc.stdint cimport uint32_t
 
-cdef extern from "status_register.h" nogil:
-    ctypedef union StatusUnion:
-        uint32_t value
-    
-    cdef int STATUS_CARRY
-    cdef int STATUS_ZERO
-    cdef int STATUS_INTERRUPT
-    cdef int STATUS_DECIMAL
-    cdef int STATUS_BREAK
-    cdef int STATUS_UNUSED
-    cdef int STATUS_OVERFLOW
-    cdef int STATUS_NEGATIVE
-
 cdef class StatusRegister:
     """
     MOS 6502 Processor Status Register.
@@ -31,12 +18,6 @@ cdef class StatusRegister:
     def __init__(self):
         """Initialize status register to 0x20 (U bit always set)."""
         self.c_status.value = 0
-    
-    cdef StatusUnion get_union(self):
-        return self.c_status
-    
-    cdef void set_union(self, StatusUnion val):
-        self.c_status = val
     
     @property
     def bits(self):

@@ -22,19 +22,19 @@ cdef class Mapper:
         """Create a default Mapper instance (no bankswitching)."""
         return Mapper(PRG_banks, CHR_banks)
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map a CPU read address to PRG ROM/RAM."""
         pass
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         """Map a CPU write address to PRG ROM/RAM (for mappers with RAM)."""
         pass
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         """Map a PPU read address to CHR ROM/RAM."""
         pass
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         """Map a PPU write address to CHR RAM (for mappers without CHR ROM)."""
         pass
 
@@ -46,13 +46,9 @@ cdef class Mapper:
         """Return the mirroring mode."""
         return HARDWARE
 
-    cdef bint IRQ_state(self):
+    cdef bint irq_line(self):
         """Check if IRQ is pending."""
         return False
-
-    cdef void IRQ_clear(self):
-        """Clear pending IRQ."""
-        pass
 
     cdef void scanline(self):
         """Called on each PPU scanline (for scanline-based IRQs)."""

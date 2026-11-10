@@ -14,7 +14,7 @@ cdef class MapperNROM(Mapper):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "000"
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """
         Map CPU read to PRG ROM.
         
@@ -27,7 +27,7 @@ cdef class MapperNROM(Mapper):
         mapping.data = 0
         return mapping
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         """NROM has no writable PRG ROM, so writes to $8000+ are ignored.
 
         On hardware PRG ROM is read-only; a CPU store to cartridge space simply
@@ -47,7 +47,7 @@ cdef class MapperNROM(Mapper):
         mapping.success = False
         return mapping
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         """Map PPU read to CHR ROM/RAM."""
         cdef PPUReadMapping mapping = PPUReadMapping()
 
@@ -55,7 +55,7 @@ cdef class MapperNROM(Mapper):
         mapping.addr = addr
         return mapping
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         """Map PPU write to CHR RAM (only if no CHR ROM present)."""
         cdef PPUWriteMapping mapping = PPUWriteMapping()
 

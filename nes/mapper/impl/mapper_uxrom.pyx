@@ -16,7 +16,7 @@ cdef class MapperUxROM(Mapper):
 
         self.PRG_bank_select_lo, self.PRG_bank_select_hi = 0x00, 0x00
 
-    cdef CPUReadMapping mapReadByCPU(self, uint16_t addr):
+    cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM with selectable lower bank."""
         cdef CPUReadMapping mapping = CPUReadMapping()
 
@@ -28,7 +28,7 @@ cdef class MapperUxROM(Mapper):
             mapping.addr = self.PRG_bank_select_hi * 0x4000 + (addr & 0x3FFF)
         return mapping
 
-    cdef CPUWriteMapping mapWriteByCPU(self, uint16_t addr, uint8_t data):
+    cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         """Write to switch lower PRG bank."""
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
@@ -36,7 +36,7 @@ cdef class MapperUxROM(Mapper):
             self.PRG_bank_select_lo = data & 0x0F
         return mapping
 
-    cdef PPUReadMapping mapReadByPPU(self, uint16_t addr):
+    cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
         """Map PPU read to CHR ROM/RAM."""
         cdef PPUReadMapping mapping = PPUReadMapping()
 
@@ -44,7 +44,7 @@ cdef class MapperUxROM(Mapper):
         mapping.addr = addr
         return mapping
 
-    cdef PPUWriteMapping mapWriteByPPU(self, uint16_t addr):
+    cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         """Map PPU write to CHR RAM if no CHR ROM present."""
         cdef PPUWriteMapping mapping = PPUWriteMapping()
 

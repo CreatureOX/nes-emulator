@@ -9,17 +9,139 @@ from nes.ppu.ppu_sprite cimport *
 LOW_NIBBLE = 0
 HIGH_NIBBLE = 1
 
-# $2007 read model (Mesen2 _ignoreVramRead): a page-cross dummy read of an
+# $2007 read model: a page-cross dummy read of an
 # absolute-indexed LDA (blargg double_2007_read: `lda $20F7,x` with x=$10 reads
 # $2007 twice, 3 PPU dots apart) must return the SAME buffer value on both the
 # dummy and the real read, because the PPU's read-buffer refill has not yet
 # latched the freshly fetched byte. The CPU signals this by setting
-# _page_cross_echo after the dummy read; readByCPU consumes it on the partner
+# _page_cross_echo after the dummy read; read() consumes it on the partner
 # read. See nes/cpu/cpu.pyx ABX/ABY/IZY.
 
 # Open-bus decay window, in frames. Real PPU open bus leaks to 0 after ~600 ms;
 # at NTSC ~60 fps that is ~36 frames. A refresh older than this reads back as 0.
 DEF DECAY_FRAMES = 36
+
+cdef class PPUVRAMPort:
+    '''
+    The PPU's own 14-bit memory bus, exposed as a named sub-port.
+
+    The chip owns the pattern/nametable/palette storage; this port owns
+    the address decode and mirroring rules that select between them.
+    '''
+    def __init__(self, PPU2C02 ppu):
+        '''Bind the port to the chip whose memory it decodes.'''
+        self.ppu = ppu
+
+    cdef uint8_t read(self, uint16_t addr):
+        '''Read one byte from the PPU's 14-bit memory bus.
+
+        The cartridge answers first through its PPU port; pattern tables,
+        nametables (with mirroring) and palette RAM are decoded here.
+        '''
+        cdef bint success
+        cdef uint8_t data
+        addr &= 0x3FFF
+
+        # Try cartridge first
+        success, data = self.ppu.cartridge.ppu.read(addr)
+        if success:
+            pass
+        elif 0x0000 <= addr <= 0x1FFF:
+            # Pattern table access
+            data = self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
+        elif 0x2000 <= addr <= 0x3EFF:
+            # Nametable access with mirroring
+            addr &= 0x0FFF
+            if self.ppu.cartridge.mirror_mode == VERTICAL:
+                # Vertical mirroring: odd banks swap nametables
+                if 0x0000 <= addr <= 0x03FF:
+                    data = self.ppu._nametable[0][addr & 0x03FF]
+                elif 0x0400 <= addr <= 0x07FF:
+                    data = self.ppu._nametable[1][addr & 0x03FF]
+                elif 0x0800 <= addr <= 0x0BFF:
+                    data = self.ppu._nametable[0][addr & 0x03FF]
+                elif 0x0C00 <= addr <= 0x0FFF:
+                    data = self.ppu._nametable[1][addr & 0x03FF]
+            elif self.ppu.cartridge.mirror_mode == HORIZONTAL:
+                # Horizontal mirroring: even banks swap nametables
+                if 0x0000 <= addr <= 0x03FF:
+                    data = self.ppu._nametable[0][addr & 0x03FF]
+                elif 0x0400 <= addr <= 0x07FF:
+                    data = self.ppu._nametable[0][addr & 0x03FF]
+                elif 0x0800 <= addr <= 0x0BFF:
+                    data = self.ppu._nametable[1][addr & 0x03FF]
+                elif 0x0C00 <= addr <= 0x0FFF:
+                    data = self.ppu._nametable[1][addr & 0x03FF]
+            elif self.ppu.cartridge.mirror_mode == ONESCREEN_LO:
+                # Single-screen mirroring: all nametables map to nametable 0
+                data = self.ppu._nametable[0][addr & 0x03FF]
+            elif self.ppu.cartridge.mirror_mode == ONESCREEN_HI:
+                # Single-screen mirroring: all nametables map to nametable 1
+                data = self.ppu._nametable[1][addr & 0x03FF]
+        elif 0x3F00 <= addr <= 0x3FFF:
+            # Palette RAM access with mirroring
+            addr &= 0x001F
+            # Mirror palette addresses to first 32 bytes
+            if addr == 0x0010:
+                addr = 0x0000
+            if addr == 0x0014:
+                addr = 0x0004
+            if addr == 0x0018:
+                addr = 0x0008
+            if addr == 0x001C:
+                addr = 0x000C
+            # Apply greyscale mask if needed
+            data = self.ppu._palette_table[addr] & (
+                0x30 if self.ppu.PPUMASK.greyscale == 1 else 0x3F)
+        return data
+
+    cdef void write(self, uint16_t addr, uint8_t data):
+        '''Write one byte to the PPU's 14-bit memory bus.'''
+        cdef bint success
+        addr &= 0x3FFF
+
+        success = self.ppu.cartridge.ppu.write(addr, data)
+        if success:
+            pass
+        elif 0x0000 <= addr <= 0x1FFF:
+            self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
+        elif 0x2000 <= addr <= 0x3EFF:
+            addr &= 0x0FFF
+            if self.ppu.cartridge.mirror_mode == VERTICAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    self.ppu._nametable[0][addr & 0x03FF] = data
+                if 0x0400 <= addr <= 0x07FF:
+                    self.ppu._nametable[1][addr & 0x03FF] = data
+                if 0x0800 <= addr <= 0x0BFF:
+                    self.ppu._nametable[0][addr & 0x03FF] = data
+                if 0x0C00 <= addr <= 0x0FFF:
+                    self.ppu._nametable[1][addr & 0x03FF] = data
+            elif self.ppu.cartridge.mirror_mode == HORIZONTAL:
+                if 0x0000 <= addr <= 0x03FF:
+                    self.ppu._nametable[0][addr & 0x03FF] = data
+                if 0x0400 <= addr <= 0x07FF:
+                    self.ppu._nametable[0][addr & 0x03FF] = data
+                if 0x0800 <= addr <= 0x0BFF:
+                    self.ppu._nametable[1][addr & 0x03FF] = data
+                if 0x0C00 <= addr <= 0x0FFF:
+                    self.ppu._nametable[1][addr & 0x03FF] = data
+            elif self.ppu.cartridge.mirror_mode == ONESCREEN_LO:
+                # Single-screen mirroring: all nametables map to nametable 0
+                self.ppu._nametable[0][addr & 0x03FF] = data
+            elif self.ppu.cartridge.mirror_mode == ONESCREEN_HI:
+                # Single-screen mirroring: all nametables map to nametable 1
+                self.ppu._nametable[1][addr & 0x03FF] = data
+        elif 0x3F00 <= addr <= 0x3FFF:
+            addr &= 0x001F
+            if addr == 0x0010:
+                addr = 0x0000
+            if addr == 0x0014:
+                addr = 0x0004
+            if addr == 0x0018:
+                addr = 0x0008
+            if addr == 0x001C:
+                addr = 0x000C
+            self.ppu._palette_table[addr] = data
 
 cdef class PPU2C02:
     """
@@ -29,7 +151,8 @@ cdef class PPU2C02:
     palette management, and PPU register I/O. Renders 256x240 pixels
     per frame at 60fps (NTSC) with 262 scanlines per frame.
     """
-    def __init__(self, bus: CPUBus) -> None:
+    def __init__(self, Cartridge cartridge) -> None:
+        '''Bind the cartridge that answers CHR and nametable fetches.'''
         self._pattern_table = np.array([[0x00] * 64 * 64] * 2, dtype = np.uint8)
         self._nametable = np.array([[0x00] * 32 * 32] * 2, dtype = np.uint8)
         self._palette_table = np.array([
@@ -76,12 +199,9 @@ cdef class PPU2C02:
         self.nmi_line = False
         self.frame_complete = False
 
-        self.bus = bus
+        self.cartridge = cartridge
+        self.vram = PPUVRAMPort(self)
         self._set_palette_panel()
-
-    cdef void connectCartridge(self, Cartridge cartridge):
-        """Connect the cartridge for PPU bus access."""
-        self.cartridge = cartridge   
 
     cdef void _update_nmi_line(self):
         """Recompute the /NMI line level (A1 signal-line architecture).
@@ -127,12 +247,11 @@ cdef class PPU2C02:
                     self.open_bus &= <uint8_t>(~(1 << i))
                 self.open_bus_frame[i] = self.frame_count
 
-    cdef uint8_t readByCPU(self, uint16_t addr , bint readonly):
+    cdef uint8_t read(self, uint16_t addr):
+        '''Read one $2000-$2007 register through the CPU port.'''
         cdef uint8_t data = 0x00
         cdef uint8_t palette
 
-        # NOTE: readByCPU is only ever invoked for CPU *reads* (writes go through
-        # writeByCPU). The `readonly` flag is therefore always False from callers.
         # Reading $2002 clears VBL (bit7) and sprite-zero (bit6); reading it on
         # the exact dot VBL is set suppresses VBL for that frame (the classic
         # status-read race).
@@ -189,8 +308,8 @@ cdef class PPU2C02:
             # x=$10 reads $2007 twice, 3 PPU dots apart). Hardware presents the
             # SAME buffer value to that second read rather than the freshly
             # refilled one, because the first read's refill has not yet latched
-            # into what the second read returns (Mesen2 _ignoreVramRead). The CPU
-            # sets _page_cross_echo right after the dummy read, so the partner
+            # into what the second read returns. The CPU sets
+            # _page_cross_echo right after the dummy read, so the partner
             # read returns the value the dummy read returned (_prev_read_value)
             # instead of the new buffer, then performs its own refill + increment
             # exactly like a normal read -- leaving the address advanced once per
@@ -200,7 +319,7 @@ cdef class PPU2C02:
                 # Palette read: return the 6-bit palette value in the low bits
                 # and the open-bus latch in the high 2 bits. A palette read does
                 # NOT refresh the latch (ppu_open_bus test 8/9).
-                palette = self.readByPPU(self.VRAM_addr.value & 0x3FFF) & 0x3F
+                palette = self.vram.read(self.VRAM_addr.value & 0x3FFF) & 0x3F
                 data = <uint8_t>(palette | (self._open_bus_decayed() & 0xC0))
             else:
                 if self._page_cross_echo:
@@ -220,9 +339,9 @@ cdef class PPU2C02:
             # Refill the read buffer from the CURRENT VRAM address and advance the
             # address by the standard increment (unchanged from the original).
             if (self.VRAM_addr.value & 0x3FFF) >= 0x3F00:
-                self.ppu_data_buffer = self.readByPPU((self.VRAM_addr.value & 0x2FFF))
+                self.ppu_data_buffer = self.vram.read((self.VRAM_addr.value & 0x2FFF))
             else:
-                self.ppu_data_buffer = self.readByPPU(self.VRAM_addr.value & 0x3FFF)
+                self.ppu_data_buffer = self.vram.read(self.VRAM_addr.value & 0x3FFF)
             # A CPU $2007 access increments the VRAM address by 1 or 32 per
             # PPUCTRL bit 2 -- ALWAYS, independent of rendering state. The
             # scroll-aware step (_incr_coarseX/_incr_Y) belongs to the PPU's
@@ -238,8 +357,8 @@ cdef class PPU2C02:
             self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
         return data
 
-    cdef void writeByCPU(self, uint16_t addr, uint8_t data):
-        """Write to PPU registers ($2000-$2007)."""
+    cdef void write(self, uint16_t addr, uint8_t data):
+        '''Write one $2000-$2007 register through the CPU port.'''
         # A write to any PPU register refreshes the open-bus latch with the
         # written value (ppu_open_bus test 2). The $2007 read buffer is a
         # separate latch and is never touched here.
@@ -301,121 +420,12 @@ cdef class PPU2C02:
         elif addr == 0x0007:
             # PPU Data Register ($2007)
             # Read/write VRAM at current VRAM address
-            self.writeByPPU(self.VRAM_addr.value & 0x3FFF, data)
+            self.vram.write(self.VRAM_addr.value & 0x3FFF, data)
             # Increment VRAM address (1 or 32 bytes based on increment mode)
             self.VRAM_addr.value += 32 if self.PPUCTRL.increment_mode == 1 else 1
             # After a $2007 access the advanced VRAM address drives PPU A12;
             # MMC3-class mappers clock their IRQ on the resulting edge.
             self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
-
-    cdef uint8_t readByPPU(self, uint16_t addr):
-        """
-        Read a byte from PPU addressable memory.
-        
-        Address ranges:
-        - $0000-$1FFF: Pattern tables (CHR ROM/RAM)
-        - $2000-$3EFF: Nametables (VRAM) with mirroring
-        - $3F00-$3FFF: Palette RAM
-        """
-        addr &= 0x3FFF
-
-        # Try cartridge first
-        success, data = self.cartridge.readByPPU(addr)
-        if success:
-            pass
-        elif 0x0000 <= addr <= 0x1FFF:
-            # Pattern table access
-            data = self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
-        elif 0x2000 <= addr <= 0x3EFF:
-            # Nametable access with mirroring
-            addr &= 0x0FFF
-            if self.cartridge.mirror_mode == VERTICAL:
-                # Vertical mirroring: odd banks swap nametables
-                if 0x0000 <= addr <= 0x03FF:
-                    data = self._nametable[0][addr & 0x03FF]
-                elif 0x0400 <= addr <= 0x07FF:
-                    data = self._nametable[1][addr & 0x03FF]
-                elif 0x0800 <= addr <= 0x0BFF:
-                    data = self._nametable[0][addr & 0x03FF]
-                elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self._nametable[1][addr & 0x03FF]                                 
-            elif self.cartridge.mirror_mode == HORIZONTAL:
-                # Horizontal mirroring: even banks swap nametables
-                if 0x0000 <= addr <= 0x03FF:
-                    data = self._nametable[0][addr & 0x03FF]
-                elif 0x0400 <= addr <= 0x07FF:
-                    data = self._nametable[0][addr & 0x03FF]
-                elif 0x0800 <= addr <= 0x0BFF:
-                    data = self._nametable[1][addr & 0x03FF]
-                elif 0x0C00 <= addr <= 0x0FFF:
-                    data = self._nametable[1][addr & 0x03FF]
-            elif self.cartridge.mirror_mode == ONESCREEN_LO:
-                # Single-screen mirroring: all nametables map to nametable 0
-                data = self._nametable[0][addr & 0x03FF]
-            elif self.cartridge.mirror_mode == ONESCREEN_HI:
-                # Single-screen mirroring: all nametables map to nametable 1
-                data = self._nametable[1][addr & 0x03FF]
-        elif 0x3F00 <= addr <= 0x3FFF:
-            # Palette RAM access with mirroring
-            addr &= 0x001F
-            # Mirror palette addresses to first 32 bytes
-            if addr == 0x0010:
-                addr = 0x0000
-            if addr == 0x0014:
-                addr = 0x0004
-            if addr == 0x0018:
-                addr = 0x0008
-            if addr == 0x001C:
-                addr = 0x000C
-            # Apply greyscale mask if needed
-            data = self._palette_table[addr] & (0x30 if self.PPUMASK.greyscale == 1 else 0x3F)
-        return data
-
-    cdef void writeByPPU(self, uint16_t addr, uint8_t data):
-        addr &= 0x3FFF     
-
-        success = self.cartridge.writeByPPU(addr, data)
-        if success:
-            pass
-        elif 0x0000 <= addr <= 0x1FFF:
-            self._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
-        elif 0x2000 <= addr <= 0x3EFF:
-            addr &= 0x0FFF
-            if self.cartridge.mirror_mode == VERTICAL:
-                if 0x0000 <= addr <= 0x03FF:
-                    self._nametable[0][addr & 0x03FF] = data
-                if 0x0400 <= addr <= 0x07FF:
-                    self._nametable[1][addr & 0x03FF] = data
-                if 0x0800 <= addr <= 0x0BFF:
-                    self._nametable[0][addr & 0x03FF] = data
-                if 0x0C00 <= addr <= 0x0FFF:
-                    self._nametable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror_mode == HORIZONTAL:
-                if 0x0000 <= addr <= 0x03FF:
-                    self._nametable[0][addr & 0x03FF] = data
-                if 0x0400 <= addr <= 0x07FF:
-                    self._nametable[0][addr & 0x03FF] = data
-                if 0x0800 <= addr <= 0x0BFF:
-                    self._nametable[1][addr & 0x03FF] = data
-                if 0x0C00 <= addr <= 0x0FFF:
-                    self._nametable[1][addr & 0x03FF] = data
-            elif self.cartridge.mirror_mode == ONESCREEN_LO:
-                # Single-screen mirroring: all nametables map to nametable 0
-                self._nametable[0][addr & 0x03FF] = data
-            elif self.cartridge.mirror_mode == ONESCREEN_HI:
-                # Single-screen mirroring: all nametables map to nametable 1
-                self._nametable[1][addr & 0x03FF] = data
-        elif 0x3F00 <= addr <= 0x3FFF:
-            addr &= 0x001F
-            if addr == 0x0010:
-                addr = 0x0000
-            if addr == 0x0014:
-                addr = 0x0004
-            if addr == 0x0018:
-                addr = 0x0008
-            if addr == 0x001C:
-                addr = 0x000C
-            self._palette_table[addr] = data            
 
     cdef void _set_palette_panel(self):    
         self.palette_panel[0x00],self.palette_panel[0x01],self.palette_panel[0x02],self.palette_panel[0x03],self.palette_panel[0x04],self.palette_panel[0x05],self.palette_panel[0x06],self.palette_panel[0x07],self.palette_panel[0x08],self.palette_panel[0x09],self.palette_panel[0x0a],self.palette_panel[0x0b],self.palette_panel[0x0c],self.palette_panel[0x0d],self.palette_panel[0x0e],self.palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
@@ -424,7 +434,7 @@ cdef class PPU2C02:
         self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
-        color = self.readByPPU(0x3F00 + (palette << 2) + pixel) & 0x3F
+        color = self.vram.read(0x3F00 + (palette << 2) + pixel) & 0x3F
         return self.palette_panel[color]
 
     cdef void reset(self):
@@ -573,10 +583,10 @@ cdef class PPU2C02:
             + (which_tile << 4) \
             + (which_row) \
             + offset
-        return self.readByPPU(background_tile_addr)
+        return self.vram.read(background_tile_addr)
 
     cdef uint8_t _fetch_background_tile_id(self):
-        return self.readByPPU(0x2000 | (self.VRAM_addr.value & 0x0FFF))
+        return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF))
     
     cdef uint8_t _fetch_background_attribute(self):
         """
@@ -590,7 +600,7 @@ cdef class PPU2C02:
         - Bits 4-5: lower-left quadrant
         - Bits 6-7: lower-right quadrant
         """
-        cdef uint8_t attribute = self.readByPPU(0x23C0 \
+        cdef uint8_t attribute = self.vram.read(0x23C0 \
             | (self.VRAM_addr.nametable_y << 11) \
             | (self.VRAM_addr.nametable_x << 10) \
             | ((self.VRAM_addr.coarse_y >> 2) << 3) \
@@ -755,8 +765,8 @@ cdef class PPU2C02:
 
         # Calculate pattern address and fetch both bytes
         cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
-        cdef uint8_t sprite_pattern_low_bits = self.readByPPU(tile_addr + 0)
-        cdef uint8_t sprite_pattern_high_bits = self.readByPPU(tile_addr + 8)
+        cdef uint8_t sprite_pattern_low_bits = self.vram.read(tile_addr + 0)
+        cdef uint8_t sprite_pattern_high_bits = self.vram.read(tile_addr + 8)
         
         # Apply horizontal flip if needed
         cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0
