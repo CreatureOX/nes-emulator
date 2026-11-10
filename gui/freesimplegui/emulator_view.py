@@ -270,12 +270,14 @@ class EmulatorWindow(BaseView):
             # Get latest keyboard config from global keyboard manager (check every frame, supports real-time updates)
             keyboard = keyboard_manager.get_keyboard()
             
-            # Get keyboard state using cross-platform method
+            # Console.control() indexes the eight physical NES buttons in
+            # A, B, Select, Start, Up, Down, Left, Right order. The keyboard
+            # config is keyed by button name, so reorder it explicitly here.
             control_inputs = [
+                get_key_state(keyboard['A']),
+                get_key_state(keyboard['B']),
                 get_key_state(keyboard['SELECT']),
                 get_key_state(keyboard['START']),
-                get_key_state(keyboard['B']),
-                get_key_state(keyboard['A']),
                 get_key_state(keyboard['UP']),
                 get_key_state(keyboard['DOWN']),
                 get_key_state(keyboard['LEFT']),
