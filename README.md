@@ -139,6 +139,8 @@ For more details, check `setup.py`
   </tbody>
 </table>
 
-The authoritative list is the `mappers` registry in
-`nes/mapper/mapper_factory.pyx`; this table mirrors it. ROMs whose mapper is
-not listed here cannot be loaded yet.
+Implemented: 0 (NROM), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3),
+66 (GxROM). The authoritative list is the `mappers` registry in
+`nes/mapper/mapper_factory.pyx`; this table mirrors it and this line is
+updated alongside it. ROMs whose mapper is not checked above cannot be
+loaded yet.
