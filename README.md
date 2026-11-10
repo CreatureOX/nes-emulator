@@ -47,7 +47,7 @@ For more details, check `setup.py`
       <td>MMC1 <input type="checkbox" checked></td>
       <td>UxROM <input type="checkbox" checked></td>
       <td>INES Mapper 003 <input type="checkbox" checked></td>
-      <td>MMC3</td>
+      <td>MMC3 <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
@@ -138,3 +138,7 @@ For more details, check `setup.py`
     </tr>
   </tbody>
 </table>
+
+The authoritative list is the `mappers` registry in
+`nes/mapper/mapper_factory.pyx`; this table mirrors it. ROMs whose mapper is
+not listed here cannot be loaded yet.
