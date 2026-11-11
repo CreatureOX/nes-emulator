@@ -24,7 +24,7 @@ SUBMODULE = os.path.join(ROOT, "nes-test-roms")
 XML_PATH = os.path.join(SUBMODULE, "test_roms.xml")
 
 # Mappers implemented in nes/mapper/mapper_factory.pyx.
-SUPPORTED_MAPPERS = {0, 1, 2, 3, 4, 7, 11, 34, 66}
+SUPPORTED_MAPPERS = {0, 1, 2, 3, 4, 7, 11, 22, 34, 66}
 
 # Directories holding demo/homebrew ROMs rather than tests.
 EXCLUDE_DIRS = {"other", "dpcmletterbox"}
