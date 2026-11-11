@@ -42,6 +42,11 @@ cdef class Nes2Cart(Cartridge):
                 self.PRG_RAM_data = np.frombuffer(nes2.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()    
                 if len(self.PRG_RAM_data) == 0:
                     self.PRG_RAM_data = np.zeros(self.PRG_ROM_bytes, dtype = np.uint8).copy()
+            # The PPU pattern-table window always spans 8 KB, so a NES 2.0
+            # header declaring a smaller CHR RAM chip still needs the full
+            # window backed. Ref: NESdev wiki "PPU pattern tables".
+            if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < 8192:
+                self.CHR_RAM_bytes = 8192
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(nes2.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_ROM_data) == 0:
