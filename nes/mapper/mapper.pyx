@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
 from nes.mapper.mirror cimport *
 
@@ -45,6 +45,10 @@ cdef class Mapper:
     cdef uint8_t mirror(self):
         """Return the mirroring mode."""
         return HARDWARE
+
+    cdef uint32_t chr_ram_size(self):
+        '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
+        return 0x2000
 
     cdef bint irq_line(self):
         """Check if IRQ is pending."""

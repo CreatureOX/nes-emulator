@@ -8,6 +8,7 @@ from nes.mapper.impl.mapper_axrom cimport MapperAxROM
 from nes.mapper.impl.mapper_colordreams cimport MapperColorDreams
 from nes.mapper.impl.mapper_bnrom cimport MapperBNROM
 from nes.mapper.impl.mapper_vrc2a cimport MapperVRC2a
+from nes.mapper.impl.mapper_action53 cimport MapperAction53
 
 
 mappers = {
@@ -19,6 +20,7 @@ mappers = {
     "007": MapperAxROM,
     "011": MapperColorDreams,
     "022": MapperVRC2a,
+    "028": MapperAction53,
     "034": MapperBNROM,
     "066": MapperGxROM,
 }
