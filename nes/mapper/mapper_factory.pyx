@@ -4,6 +4,7 @@ from nes.mapper.impl.mapper_uxrom cimport MapperUxROM
 from nes.mapper.impl.mapper_ines003 cimport MapperINES003
 from nes.mapper.impl.mapper_mmc3 cimport MapperMMC3
 from nes.mapper.impl.mapper_gxrom cimport MapperGxROM
+from nes.mapper.impl.mapper_axrom cimport MapperAxROM
 
 
 mappers = {
@@ -12,6 +13,7 @@ mappers = {
     "002": MapperUxROM,
     "003": MapperINES003,
     "004": MapperMMC3,
+    "007": MapperAxROM,
     "066": MapperGxROM,
 }
 
