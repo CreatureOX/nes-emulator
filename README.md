@@ -54,7 +54,7 @@ For more details, check `setup.py`
       <td></td>
       <td></td>
       <td></td>
-      <td></td>
+      <td>Color Dreams <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
@@ -139,9 +139,9 @@ For more details, check `setup.py`
   </tbody>
 </table>
 
-Implemented: 0 (NROM), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3),
-7 (AxROM), 66 (GxROM). The authoritative list is the `mappers` registry in
-`nes/mapper/mapper_factory.pyx`. Adding a board keeps four places in sync:
-that registry, the checked cell above, this list, and `SUPPORTED_MAPPERS`
-in `tests/rom_scanner.py`. ROMs whose mapper is not checked above cannot be
-loaded yet.
+Implemented: 0 (NROM), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3), 7 (AxROM),
+11 (Color Dreams), 66 (GxROM). The authoritative list is the `mappers`
+registry in `nes/mapper/mapper_factory.pyx`. Adding a board keeps four
+places in sync: that registry, the checked cell above, this list, and
+`SUPPORTED_MAPPERS` in `tests/rom_scanner.py`. ROMs whose mapper is not
+checked above cannot be loaded yet.
