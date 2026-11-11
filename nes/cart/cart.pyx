@@ -3,6 +3,7 @@ from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
+from nes.mapper.mirror cimport HARDWARE
 
 
 cdef class Header:
@@ -56,6 +57,13 @@ cdef class CartridgeCPUPort:
             True if write was handled by mapper, False otherwise
         '''
         cdef CPUWriteMapping mapping = self.cart.mapper.map_cpu_write(addr, data)
+        cdef uint8_t mirror_mode = self.cart.mapper.mirror()
+
+        # Boards with switchable nametable mirroring publish it on the
+        # mapper; the PPU reads the cartridge-level mode. Ref: NESdev wiki
+        # "Mirroring" (mapper-controlled nametable arrangement).
+        if mirror_mode != HARDWARE:
+            self.cart.mirror_mode = mirror_mode
 
         if mapping.success:
             if mapping.addr == UINT32_MAX:
@@ -149,12 +157,17 @@ cdef class Cartridge:
         self.wram = np.zeros(8192, dtype=np.uint8)
 
     cdef void reset(self):
-        """Reset the mapper state."""
+        """Reset the mapper state and its nametable mirroring."""
+        cdef uint8_t mirror_mode
         if self.mapper is None:
             return
         self.mapper.reset()
 
-    cdef uint8_t mapper_no(self):
+        mirror_mode = self.mapper.mirror()
+        if mirror_mode != HARDWARE:
+            self.mirror_mode = mirror_mode
+
+    cdef uint16_t mapper_no(self):
         """Return the mapper number."""
         pass
 

@@ -17,12 +17,14 @@ mappers = {
 
 cdef class MapperFactory:
     """
-    Factory for creating mapper instances by mapper number.
-    
-    Supports mappers 0, 1, 2, 3, 4, and 66.
+    Resolve an iNES mapper number to its implementation class.
+
+    The `mappers` registry is the authoritative list of supported boards.
     """
     @staticmethod
     cdef Mapper of(int mapper_no):
-        """Create a mapper instance by number."""
+        """Return the registered class, rejecting unsupported mapper numbers."""
         mapper_name = "{:03d}".format(mapper_no)
+        if mapper_name not in mappers:
+            raise ValueError("unsupported iNES mapper {:d}".format(mapper_no))
         return <Mapper> mappers[mapper_name]

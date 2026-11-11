@@ -34,4 +34,4 @@ cdef class Cartridge:
     cdef uint8_t mirror_mode
 
     cdef void reset(self)
-    cdef uint8_t mapper_no(self)
+    cdef uint16_t mapper_no(self)
