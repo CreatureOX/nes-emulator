@@ -1,7 +1,9 @@
 from libc.string cimport memset
+from libc.stdint cimport int8_t
 import numpy as np
 cimport numpy as np
 
+from nes.mapper.mapper cimport Mapper
 from nes.mapper.mirror cimport *
 from nes.ppu.ppu_sprite cimport *
 
@@ -40,6 +42,7 @@ cdef class PPUVRAMPort:
         '''
         cdef bint success
         cdef uint8_t data
+        cdef int8_t source
         addr &= 0x3FFF
 
         # Try cartridge first
@@ -50,6 +53,13 @@ cdef class PPUVRAMPort:
             # Pattern table access
             data = self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
+            # Boards between the PPU and CIRAM may select a source per window.
+            # Ref: NESdev wiki "MMC5", Nametable mapping ($5105).
+            source = self.ppu.cartridge.mapper.nametable_source(addr)
+            if source == 0 or source == 1:
+                return self.ppu._nametable[source][addr & 0x03FF]
+            if source == 2 or source == 3:
+                return self.ppu.cartridge.mapper.nametable_read(addr)
             # Nametable access with mirroring
             addr &= 0x0FFF
             if self.ppu.cartridge.mirror_mode == VERTICAL:
@@ -98,6 +108,7 @@ cdef class PPUVRAMPort:
     cdef void write(self, uint16_t addr, uint8_t data):
         '''Write one byte to the PPU's 14-bit memory bus.'''
         cdef bint success
+        cdef int8_t source
         addr &= 0x3FFF
 
         success = self.ppu.cartridge.ppu.write(addr, data)
@@ -106,6 +117,16 @@ cdef class PPUVRAMPort:
         elif 0x0000 <= addr <= 0x1FFF:
             self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
+            # Match the read path's per-window source selection.
+            source = self.ppu.cartridge.mapper.nametable_source(addr)
+            if source == 0 or source == 1:
+                self.ppu._nametable[source][addr & 0x03FF] = data
+                return
+            if source == 2:
+                self.ppu.cartridge.mapper.nametable_write(addr, data)
+                return
+            if source == 3:
+                return
             addr &= 0x0FFF
             if self.ppu.cartridge.mirror_mode == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:

@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t, uint32_t, UINT32_MAX
+from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t, UINT32_MAX
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping
 from nes.mapper.mapping cimport PPUReadMapping, PPUWriteMapping
@@ -9,10 +9,11 @@ cdef class MapperMMC5(Mapper):
     Nintendo MMC5 / ExROM (iNES 5).
 
     Four PRG and four CHR banking modes, 1 KB of internal extended RAM,
-    an unsigned 8x8 multiplier and a scanline IRQ counter. Scanline starts
+    an unsigned 8x8 multiplier, a scanline IRQ counter, the four $5105
+    nametable windows and fill-mode tile/color substitution. Scanline starts
     are recovered from the PPU's repeated nametable reads rather than from
-    a PPU-side hook. Nametable sources ($5105), fill mode, split screen and
-    expansion audio are not part of this stage.
+    a PPU-side hook. Extended attributes, vertical split, 8x16 sprite CHR
+    selection and expansion audio are not implemented.
     Ref: NESdev wiki "MMC5".
     '''
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
@@ -72,6 +73,54 @@ cdef class MapperMMC5(Mapper):
     cdef bint irq_line(self):
         '''Assert /IRQ only while the pending flag and enable bit are set.'''
         return self.irq_enable and self.irq_pending
+
+    cdef int8_t nametable_source(self, uint16_t addr):
+        '''Return the $5105 source selected for this 1 KB nametable window.
+
+        $5105 packs four 2-bit fields for $2000, $2400, $2800 and $2C00;
+        PPU $3000-$3EFF repeats the same 4 KB arrangement. Values 0 and 1
+        select a CIRAM page, 2 selects ExRAM and 3 selects fill mode.
+        Ref: NESdev wiki "MMC5", Nametable mapping ($5105).
+        '''
+        cdef uint8_t window
+
+        if addr < 0x2000 or addr > 0x3EFF:
+            return -1
+        window = (addr >> 10) & 0x03
+        return <int8_t> ((self.nt_mapping >> (window * 2)) & 0x03)
+
+    cdef uint8_t nametable_read(self, uint16_t addr):
+        '''Supply the byte a mapper-owned nametable window exposes.
+
+        Attribute-table bytes occupy the last 64 bytes of each 1 KB window;
+        fill mode repeats the two $5107 palette bits across all four indexes.
+        ExRAM windows read as zeros once $5104 selects a plain RAM mode.
+        Ref: NESdev wiki "MMC5", Fill-mode tile ($5106) and color ($5107).
+        '''
+        cdef uint16_t offset = addr & 0x03FF
+        cdef uint8_t source = <uint8_t> self.nametable_source(addr)
+        cdef uint8_t attr
+
+        if source == 2:
+            if self.exram_mode >= 2:
+                return 0x00
+            return self.exram[offset]
+        if source == 3:
+            if offset >= 0x03C0:
+                attr = self.fill_attr & 0x03
+                return attr | (attr << 2) | (attr << 4) | (attr << 6)
+            return self.fill_tile
+        return 0x00
+
+    cdef void nametable_write(self, uint16_t addr, uint8_t data):
+        '''Route a PPUDATA write into ExRAM for windows that select it.
+
+        In $5104 modes %10 and %11 ExRAM is not a nametable, so writes there
+        are discarded just like reads.
+        Ref: NESdev wiki "MMC5", Internal extended RAM mode ($5104).
+        '''
+        if self.nametable_source(addr) == 2 and self.exram_mode < 2:
+            self.exram[addr & 0x03FF] = data
 
     cdef uint32_t _prg_addr(self, uint16_t addr):
         '''Translate $8000-$FFFF into a PRG ROM offset for the active mode.'''

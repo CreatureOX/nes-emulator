@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t, uint32_t
+from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t
 
 from nes.mapper.mapper cimport Mapper
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping
@@ -40,6 +40,9 @@ cdef class MapperMMC5(Mapper):
     cdef PPUWriteMapping map_ppu_write(self, uint16_t addr)
     cdef void reset(self)
     cdef bint irq_line(self)
+    cdef int8_t nametable_source(self, uint16_t addr)
+    cdef uint8_t nametable_read(self, uint16_t addr)
+    cdef void nametable_write(self, uint16_t addr, uint8_t data)
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
     cdef uint32_t _chr_addr(self, uint16_t addr)

@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t, uint32_t
+from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
 
@@ -17,6 +17,10 @@ cdef class Mapper:
     cdef void reset(self)
 
     cdef uint8_t mirror(self)
+
+    cdef int8_t nametable_source(self, uint16_t addr)
+    cdef uint8_t nametable_read(self, uint16_t addr)
+    cdef void nametable_write(self, uint16_t addr, uint8_t data)
 
     cdef uint32_t chr_ram_size(self)
 
