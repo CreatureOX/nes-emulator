@@ -3,6 +3,7 @@ from nes.mapper.impl.mapper_mmc1 cimport MapperMMC1
 from nes.mapper.impl.mapper_uxrom cimport MapperUxROM
 from nes.mapper.impl.mapper_ines003 cimport MapperINES003
 from nes.mapper.impl.mapper_mmc3 cimport MapperMMC3
+from nes.mapper.impl.mapper_mmc5 cimport MapperMMC5
 from nes.mapper.impl.mapper_gxrom cimport MapperGxROM
 from nes.mapper.impl.mapper_axrom cimport MapperAxROM
 from nes.mapper.impl.mapper_colordreams cimport MapperColorDreams
@@ -17,6 +18,7 @@ mappers = {
     "002": MapperUxROM,
     "003": MapperINES003,
     "004": MapperMMC3,
+    "005": MapperMMC5,
     "007": MapperAxROM,
     "011": MapperColorDreams,
     "022": MapperVRC2a,
