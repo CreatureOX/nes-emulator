@@ -73,6 +73,10 @@ cdef class Mapper:
         '''No per-tile palette override; use the normal attribute table.'''
         return -1
 
+    cdef int expansion_audio_sample(self):
+        '''No expansion audio on a plain board.'''
+        return 0
+
     cdef uint32_t chr_ram_size(self):
         '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
         return 0x2000

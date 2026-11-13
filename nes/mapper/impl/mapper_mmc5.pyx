@@ -16,8 +16,8 @@ cdef class MapperMMC5(Mapper):
     are recovered from the PPU's repeated nametable reads rather than from
     a PPU-side hook. In 8x16 sprite mode the fetch context selects the
     sprite ($5120-$5127) or background ($5128-$512B) bank set. Extended
-    attributes, vertical split and expansion audio are not implemented.
-    Ref: NESdev wiki "MMC5".
+    attributes and expansion audio (PCM) are implemented; vertical split
+    mode is not. Ref: NESdev wiki "MMC5".
     '''
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
@@ -33,6 +33,9 @@ cdef class MapperMMC5(Mapper):
             self.mul_b = 0xFF
             self.last_ppu_addr = 0xFFFF
             self.fetch_kind = PPU_FETCH_OTHER
+            self.pcm_data = 0
+            self.pcm_control = 0
+            self.pcm_channel_enable = False
             for i in range(1, 5):
                 self.prg_bank[i] = 0xFF
         else:
@@ -147,6 +150,19 @@ cdef class MapperMMC5(Mapper):
         if self.exram_mode == 1 and self.substitutions:
             return (self.exram[nt_addr & 0x03FF] >> 6) & 0x03
         return -1
+
+    cdef int expansion_audio_sample(self):
+        '''MMC5 PCM level for the APU mix, or 0 when disabled.
+
+        The PCM channel is a single 8-bit DAC: $5010 bit 7 enables it, $5015
+        bit 3 is the APU channel enable and $5011 holds the sample level that
+        is output directly. The level is mixed only while both enables are set
+        and the value is non-zero. Ref: NESdev wiki "MMC5", Expansion audio.
+        '''
+        if (self.pcm_control & 0x80) and self.pcm_channel_enable \
+                and self.pcm_data != 0:
+            return <int> self.pcm_data
+        return 0
 
     cdef uint32_t _prg_addr(self, uint16_t addr):
         '''Translate $8000-$FFFF into a PRG ROM offset for the active mode.'''
@@ -299,6 +315,12 @@ cdef class MapperMMC5(Mapper):
                 self._leave_frame()
             return mapping
         if 0x5000 <= addr <= 0x5015:
+            if addr == 0x5010:
+                self.pcm_control = data
+            elif addr == 0x5011:
+                self.pcm_data = data
+            elif addr == 0x5015:
+                self.pcm_channel_enable = (data & 0x08) != 0
             return mapping
         if 0x5100 <= addr <= 0x5107:
             if addr == 0x5100:

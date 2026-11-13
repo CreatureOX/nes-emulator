@@ -40,6 +40,10 @@ cdef class Mapper:
     # mode returns the ExRAM AA bits here.
     cdef int background_attribute(self, uint16_t nt_addr)
 
+    # Expansion audio sample contributed to the APU mix, or 0 when the board
+    # has no extra audio channel. MMC5 overrides this with its PCM level.
+    cdef int expansion_audio_sample(self)
+
     cdef uint32_t chr_ram_size(self)
 
     cdef bint irq_line(self)
