@@ -30,6 +30,16 @@ cdef class Mapper:
     cdef void nametable_write(self, uint16_t addr, uint8_t data)
     cdef void ppu_fetch_kind(self, uint8_t kind)
 
+    # Background nametable address of the tile currently being fetched. The
+    # PPU fills this before a background pattern fetch so a board (e.g. MMC5
+    # extended attributes) can resolve a per-tile CHR bank from ExRAM.
+    cdef uint16_t bg_nt_addr
+
+    # Per-tile background palette for the given nametable address, or -1 to
+    # let the PPU use the normal attribute table. MMC5 extended-attribute
+    # mode returns the ExRAM AA bits here.
+    cdef int background_attribute(self, uint16_t nt_addr)
+
     cdef uint32_t chr_ram_size(self)
 
     cdef bint irq_line(self)

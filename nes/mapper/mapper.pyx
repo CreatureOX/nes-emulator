@@ -40,6 +40,7 @@ cdef class Mapper:
 
     cdef void reset(self):
         """Reset mapper state."""
+        self.bg_nt_addr = 0
         pass
 
     cdef uint8_t mirror(self):
@@ -67,6 +68,10 @@ cdef class Mapper:
     cdef void ppu_fetch_kind(self, uint8_t kind):
         '''Ignore fetch context on boards that map CHR by address alone.'''
         pass
+
+    cdef int background_attribute(self, uint16_t nt_addr):
+        '''No per-tile palette override; use the normal attribute table.'''
+        return -1
 
     cdef uint32_t chr_ram_size(self):
         '''Return the fitted CHR RAM size, 8 KB on a plain board.'''

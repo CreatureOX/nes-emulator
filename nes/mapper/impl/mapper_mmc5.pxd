@@ -47,6 +47,7 @@ cdef class MapperMMC5(Mapper):
     cdef uint8_t nametable_read(self, uint16_t addr)
     cdef void nametable_write(self, uint16_t addr, uint8_t data)
     cdef void ppu_fetch_kind(self, uint8_t kind)
+    cdef int background_attribute(self, uint16_t nt_addr)
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
     cdef uint32_t _chr_addr(self, uint16_t addr)

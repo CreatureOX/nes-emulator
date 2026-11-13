@@ -609,6 +609,9 @@ cdef class PPU2C02:
             + (which_tile << 4) \
             + (which_row) \
             + offset
+        # Tell the mapper which background tile we are fetching so boards like
+        # MMC5 extended attributes can resolve a per-tile CHR bank from ExRAM.
+        self.cartridge.mapper.bg_nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
         return self.vram.read(background_tile_addr, PPU_FETCH_BACKGROUND)
 
     cdef uint8_t _fetch_background_tile_id(self):
@@ -618,7 +621,7 @@ cdef class PPU2C02:
     cdef uint8_t _fetch_background_attribute(self):
         """
         Fetch attribute byte for current tile.
-        
+
         Each attribute byte covers a 4x4 tile region (32x32 pixels).
         The attribute is stored at the corner of each 4x4 region in the nametable.
         Bits 0-1 of the attribute byte specify the palette for each quadrant:
@@ -626,22 +629,40 @@ cdef class PPU2C02:
         - Bits 2-3: upper-right quadrant
         - Bits 4-5: lower-left quadrant
         - Bits 6-7: lower-right quadrant
+
+        A board may override the per-tile palette (MMC5 extended attributes
+        return the ExRAM AA bits); in that case the quadrant extraction is
+        skipped because the value is already the 2-bit palette for this tile.
         """
-        cdef uint8_t attribute = self.vram.read(0x23C0 \
-            | (self.VRAM_addr.nametable_y << 11) \
-            | (self.VRAM_addr.nametable_x << 10) \
-            | ((self.VRAM_addr.coarse_y >> 2) << 3) \
-            | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
-                
-        # Extract the 2-bit palette index for the current quadrant
-        # based on which part of the 4x4 tile region we're in
-        if self.VRAM_addr.coarse_y & 0x02 > 0:
-            # Lower half: shift to get bits 2-3 or 6-7
-            attribute >>= 4
-        if self.VRAM_addr.coarse_x & 0x02 > 0:
-            # Right half: shift to get bits 1,3,5,7
-            attribute >>= 2
-        attribute &= 0x03
+        cdef uint16_t nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
+        cdef int ext_attr = self.cartridge.mapper.background_attribute(nt_addr)
+        cdef uint8_t attribute
+        if ext_attr >= 0:
+            # Per-tile palette supplied by the mapper; quadrant bits are moot.
+            # Still issue the normal attribute read so mapper scanline
+            # detection keeps seeing every nametable fetch unchanged.
+            self.vram.read(0x23C0 \
+                | (self.VRAM_addr.nametable_y << 11) \
+                | (self.VRAM_addr.nametable_x << 10) \
+                | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+                | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
+            attribute = <uint8_t>(ext_attr & 0x03)
+        else:
+            attribute = self.vram.read(0x23C0 \
+                | (self.VRAM_addr.nametable_y << 11) \
+                | (self.VRAM_addr.nametable_x << 10) \
+                | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+                | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
+
+            # Extract the 2-bit palette index for the current quadrant
+            # based on which part of the 4x4 tile region we're in
+            if self.VRAM_addr.coarse_y & 0x02 > 0:
+                # Lower half: shift to get bits 2-3 or 6-7
+                attribute >>= 4
+            if self.VRAM_addr.coarse_x & 0x02 > 0:
+                # Right half: shift to get bits 1,3,5,7
+                attribute >>= 2
+            attribute &= 0x03
         return attribute
 
     cdef void _eval_sprites(self):

@@ -135,6 +135,19 @@ cdef class MapperMMC5(Mapper):
         if self.nametable_source(addr) == 2 and self.exram_mode < 2:
             self.exram[addr & 0x03FF] = data
 
+    cdef int background_attribute(self, uint16_t nt_addr):
+        '''Per-tile palette from ExRAM in extended-attribute mode ($5104=%01).
+
+        Each ExRAM byte at the matching nametable address holds "AACC CCCC";
+        the AA bits (7-6) are the palette for that background tile. Returns
+        -1 when extended attributes are off so the PPU uses its attribute
+        table as usual.
+        Ref: NESdev wiki "MMC5", Extended attributes.
+        '''
+        if self.exram_mode == 1 and self.substitutions:
+            return (self.exram[nt_addr & 0x03FF] >> 6) & 0x03
+        return -1
+
     cdef uint32_t _prg_addr(self, uint16_t addr):
         '''Translate $8000-$FFFF into a PRG ROM offset for the active mode.'''
         cdef uint8_t reg
@@ -177,10 +190,24 @@ cdef class MapperMMC5(Mapper):
         '''
         cdef uint16_t slot
         cdef uint8_t reg
+        cdef uint8_t ex
         cdef uint32_t bank
         cdef uint32_t size
         cdef bint use_b
         cdef uint32_t chr_bytes = self.CHR_banks * 0x2000
+
+        # Extended-attribute mode ($5104=%01): the background tile's 4 KB CHR
+        # bank comes from ExRAM "AACC CCCC" bits 5-0 plus $5130 bits 6-7
+        # (chr_upper), ignoring CHR mode and the $5120-$512B registers.
+        # Sprites and $2007 access are unaffected (handled below).
+        # Ref: NESdev wiki "MMC5", Extended attributes.
+        if self.exram_mode == 1 and self.substitutions \
+                and self.fetch_kind == PPU_FETCH_BACKGROUND:
+            ex = self.exram[self.bg_nt_addr & 0x03FF]
+            bank = (<uint32_t>(ex & 0x3F)) \
+                | (<uint32_t>(self.chr_upper & 0x03) << 6)
+            return (bank * 0x1000 + (addr & 0x0FFF)) \
+                % (chr_bytes if chr_bytes > 0 else 0x2000)
 
         if self.fetch_kind == PPU_FETCH_SPRITE:
             use_b = False
