@@ -17,7 +17,7 @@ cdef class MapperMMC5(Mapper):
     a PPU-side hook. In 8x16 sprite mode the fetch context selects the
     sprite ($5120-$5127) or background ($5128-$512B) bank set. Extended
     attributes and expansion audio (PCM) are implemented; vertical split
-    mode is not. Ref: NESdev wiki "MMC5".
+    mode is implemented. Ref: NESdev wiki "MMC5".
     '''
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
@@ -95,13 +95,18 @@ cdef class MapperMMC5(Mapper):
 
         $5105 packs four 2-bit fields for $2000, $2400, $2800 and $2C00;
         PPU $3000-$3EFF repeats the same 4 KB arrangement. Values 0 and 1
-        select a CIRAM page, 2 selects ExRAM and 3 selects fill mode.
-        Ref: NESdev wiki "MMC5", Nametable mapping ($5105).
+        select a CIRAM page, 2 selects ExRAM and 3 selects fill mode. While
+        vertical split is active the columns inside the split region draw from
+        ExRAM regardless of $5105, so they are reported as an ExRAM window
+        for that fetch only. Ref: NESdev wiki "MMC5", Nametable mapping
+        ($5105) and Vertical split screen.
         '''
         cdef uint8_t window
 
         if addr < 0x2000 or addr > 0x3EFF:
             return -1
+        if self._in_split_for_col(addr & 0x1F):
+            return 2
         window = (addr >> 10) & 0x03
         return <int8_t> ((self.nt_mapping >> (window * 2)) & 0x03)
 
@@ -111,13 +116,33 @@ cdef class MapperMMC5(Mapper):
         Attribute-table bytes occupy the last 64 bytes of each 1 KB window;
         fill mode repeats the two $5107 palette bits across all four indexes.
         ExRAM windows read as zeros once $5104 selects a plain RAM mode.
-        Ref: NESdev wiki "MMC5", Fill-mode tile ($5106) and color ($5107).
+        Inside the vertical-split region the byte comes from ExRAM at a
+        split-scrolled vertical row, matching the FCEUX MMC5 hook.
+        Ref: NESdev wiki "MMC5", Fill-mode tile ($5106) and color ($5107);
+        Vertical split screen.
         '''
         cdef uint16_t offset = addr & 0x03FF
         cdef uint8_t source = <uint8_t> self.nametable_source(addr)
         cdef uint8_t attr
+        cdef uint16_t a
+        cdef int linetile
 
         if source == 2:
+            if self._in_split_for_col(addr & 0x1F):
+                # Vertical split: the nametable/attribute byte is read from
+                # ExRAM at a vertical position scrolled by $5201. The current
+                # column (addr & 0x1F) and nametable select are kept; only the
+                # vertical tile index is replaced by the split-scrolled row.
+                a = addr & 0x3FFF
+                linetile = ((<int>self.bg_scanline) - 1) // 8 \
+                    + (<int>((self.split_scroll >> 3) & 0x1F))
+                if (a & 0x3FF) >= 0x3C0:
+                    a &= ~(0x1C << 1)
+                    a |= (linetile & 0x1C) << 1
+                else:
+                    a &= ~((0x1F << 5) | (1 << 0xB))
+                    a |= (linetile & 31) << 5
+                return self.exram[a & 0x3FF]
             if self.exram_mode >= 2:
                 return 0x00
             return self.exram[offset]
@@ -143,10 +168,12 @@ cdef class MapperMMC5(Mapper):
 
         Each ExRAM byte at the matching nametable address holds "AACC CCCC";
         the AA bits (7-6) are the palette for that background tile. Returns
-        -1 when extended attributes are off so the PPU uses its attribute
-        table as usual.
+        -1 when extended attributes are off (or a split region overrides the
+        attribute source) so the PPU uses its attribute table as usual.
         Ref: NESdev wiki "MMC5", Extended attributes.
         '''
+        if self._in_split():
+            return -1
         if self.exram_mode == 1 and self.substitutions:
             return (self.exram[nt_addr & 0x03FF] >> 6) & 0x03
         return -1
@@ -163,6 +190,32 @@ cdef class MapperMMC5(Mapper):
                 and self.pcm_data != 0:
             return <int> self.pcm_data
         return 0
+
+    cdef bint _in_split_for_col(self, int ht):
+        '''True when column `ht` (0-31) lies inside the vertical split region.
+
+        Vertical split ($5200) only engages while rendering is on, the CHR
+        mode is not 1 KB ($5101 bit 1 clear) and bit 7 of $5200 enables it.
+        The split covers columns below $5200[0:5] on the left side (bit 6
+        clear) or at or above it on the right side (bit 6 set). The column is
+        taken from the read's own PPU address so the test is exact for every
+        nametable/pattern fetch. Ref: NESdev wiki "MMC5", Vertical split
+        screen.
+        '''
+        cdef int target, side
+        if not ((self.split_mode & 0x80) != 0
+                and (self.chr_mode & 0x02) == 0
+                and self.substitutions):
+            return False
+        target = self.split_mode & 0x1F
+        side = self.split_mode & 0x40
+        if side == 0:
+            return (ht & 0x1F) < target
+        return (ht & 0x1F) >= target
+
+    cdef bint _in_split(self):
+        '''Convenience split test for the tracked background fetch column.'''
+        return self._in_split_for_col(self.bg_tile_x & 0x1F)
 
     cdef uint32_t _prg_addr(self, uint16_t addr):
         '''Translate $8000-$FFFF into a PRG ROM offset for the active mode.'''
@@ -211,6 +264,14 @@ cdef class MapperMMC5(Mapper):
         cdef uint32_t size
         cdef bint use_b
         cdef uint32_t chr_bytes = self.CHR_banks * 0x2000
+
+        # Vertical split: a background fetch inside the split region always
+        # pulls its pattern from the fixed 4 KB bank in $5202, superseding the
+        # normal CHR banking (and the extended-attribute CHR source). Sprites
+        # and $2007 keep using the normal banks, matching the real MMC5.
+        if self.fetch_kind == PPU_FETCH_BACKGROUND and self._in_split():
+            return (self.split_bank * 0x1000 + (addr & 0x0FFF)) \
+                % (chr_bytes if chr_bytes > 0 else 0x2000)
 
         # Extended-attribute mode ($5104=%01): the background tile's 4 KB CHR
         # bank comes from ExRAM "AACC CCCC" bits 5-0 plus $5130 bits 6-7

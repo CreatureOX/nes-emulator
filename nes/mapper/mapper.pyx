@@ -41,6 +41,8 @@ cdef class Mapper:
     cdef void reset(self):
         """Reset mapper state."""
         self.bg_nt_addr = 0
+        self.bg_tile_x = 0
+        self.bg_scanline = 0
         pass
 
     cdef uint8_t mirror(self):

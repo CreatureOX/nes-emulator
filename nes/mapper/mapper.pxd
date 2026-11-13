@@ -35,6 +35,13 @@ cdef class Mapper:
     # extended attributes) can resolve a per-tile CHR bank from ExRAM.
     cdef uint16_t bg_nt_addr
 
+    # Current background fetch column (PPU coarse X, 0-31) and scanline, set by
+    # the PPU before each background nametable/pattern fetch. Boards that split
+    # the screen per column (MMC5 vertical split) read these to decide whether
+    # the fetch falls inside the split region.
+    cdef uint8_t bg_tile_x
+    cdef uint16_t bg_scanline
+
     # Per-tile background palette for the given nametable address, or -1 to
     # let the PPU use the normal attribute table. MMC5 extended-attribute
     # mode returns the ExRAM AA bits here.

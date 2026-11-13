@@ -52,6 +52,8 @@ cdef class MapperMMC5(Mapper):
     cdef void ppu_fetch_kind(self, uint8_t kind)
     cdef int background_attribute(self, uint16_t nt_addr)
     cdef int expansion_audio_sample(self)
+    cdef bint _in_split(self)
+    cdef bint _in_split_for_col(self, int ht)
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
     cdef uint32_t _chr_addr(self, uint16_t addr)

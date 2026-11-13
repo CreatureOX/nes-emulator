@@ -610,11 +610,19 @@ cdef class PPU2C02:
             + (which_row) \
             + offset
         # Tell the mapper which background tile we are fetching so boards like
-        # MMC5 extended attributes can resolve a per-tile CHR bank from ExRAM.
+        # MMC5 extended attributes can resolve a per-tile CHR bank from ExRAM,
+        # and supply the current column / scanline for per-column features
+        # such as the MMC5 vertical split.
         self.cartridge.mapper.bg_nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
         return self.vram.read(background_tile_addr, PPU_FETCH_BACKGROUND)
 
     cdef uint8_t _fetch_background_tile_id(self):
+        # Supply the current column / scanline for per-column mapper features
+        # (MMC5 vertical split) before the nametable read.
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
         return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF),
                               PPU_FETCH_OTHER)
     
@@ -635,6 +643,10 @@ cdef class PPU2C02:
         skipped because the value is already the 2-bit palette for this tile.
         """
         cdef uint16_t nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
+        # Supply the current column / scanline for per-column mapper features
+        # (MMC5 vertical split) before the attribute read.
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
         cdef int ext_attr = self.cartridge.mapper.background_attribute(nt_addr)
         cdef uint8_t attribute
         if ext_attr >= 0:
