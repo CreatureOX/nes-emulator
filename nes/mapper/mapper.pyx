@@ -64,6 +64,10 @@ cdef class Mapper:
         '''Ignore nametable writes on boards without mapper-owned sources.'''
         pass
 
+    cdef void ppu_fetch_kind(self, uint8_t kind):
+        '''Ignore fetch context on boards that map CHR by address alone.'''
+        pass
+
     cdef uint32_t chr_ram_size(self):
         '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
         return 0x2000

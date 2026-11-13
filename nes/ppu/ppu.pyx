@@ -3,7 +3,8 @@ from libc.stdint cimport int8_t
 import numpy as np
 cimport numpy as np
 
-from nes.mapper.mapper cimport Mapper
+from nes.mapper.mapper cimport Mapper, PPU_FETCH_OTHER, PPU_FETCH_BACKGROUND
+from nes.mapper.mapper cimport PPU_FETCH_SPRITE
 from nes.mapper.mirror cimport *
 from nes.ppu.ppu_sprite cimport *
 
@@ -34,7 +35,7 @@ cdef class PPUVRAMPort:
         '''Bind the port to the chip whose memory it decodes.'''
         self.ppu = ppu
 
-    cdef uint8_t read(self, uint16_t addr):
+    cdef uint8_t read(self, uint16_t addr, uint8_t kind):
         '''Read one byte from the PPU's 14-bit memory bus.
 
         The cartridge answers first through its PPU port; pattern tables,
@@ -46,7 +47,7 @@ cdef class PPUVRAMPort:
         addr &= 0x3FFF
 
         # Try cartridge first
-        success, data = self.ppu.cartridge.ppu.read(addr)
+        success, data = self.ppu.cartridge.ppu.read(addr, kind)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
@@ -340,7 +341,8 @@ cdef class PPU2C02:
                 # Palette read: return the 6-bit palette value in the low bits
                 # and the open-bus latch in the high 2 bits. A palette read does
                 # NOT refresh the latch (ppu_open_bus test 8/9).
-                palette = self.vram.read(self.VRAM_addr.value & 0x3FFF) & 0x3F
+                palette = self.vram.read(self.VRAM_addr.value & 0x3FFF,
+                                         PPU_FETCH_OTHER) & 0x3F
                 data = <uint8_t>(palette | (self._open_bus_decayed() & 0xC0))
             else:
                 if self._page_cross_echo:
@@ -360,9 +362,11 @@ cdef class PPU2C02:
             # Refill the read buffer from the CURRENT VRAM address and advance the
             # address by the standard increment (unchanged from the original).
             if (self.VRAM_addr.value & 0x3FFF) >= 0x3F00:
-                self.ppu_data_buffer = self.vram.read((self.VRAM_addr.value & 0x2FFF))
+                self.ppu_data_buffer = self.vram.read(
+                    (self.VRAM_addr.value & 0x2FFF), PPU_FETCH_OTHER)
             else:
-                self.ppu_data_buffer = self.vram.read(self.VRAM_addr.value & 0x3FFF)
+                self.ppu_data_buffer = self.vram.read(
+                    self.VRAM_addr.value & 0x3FFF, PPU_FETCH_OTHER)
             # A CPU $2007 access increments the VRAM address by 1 or 32 per
             # PPUCTRL bit 2 -- ALWAYS, independent of rendering state. The
             # scroll-aware step (_incr_coarseX/_incr_Y) belongs to the PPU's
@@ -455,7 +459,8 @@ cdef class PPU2C02:
         self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
-        color = self.vram.read(0x3F00 + (palette << 2) + pixel) & 0x3F
+        color = self.vram.read(0x3F00 + (palette << 2) + pixel,
+                               PPU_FETCH_OTHER) & 0x3F
         return self.palette_panel[color]
 
     cdef void reset(self):
@@ -604,10 +609,11 @@ cdef class PPU2C02:
             + (which_tile << 4) \
             + (which_row) \
             + offset
-        return self.vram.read(background_tile_addr)
+        return self.vram.read(background_tile_addr, PPU_FETCH_BACKGROUND)
 
     cdef uint8_t _fetch_background_tile_id(self):
-        return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF))
+        return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF),
+                              PPU_FETCH_OTHER)
     
     cdef uint8_t _fetch_background_attribute(self):
         """
@@ -625,7 +631,7 @@ cdef class PPU2C02:
             | (self.VRAM_addr.nametable_y << 11) \
             | (self.VRAM_addr.nametable_x << 10) \
             | ((self.VRAM_addr.coarse_y >> 2) << 3) \
-            | (self.VRAM_addr.coarse_x >> 2))
+            | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
                 
         # Extract the 2-bit palette index for the current quadrant
         # based on which part of the 4x4 tile region we're in
@@ -786,8 +792,10 @@ cdef class PPU2C02:
 
         # Calculate pattern address and fetch both bytes
         cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
-        cdef uint8_t sprite_pattern_low_bits = self.vram.read(tile_addr + 0)
-        cdef uint8_t sprite_pattern_high_bits = self.vram.read(tile_addr + 8)
+        cdef uint8_t sprite_pattern_low_bits = self.vram.read(
+            tile_addr + 0, PPU_FETCH_SPRITE)
+        cdef uint8_t sprite_pattern_high_bits = self.vram.read(
+            tile_addr + 8, PPU_FETCH_SPRITE)
         
         # Apply horizontal flip if needed
         cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0

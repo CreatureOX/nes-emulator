@@ -4,6 +4,7 @@ import numpy as np
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
 from nes.mapper.mirror cimport HARDWARE
+from nes.mapper.mapper cimport PPU_FETCH_OTHER
 
 
 cdef class Header:
@@ -89,16 +90,18 @@ cdef class CartridgePPUPort:
         '''Bind the port to the cartridge whose memory it maps.'''
         self.cart = cart
 
-    cdef (bint, uint8_t) read(self, uint16_t addr):
+    cdef (bint, uint8_t) read(self, uint16_t addr, uint8_t kind):
         '''
         Read a byte from PPU address space via mapper translation.
 
         Args:
             addr: 14-bit PPU address
+            kind: PPU_FETCH_* context for the current data-bus fetch
 
         Returns:
             Tuple of (success, data)
         '''
+        self.cart.mapper.ppu_fetch_kind(kind)
         cdef PPUReadMapping mapping = self.cart.mapper.map_ppu_read(addr)
         cdef uint8_t data = 0x00
 
@@ -120,6 +123,9 @@ cdef class CartridgePPUPort:
         Returns:
             True if write was handled by mapper, False otherwise
         '''
+        # PPUDATA writes are not background or sprite fetches; the last
+        # written CHR register set owns them.
+        self.cart.mapper.ppu_fetch_kind(PPU_FETCH_OTHER)
         cdef PPUWriteMapping mapping = self.cart.mapper.map_ppu_write(addr)
 
         if mapping.success:

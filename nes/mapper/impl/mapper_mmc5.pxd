@@ -33,6 +33,9 @@ cdef class MapperMMC5(Mapper):
     cdef uint8_t exram[1024]
     cdef bint last_chr_set
     cdef bint started
+    cdef uint8_t fetch_kind
+    cdef uint8_t sprite_8x16
+    cdef bint substitutions
 
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr)
     cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data)
@@ -43,6 +46,7 @@ cdef class MapperMMC5(Mapper):
     cdef int8_t nametable_source(self, uint16_t addr)
     cdef uint8_t nametable_read(self, uint16_t addr)
     cdef void nametable_write(self, uint16_t addr, uint8_t data)
+    cdef void ppu_fetch_kind(self, uint8_t kind)
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
     cdef uint32_t _chr_addr(self, uint16_t addr)

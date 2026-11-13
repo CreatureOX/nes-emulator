@@ -2,6 +2,8 @@ from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t, UINT32_MAX
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping
 from nes.mapper.mapping cimport PPUReadMapping, PPUWriteMapping
+from nes.mapper.mapper cimport PPU_FETCH_OTHER, PPU_FETCH_BACKGROUND
+from nes.mapper.mapper cimport PPU_FETCH_SPRITE
 
 
 cdef class MapperMMC5(Mapper):
@@ -12,8 +14,9 @@ cdef class MapperMMC5(Mapper):
     an unsigned 8x8 multiplier, a scanline IRQ counter, the four $5105
     nametable windows and fill-mode tile/color substitution. Scanline starts
     are recovered from the PPU's repeated nametable reads rather than from
-    a PPU-side hook. Extended attributes, vertical split, 8x16 sprite CHR
-    selection and expansion audio are not implemented.
+    a PPU-side hook. In 8x16 sprite mode the fetch context selects the
+    sprite ($5120-$5127) or background ($5128-$512B) bank set. Extended
+    attributes, vertical split and expansion audio are not implemented.
     Ref: NESdev wiki "MMC5".
     '''
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
@@ -29,6 +32,7 @@ cdef class MapperMMC5(Mapper):
             self.mul_a = 0xFF
             self.mul_b = 0xFF
             self.last_ppu_addr = 0xFFFF
+            self.fetch_kind = PPU_FETCH_OTHER
             for i in range(1, 5):
                 self.prg_bank[i] = 0xFF
         else:
@@ -73,6 +77,15 @@ cdef class MapperMMC5(Mapper):
     cdef bint irq_line(self):
         '''Assert /IRQ only while the pending flag and enable bit are set.'''
         return self.irq_enable and self.irq_pending
+
+    cdef void ppu_fetch_kind(self, uint8_t kind):
+        '''Remember whether the PPU is fetching a background or sprite tile.
+
+        The MMC5 watches the PPU address bus to tell the two apart in 8x16
+        sprite mode; the renderer supplies that context explicitly here.
+        Ref: NESdev wiki "MMC5", CHR Bankswitching ($5120-$5130).
+        '''
+        self.fetch_kind = kind
 
     cdef int8_t nametable_source(self, uint16_t addr):
         '''Return the $5105 source selected for this 1 KB nametable window.
@@ -156,38 +169,47 @@ cdef class MapperMMC5(Mapper):
         '''Translate a pattern-table address through the selected CHR mode.
 
         Bank registers hold an index in units of the currently selected
-        bank size, so their low bits are never discarded. Registers
-        $5120-$5127 apply to 8x8 sprites and $5128-$512B to backgrounds
-        in 8x16 mode; the last written set owns $2007 accesses.
+        bank size, so their low bits are never discarded. With 8x16 sprites
+        and rendering enabled, $5120-$5127 feed sprite fetches and
+        $5128-$512B feed background fetches; with 8x8 sprites the second
+        set is ignored. PPUDATA always uses the last written set.
         Ref: NESdev wiki "MMC5", CHR Bankswitching ($5120-$5130).
         '''
         cdef uint16_t slot
         cdef uint8_t reg
         cdef uint32_t bank
         cdef uint32_t size
+        cdef bint use_b
         cdef uint32_t chr_bytes = self.CHR_banks * 0x2000
+
+        if self.fetch_kind == PPU_FETCH_SPRITE:
+            use_b = False
+        elif self.fetch_kind == PPU_FETCH_BACKGROUND:
+            use_b = self.sprite_8x16 and self.substitutions
+        else:
+            use_b = self.last_chr_set
 
         if self.chr_mode == 0:
             size = 0x2000
-            reg = self.chr_bank_b[3] if self.last_chr_set else self.chr_bank_a[7]
+            reg = self.chr_bank_b[3] if use_b else self.chr_bank_a[7]
         elif self.chr_mode == 1:
             size = 0x1000
             slot = (addr >> 12) & 0x01
-            if self.last_chr_set:
+            if use_b:
                 reg = self.chr_bank_b[3]
             else:
                 reg = self.chr_bank_a[3 + 4 * slot]
         elif self.chr_mode == 2:
             size = 0x0800
             slot = (addr >> 11) & 0x03
-            if self.last_chr_set:
+            if use_b:
                 reg = self.chr_bank_b[1 + 2 * (slot & 0x01)]
             else:
                 reg = self.chr_bank_a[1 + 2 * slot]
         else:
             size = 0x0400
             slot = (addr >> 10) & 0x07
-            if self.last_chr_set:
+            if use_b:
                 reg = self.chr_bank_b[slot & 0x03]
             else:
                 reg = self.chr_bank_a[slot]
@@ -237,8 +259,17 @@ cdef class MapperMMC5(Mapper):
         '''Decode the MMC5 register block and guard PRG RAM writes.'''
         cdef CPUWriteMapping mapping = CPUWriteMapping()
 
-        if addr == 0x2001 and (data & 0x18) == 0:
-            self._leave_frame()
+        if addr == 0x2000:
+            # Only the fully decoded register is watched; $2008-$200F
+            # mirrors are heard by the PPU but not by the MMC5.
+            self.sprite_8x16 = (data >> 5) & 0x01
+            return mapping
+        if addr == 0x2001:
+            # Clearing both render bits turns off every data-bus
+            # substitution (8x16 banks, extended attributes, split).
+            self.substitutions = (data & 0x18) != 0
+            if not self.substitutions:
+                self._leave_frame()
             return mapping
         if 0x5000 <= addr <= 0x5015:
             return mapping
