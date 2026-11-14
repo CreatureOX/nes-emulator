@@ -3,6 +3,7 @@ from libc.stdint cimport uint8_t, uint16_t
 cimport numpy as np
 
 from nes.bus.bus cimport CPUBus
+from nes.mapper.mapper cimport Mapper
 
 
 cdef class APU2A03:
@@ -73,6 +74,7 @@ cdef class APU2A03:
     cdef int dmc_irq_flag
     cdef int dmc_output
     cdef CPUBus bus
+    cdef Mapper expansion_mapper
 
     # Audio filter chain state.
     cdef double last_output

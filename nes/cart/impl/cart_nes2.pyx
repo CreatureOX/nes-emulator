@@ -42,6 +42,11 @@ cdef class Nes2Cart(Cartridge):
                 self.PRG_RAM_data = np.frombuffer(nes2.read(self.PRG_RAM_bytes), dtype = np.uint8).copy()    
                 if len(self.PRG_RAM_data) == 0:
                     self.PRG_RAM_data = np.zeros(self.PRG_ROM_bytes, dtype = np.uint8).copy()
+            # The PPU pattern-table window always spans 8 KB, so a NES 2.0
+            # header declaring a smaller CHR RAM chip still needs the full
+            # window backed. Ref: NESdev wiki "PPU pattern tables".
+            if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < 8192:
+                self.CHR_RAM_bytes = 8192
             if self.CHR_ROM_bytes > 0:
                 self.CHR_ROM_data = np.frombuffer(nes2.read(self.CHR_ROM_bytes), dtype = np.uint8).copy()
                 if len(self.CHR_ROM_data) == 0:
@@ -51,9 +56,14 @@ cdef class Nes2Cart(Cartridge):
                 if len(self.CHR_RAM_data) == 0:
                     self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
+            # Some boards fit more CHR RAM than a NES 2.0 header declares;
+            # the mapper owns that hardware fact.
+            if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < self.mapper.chr_ram_size():
+                self.CHR_RAM_bytes = self.mapper.chr_ram_size()
+                self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 
 
-    cdef uint8_t mapper_no(self):
+    cdef uint16_t mapper_no(self):
         """Extract the full 12-bit mapper number from NES 2.0 header."""
         cdef uint8_t lower_part = self.header.flags_6.mapper_no_lower_part
         cdef uint8_t middle_part = self.header.flags_7.mapper_no_middle_part

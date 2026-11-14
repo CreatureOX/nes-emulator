@@ -8,7 +8,7 @@ cdef int LOW_NIBBLE, HIGH_NIBBLE
 
 cdef class PPUVRAMPort:
     cdef PPU2C02 ppu
-    cdef uint8_t read(self, uint16_t)
+    cdef uint8_t read(self, uint16_t, uint8_t)
     cdef void write(self, uint16_t, uint8_t)
 
 cdef class PPU2C02:

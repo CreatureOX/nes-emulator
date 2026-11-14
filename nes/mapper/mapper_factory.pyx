@@ -3,7 +3,13 @@ from nes.mapper.impl.mapper_mmc1 cimport MapperMMC1
 from nes.mapper.impl.mapper_uxrom cimport MapperUxROM
 from nes.mapper.impl.mapper_ines003 cimport MapperINES003
 from nes.mapper.impl.mapper_mmc3 cimport MapperMMC3
+from nes.mapper.impl.mapper_mmc5 cimport MapperMMC5
 from nes.mapper.impl.mapper_gxrom cimport MapperGxROM
+from nes.mapper.impl.mapper_axrom cimport MapperAxROM
+from nes.mapper.impl.mapper_colordreams cimport MapperColorDreams
+from nes.mapper.impl.mapper_bnrom cimport MapperBNROM
+from nes.mapper.impl.mapper_vrc2a cimport MapperVRC2a
+from nes.mapper.impl.mapper_action53 cimport MapperAction53
 
 
 mappers = {
@@ -12,17 +18,25 @@ mappers = {
     "002": MapperUxROM,
     "003": MapperINES003,
     "004": MapperMMC3,
+    "005": MapperMMC5,
+    "007": MapperAxROM,
+    "011": MapperColorDreams,
+    "022": MapperVRC2a,
+    "028": MapperAction53,
+    "034": MapperBNROM,
     "066": MapperGxROM,
 }
 
 cdef class MapperFactory:
     """
-    Factory for creating mapper instances by mapper number.
-    
-    Supports mappers 0, 1, 2, 3, 4, and 66.
+    Resolve an iNES mapper number to its implementation class.
+
+    The `mappers` registry is the authoritative list of supported boards.
     """
     @staticmethod
     cdef Mapper of(int mapper_no):
-        """Create a mapper instance by number."""
+        """Return the registered class, rejecting unsupported mapper numbers."""
         mapper_name = "{:03d}".format(mapper_no)
+        if mapper_name not in mappers:
+            raise ValueError("unsupported iNES mapper {:d}".format(mapper_no))
         return <Mapper> mappers[mapper_name]

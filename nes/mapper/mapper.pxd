@@ -1,6 +1,13 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
+
+# Context for a PPU data-bus fetch, so a board can tell a background
+# pattern read from a sprite pattern read at the same PPU address.
+cdef enum:
+    PPU_FETCH_OTHER = 0
+    PPU_FETCH_BACKGROUND = 1
+    PPU_FETCH_SPRITE = 2
 
 
 cdef class Mapper:
@@ -17,6 +24,34 @@ cdef class Mapper:
     cdef void reset(self)
 
     cdef uint8_t mirror(self)
+
+    cdef int8_t nametable_source(self, uint16_t addr)
+    cdef uint8_t nametable_read(self, uint16_t addr)
+    cdef void nametable_write(self, uint16_t addr, uint8_t data)
+    cdef void ppu_fetch_kind(self, uint8_t kind)
+
+    # Background nametable address of the tile currently being fetched. The
+    # PPU fills this before a background pattern fetch so a board (e.g. MMC5
+    # extended attributes) can resolve a per-tile CHR bank from ExRAM.
+    cdef uint16_t bg_nt_addr
+
+    # Current background fetch column (PPU coarse X, 0-31) and scanline, set by
+    # the PPU before each background nametable/pattern fetch. Boards that split
+    # the screen per column (MMC5 vertical split) read these to decide whether
+    # the fetch falls inside the split region.
+    cdef uint8_t bg_tile_x
+    cdef uint16_t bg_scanline
+
+    # Per-tile background palette for the given nametable address, or -1 to
+    # let the PPU use the normal attribute table. MMC5 extended-attribute
+    # mode returns the ExRAM AA bits here.
+    cdef int background_attribute(self, uint16_t nt_addr)
+
+    # Expansion audio sample contributed to the APU mix, or 0 when the board
+    # has no extra audio channel. MMC5 overrides this with its PCM level.
+    cdef int expansion_audio_sample(self)
+
+    cdef uint32_t chr_ram_size(self)
 
     cdef bint irq_line(self)
 

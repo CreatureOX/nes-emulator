@@ -3,6 +3,8 @@ from libc.stdint cimport uint8_t, uint16_t, UINT32_MAX
 import numpy as np
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping, PPUReadMapping, PPUWriteMapping
+from nes.mapper.mirror cimport HARDWARE
+from nes.mapper.mapper cimport PPU_FETCH_OTHER
 
 
 cdef class Header:
@@ -56,6 +58,13 @@ cdef class CartridgeCPUPort:
             True if write was handled by mapper, False otherwise
         '''
         cdef CPUWriteMapping mapping = self.cart.mapper.map_cpu_write(addr, data)
+        cdef uint8_t mirror_mode = self.cart.mapper.mirror()
+
+        # Boards with switchable nametable mirroring publish it on the
+        # mapper; the PPU reads the cartridge-level mode. Ref: NESdev wiki
+        # "Mirroring" (mapper-controlled nametable arrangement).
+        if mirror_mode != HARDWARE:
+            self.cart.mirror_mode = mirror_mode
 
         if mapping.success:
             if mapping.addr == UINT32_MAX:
@@ -81,16 +90,18 @@ cdef class CartridgePPUPort:
         '''Bind the port to the cartridge whose memory it maps.'''
         self.cart = cart
 
-    cdef (bint, uint8_t) read(self, uint16_t addr):
+    cdef (bint, uint8_t) read(self, uint16_t addr, uint8_t kind):
         '''
         Read a byte from PPU address space via mapper translation.
 
         Args:
             addr: 14-bit PPU address
+            kind: PPU_FETCH_* context for the current data-bus fetch
 
         Returns:
             Tuple of (success, data)
         '''
+        self.cart.mapper.ppu_fetch_kind(kind)
         cdef PPUReadMapping mapping = self.cart.mapper.map_ppu_read(addr)
         cdef uint8_t data = 0x00
 
@@ -112,6 +123,9 @@ cdef class CartridgePPUPort:
         Returns:
             True if write was handled by mapper, False otherwise
         '''
+        # PPUDATA writes are not background or sprite fetches; the last
+        # written CHR register set owns them.
+        self.cart.mapper.ppu_fetch_kind(PPU_FETCH_OTHER)
         cdef PPUWriteMapping mapping = self.cart.mapper.map_ppu_write(addr)
 
         if mapping.success:
@@ -149,12 +163,17 @@ cdef class Cartridge:
         self.wram = np.zeros(8192, dtype=np.uint8)
 
     cdef void reset(self):
-        """Reset the mapper state."""
+        """Reset the mapper state and its nametable mirroring."""
+        cdef uint8_t mirror_mode
         if self.mapper is None:
             return
         self.mapper.reset()
 
-    cdef uint8_t mapper_no(self):
+        mirror_mode = self.mapper.mirror()
+        if mirror_mode != HARDWARE:
+            self.mirror_mode = mirror_mode
+
+    cdef uint16_t mapper_no(self):
         """Return the mapper number."""
         pass
 
