@@ -17,6 +17,7 @@ cdef class PPU2C02:
     cdef uint8_t[:] _palette_table
 
     cdef list palette_panel
+    cdef list emphasis_panels
     cdef uint8_t[240][256][3] _screen
 
     cdef Status PPUSTATUS

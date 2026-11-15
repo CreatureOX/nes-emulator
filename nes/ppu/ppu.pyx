@@ -185,6 +185,7 @@ cdef class PPU2C02:
         ], dtype = np.uint8)
         
         self.palette_panel = [None] * 4 * 16
+        self.emphasis_panels = [None] * 8
         self.screen_width, self.screen_height = 256, 240
         self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
 
@@ -458,10 +459,39 @@ cdef class PPU2C02:
         self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
         self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
+        # Ref: NESdev wiki "Colour emphasis", "PPU registers" (PPUMASK).
+        # Each set bit emphasizes one channel and darkens the other two to
+        # 75%; the bits compose independently, so two set bits darken their
+        # shared channel twice and all three darken every channel. Greyscale
+        # only masks the palette index in PPUVRAMPort.read, so the tint still
+        # applies there. Tables are precomputed: fetch_color runs once per dot.
+        for emphasis in range(8):
+            red = green = blue = 1.0
+            if emphasis & 0x01:
+                green *= 0.75
+                blue *= 0.75
+            if emphasis & 0x02:
+                red *= 0.75
+                blue *= 0.75
+            if emphasis & 0x04:
+                red *= 0.75
+                green *= 0.75
+            self.emphasis_panels[emphasis] = [
+                (int(color[0] * red + 0.5),
+                 int(color[1] * green + 0.5),
+                 int(color[2] * blue + 0.5))
+                for color in self.palette_panel
+            ]
+
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
-        color = self.vram.read(0x3F00 + (palette << 2) + pixel,
-                               PPU_FETCH_OTHER) & 0x3F
-        return self.palette_panel[color]
+        # PPUMASK is sampled per dot: raster effects rewrite $2001 mid-frame
+        # to draw coloured scanlines (exram/mmc5exram.nes copper bars).
+        cdef uint8_t color = self.vram.read(0x3F00 + (palette << 2) + pixel,
+                                            PPU_FETCH_OTHER) & 0x3F
+        cdef uint8_t emphasis = (self.PPUMASK.enhance_red |
+                                 (self.PPUMASK.enhance_green << 1) |
+                                 (self.PPUMASK.enhance_blue << 2))
+        return self.emphasis_panels[emphasis][color]
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -651,8 +681,8 @@ cdef class PPU2C02:
         cdef uint8_t attribute
         if ext_attr >= 0:
             # Per-tile palette supplied by the mapper; quadrant bits are moot.
-            # Still issue the normal attribute read so mapper scanline
-            # detection keeps seeing every nametable fetch unchanged.
+            # Still issue the normal attribute read so the PPU's fetch
+            # sequence keeps its exact bus timing.
             self.vram.read(0x23C0 \
                 | (self.VRAM_addr.nametable_y << 11) \
                 | (self.VRAM_addr.nametable_x << 10) \
@@ -1101,8 +1131,13 @@ cdef class PPU2C02:
             self.odd_skip_pending = False
             self.cycle = 341
 
+        # MMC5 asserts its scanline IRQ at PPU cycle 4, after the two
+        # matching nametable reads that mark a scanline start. The
+        # post-render line is included: its detection is the 241st and ends
+        # the frame. Ref: NESdev wiki "MMC5", Scanline Detection and
+        # Scanline IRQ.
         if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.cycle == 260 and self.scanline < 240:
+            if self.cycle == 4 and 0 <= self.scanline <= 240:
                 self.cartridge.mapper.scanline()
 
         if self.cycle >= 341:

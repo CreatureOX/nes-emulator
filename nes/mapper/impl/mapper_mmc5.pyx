@@ -12,12 +12,13 @@ cdef class MapperMMC5(Mapper):
 
     Four PRG and four CHR banking modes, 1 KB of internal extended RAM,
     an unsigned 8x8 multiplier, a scanline IRQ counter, the four $5105
-    nametable windows and fill-mode tile/color substitution. Scanline starts
-    are recovered from the PPU's repeated nametable reads rather than from
-    a PPU-side hook. In 8x16 sprite mode the fetch context selects the
-    sprite ($5120-$5127) or background ($5128-$512B) bank set. Extended
-    attributes and expansion audio (PCM) are implemented; vertical split
-    mode is implemented. Ref: NESdev wiki "MMC5".
+    nametable windows and fill-mode tile/color substitution. The PPU reports
+    each rendered scanline start through the Mapper.scanline() hook, which
+    clocks the IRQ counter at PPU cycle 4. In 8x16 sprite mode the fetch
+    context selects the sprite ($5120-$5127) or background ($5128-$512B)
+    bank set. Extended attributes and expansion audio (PCM) are implemented;
+    vertical split mode is implemented. Ref: NESdev wiki "MMC5", Scanline
+    Detection and Scanline IRQ.
     '''
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
@@ -31,7 +32,6 @@ cdef class MapperMMC5(Mapper):
             self.prg_mode = 3
             self.mul_a = 0xFF
             self.mul_b = 0xFF
-            self.last_ppu_addr = 0xFFFF
             self.fetch_kind = PPU_FETCH_OTHER
             self.pcm_data = 0
             self.pcm_control = 0
@@ -46,8 +46,16 @@ cdef class MapperMMC5(Mapper):
         self.in_frame = False
         self.irq_pending = False
         self.irq_counter = 0
-        self.match_count = 0
-        self.last_ppu_addr = 0xFFFF
+
+    cdef void scanline(self):
+        '''Clock the IRQ counter at the start of a rendered scanline.
+
+        The PPU publishes a scanline start at PPU cycle 4, where the MMC5
+        asserts its IRQ; the post-render line is the 241st detection and ends
+        the frame. Ref: NESdev wiki "MMC5", Scanline Detection and Scanline
+        IRQ.
+        '''
+        self._on_scanline()
 
     cdef void _on_scanline(self):
         '''Advance the IRQ counter once the PPU completes a scanline start.'''
@@ -59,23 +67,8 @@ cdef class MapperMMC5(Mapper):
         self.irq_counter += 1
         if self.irq_target != 0 and self.irq_counter == self.irq_target:
             self.irq_pending = True
-        if self.irq_counter >= 241:
+        if self.irq_counter >= 240:
             self._leave_frame()
-
-    cdef void _detect_scanline(self, uint16_t addr):
-        '''Recognize two matching nametable reads as a scanline boundary.
-
-        Hardware watches PPU /RD: two identical $2xxx reads mark the end of
-        a scanline, and the following read is the next scanline's start.
-        Ref: NESdev wiki "MMC5", Scanline Detection and Scanline IRQ.
-        '''
-        if 0x2000 <= addr <= 0x2FFF and addr == self.last_ppu_addr:
-            self.match_count += 1
-            if self.match_count == 2:
-                self._on_scanline()
-        else:
-            self.match_count = 0
-        self.last_ppu_addr = addr
 
     cdef bint irq_line(self):
         '''Assert /IRQ only while the pending flag and enable bit are set.'''
@@ -444,10 +437,9 @@ cdef class MapperMMC5(Mapper):
         return mapping
 
     cdef PPUReadMapping map_ppu_read(self, uint16_t addr):
-        '''Watch PPU reads for scanline starts and map pattern-table banks.'''
+        '''Map pattern-table reads through the selected CHR banks.'''
         cdef PPUReadMapping mapping = PPUReadMapping()
 
-        self._detect_scanline(addr)
         if addr < 0x2000:
             mapping.success = True
             mapping.addr = self._chr_addr(addr)

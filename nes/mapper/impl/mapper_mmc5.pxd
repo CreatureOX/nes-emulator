@@ -26,8 +26,6 @@ cdef class MapperMMC5(Mapper):
     cdef bint irq_pending
     cdef bint in_frame
     cdef uint8_t irq_counter
-    cdef uint16_t last_ppu_addr
-    cdef uint8_t match_count
     cdef uint8_t mul_a
     cdef uint8_t mul_b
     cdef uint8_t exram[1024]
@@ -45,6 +43,7 @@ cdef class MapperMMC5(Mapper):
     cdef PPUReadMapping map_ppu_read(self, uint16_t addr)
     cdef PPUWriteMapping map_ppu_write(self, uint16_t addr)
     cdef void reset(self)
+    cdef void scanline(self)
     cdef bint irq_line(self)
     cdef int8_t nametable_source(self, uint16_t addr)
     cdef uint8_t nametable_read(self, uint16_t addr)
@@ -57,6 +56,5 @@ cdef class MapperMMC5(Mapper):
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
     cdef uint32_t _chr_addr(self, uint16_t addr)
-    cdef void _detect_scanline(self, uint16_t addr)
     cdef void _on_scanline(self)
     cdef void _leave_frame(self)
