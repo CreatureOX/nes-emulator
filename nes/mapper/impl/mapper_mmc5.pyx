@@ -35,7 +35,7 @@ cdef class MapperMMC5(Mapper):
             self.fetch_kind = PPU_FETCH_OTHER
             self.pcm_data = 0
             self.pcm_control = 0
-            self.pcm_channel_enable = False
+            self.pcm_irq_pending = False
             for i in range(1, 5):
                 self.prg_bank[i] = 0xFF
         else:
@@ -71,8 +71,16 @@ cdef class MapperMMC5(Mapper):
             self._leave_frame()
 
     cdef bint irq_line(self):
-        '''Assert /IRQ only while the pending flag and enable bit are set.'''
-        return self.irq_enable and self.irq_pending
+        '''Assert /IRQ for either the scanline or the PCM source.
+
+        The MMC5 shares one /IRQ line between the scanline counter and the
+        PCM $00-sample trip. Ref: NESdev wiki "MMC5", Scanline IRQ and
+        "MMC5 audio", PCM Mode/IRQ ($5010).
+        '''
+        cdef bint scanline_irq = self.irq_enable and self.irq_pending
+        cdef bint pcm_irq = (self.pcm_control & 0x80) != 0 \
+            and self.pcm_irq_pending
+        return scanline_irq or pcm_irq
 
     cdef void ppu_fetch_kind(self, uint8_t kind):
         '''Remember whether the PPU is fetching a background or sprite tile.
@@ -172,17 +180,14 @@ cdef class MapperMMC5(Mapper):
         return -1
 
     cdef int expansion_audio_sample(self):
-        '''MMC5 PCM level for the APU mix, or 0 when disabled.
+        '''MMC5 PCM level for the APU mix.
 
-        The PCM channel is a single 8-bit DAC: $5010 bit 7 enables it, $5015
-        bit 3 is the APU channel enable and $5011 holds the sample level that
-        is output directly. The level is mixed only while both enables are set
-        and the value is non-zero. Ref: NESdev wiki "MMC5", Expansion audio.
+        The DAC at $5011 always drives its 8-bit value; no status or enable
+        bit mutes it. A zero write leaves the DAC unchanged and trips the
+        PCM IRQ instead, so the last non-zero level keeps sounding.
+        Ref: NESdev wiki "MMC5 audio", Raw PCM ($5011).
         '''
-        if (self.pcm_control & 0x80) and self.pcm_channel_enable \
-                and self.pcm_data != 0:
-            return <int> self.pcm_data
-        return 0
+        return <int> self.pcm_data
 
     cdef bint _in_split_for_col(self, int ht):
         '''True when column `ht` (0-31) lies inside the vertical split region.
@@ -325,6 +330,17 @@ cdef class MapperMMC5(Mapper):
         if addr == 0xFFFA or addr == 0xFFFB:
             self._leave_frame()
 
+        if addr == 0x5010:
+            # $5010 read reports the PCM IRQ; reading acknowledges it.
+            # Bit 0 is the PCM mode (write/read) selected by the last write.
+            status = self.pcm_control & 0x01
+            if self.pcm_irq_pending and (self.pcm_control & 0x80):
+                status |= 0x80
+            mapping.success = True
+            mapping.addr = UINT32_MAX
+            mapping.data = status
+            self.pcm_irq_pending = False
+            return mapping
         if addr == 0x5204:
             status = (0x80 if self.irq_pending else 0x00)
             status |= 0x40 if self.in_frame else 0x00
@@ -370,11 +386,20 @@ cdef class MapperMMC5(Mapper):
             return mapping
         if 0x5000 <= addr <= 0x5015:
             if addr == 0x5010:
+                # $5010 bit 7 is the PCM IRQ enable, bit 0 selects
+                # write (0) or read (1) mode. Only write mode is driven
+                # here; the read-mode DAC path is not emulated.
                 self.pcm_control = data
             elif addr == 0x5011:
-                self.pcm_data = data
-            elif addr == 0x5015:
-                self.pcm_channel_enable = (data & 0x08) != 0
+                # A zero sample does not change the DAC; it trips the
+                # PCM IRQ. Non-zero values set the output level.
+                if data != 0:
+                    self.pcm_data = data
+                    self.pcm_irq_pending = False
+                else:
+                    self.pcm_irq_pending = True
+            # $5015 is the MMC5 pulse-channel status; it has no PCM
+            # channel-enable bit. The APU mix takes the DAC unconditionally.
             return mapping
         if 0x5100 <= addr <= 0x5107:
             if addr == 0x5100:

@@ -36,7 +36,7 @@ cdef class MapperMMC5(Mapper):
     cdef bint substitutions
     cdef uint8_t pcm_data
     cdef uint8_t pcm_control
-    cdef bint pcm_channel_enable
+    cdef bint pcm_irq_pending
 
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr)
     cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data)
