@@ -47,14 +47,14 @@ For more details, check `setup.py`
       <td>MMC1 <input type="checkbox" checked></td>
       <td>UxROM <input type="checkbox" checked></td>
       <td>INES Mapper 003 <input type="checkbox" checked></td>
-      <td>MMC3</td>
+      <td>MMC3 <input type="checkbox" checked></td>
+      <td>MMC5 <input type="checkbox" checked></td>
+      <td></td>
+      <td>AxROM <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
+      <td>Color Dreams <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
@@ -68,13 +68,13 @@ For more details, check `setup.py`
       <td></td>
       <td></td>
       <td></td>
+      <td>VRC2a <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
       <td></td>
       <td></td>
-      <td></td>
-      <td></td>
+      <td>Action 53 <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
@@ -83,7 +83,7 @@ For more details, check `setup.py`
       <th>0x2X</th>
       <td></td>
       <td></td>
-      <td></td>
+      <td>BNROM <input type="checkbox" checked></td>
       <td></td>
       <td></td>
       <td></td>
@@ -138,3 +138,11 @@ For more details, check `setup.py`
     </tr>
   </tbody>
 </table>
+
+Implemented: 0 (NROM), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3), 5 (MMC5),
+7 (AxROM), 11 (Color Dreams), 22 (VRC2a), 28 (Action 53), 34 (BNROM),
+66 (GxROM). The authoritative list is the `mappers` registry in
+`nes/mapper/mapper_factory.pyx`; the checked cell above and this list follow
+it. `SUPPORTED_MAPPERS` in `tests/rom_scanner.py` is the frozen ROM gate and
+still excludes mapper 5. ROMs whose mapper is not checked above cannot be
+loaded yet.

@@ -43,9 +43,14 @@ cdef class INesCart(Cartridge):
                 self.playchoice10_inst_rom = ines.read(8192)
                 self.playchoice10_prom = ines.read(16)
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
+            # Some boards fit more CHR RAM than an iNES header can describe;
+            # the mapper owns that hardware fact.
+            if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < self.mapper.chr_ram_size():
+                self.CHR_RAM_bytes = self.mapper.chr_ram_size()
+                self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
 
-    cdef uint8_t mapper_no(self):
+    cdef uint16_t mapper_no(self):
         """Extract the mapper number from header flags 6 and 7."""
         cdef uint8_t lower_nybble = self.header.flags_6.mapper_no_lower_nybble
         cdef uint8_t upper_nybble = self.header.flags_7.mapper_no_upper_nybble

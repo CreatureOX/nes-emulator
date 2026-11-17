@@ -1,7 +1,10 @@
 from libc.string cimport memset
+from libc.stdint cimport int8_t
 import numpy as np
 cimport numpy as np
 
+from nes.mapper.mapper cimport Mapper, PPU_FETCH_OTHER, PPU_FETCH_BACKGROUND
+from nes.mapper.mapper cimport PPU_FETCH_SPRITE
 from nes.mapper.mirror cimport *
 from nes.ppu.ppu_sprite cimport *
 
@@ -32,7 +35,7 @@ cdef class PPUVRAMPort:
         '''Bind the port to the chip whose memory it decodes.'''
         self.ppu = ppu
 
-    cdef uint8_t read(self, uint16_t addr):
+    cdef uint8_t read(self, uint16_t addr, uint8_t kind):
         '''Read one byte from the PPU's 14-bit memory bus.
 
         The cartridge answers first through its PPU port; pattern tables,
@@ -40,16 +43,24 @@ cdef class PPUVRAMPort:
         '''
         cdef bint success
         cdef uint8_t data
+        cdef int8_t source
         addr &= 0x3FFF
 
         # Try cartridge first
-        success, data = self.ppu.cartridge.ppu.read(addr)
+        success, data = self.ppu.cartridge.ppu.read(addr, kind)
         if success:
             pass
         elif 0x0000 <= addr <= 0x1FFF:
             # Pattern table access
             data = self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF]
         elif 0x2000 <= addr <= 0x3EFF:
+            # Boards between the PPU and CIRAM may select a source per window.
+            # Ref: NESdev wiki "MMC5", Nametable mapping ($5105).
+            source = self.ppu.cartridge.mapper.nametable_source(addr)
+            if source == 0 or source == 1:
+                return self.ppu._nametable[source][addr & 0x03FF]
+            if source == 2 or source == 3:
+                return self.ppu.cartridge.mapper.nametable_read(addr)
             # Nametable access with mirroring
             addr &= 0x0FFF
             if self.ppu.cartridge.mirror_mode == VERTICAL:
@@ -98,6 +109,7 @@ cdef class PPUVRAMPort:
     cdef void write(self, uint16_t addr, uint8_t data):
         '''Write one byte to the PPU's 14-bit memory bus.'''
         cdef bint success
+        cdef int8_t source
         addr &= 0x3FFF
 
         success = self.ppu.cartridge.ppu.write(addr, data)
@@ -106,6 +118,16 @@ cdef class PPUVRAMPort:
         elif 0x0000 <= addr <= 0x1FFF:
             self.ppu._pattern_table[(addr & 0x1000) >> 12][addr & 0x0FFF] = data
         elif 0x2000 <= addr <= 0x3EFF:
+            # Match the read path's per-window source selection.
+            source = self.ppu.cartridge.mapper.nametable_source(addr)
+            if source == 0 or source == 1:
+                self.ppu._nametable[source][addr & 0x03FF] = data
+                return
+            if source == 2:
+                self.ppu.cartridge.mapper.nametable_write(addr, data)
+                return
+            if source == 3:
+                return
             addr &= 0x0FFF
             if self.ppu.cartridge.mirror_mode == VERTICAL:
                 if 0x0000 <= addr <= 0x03FF:
@@ -163,6 +185,7 @@ cdef class PPU2C02:
         ], dtype = np.uint8)
         
         self.palette_panel = [None] * 4 * 16
+        self.emphasis_panels = [None] * 8
         self.screen_width, self.screen_height = 256, 240
         self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
 
@@ -319,7 +342,8 @@ cdef class PPU2C02:
                 # Palette read: return the 6-bit palette value in the low bits
                 # and the open-bus latch in the high 2 bits. A palette read does
                 # NOT refresh the latch (ppu_open_bus test 8/9).
-                palette = self.vram.read(self.VRAM_addr.value & 0x3FFF) & 0x3F
+                palette = self.vram.read(self.VRAM_addr.value & 0x3FFF,
+                                         PPU_FETCH_OTHER) & 0x3F
                 data = <uint8_t>(palette | (self._open_bus_decayed() & 0xC0))
             else:
                 if self._page_cross_echo:
@@ -339,9 +363,11 @@ cdef class PPU2C02:
             # Refill the read buffer from the CURRENT VRAM address and advance the
             # address by the standard increment (unchanged from the original).
             if (self.VRAM_addr.value & 0x3FFF) >= 0x3F00:
-                self.ppu_data_buffer = self.vram.read((self.VRAM_addr.value & 0x2FFF))
+                self.ppu_data_buffer = self.vram.read(
+                    (self.VRAM_addr.value & 0x2FFF), PPU_FETCH_OTHER)
             else:
-                self.ppu_data_buffer = self.vram.read(self.VRAM_addr.value & 0x3FFF)
+                self.ppu_data_buffer = self.vram.read(
+                    self.VRAM_addr.value & 0x3FFF, PPU_FETCH_OTHER)
             # A CPU $2007 access increments the VRAM address by 1 or 32 per
             # PPUCTRL bit 2 -- ALWAYS, independent of rendering state. The
             # scroll-aware step (_incr_coarseX/_incr_Y) belongs to the PPU's
@@ -433,9 +459,42 @@ cdef class PPU2C02:
         self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
         self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
+        # Ref: NESdev wiki "Colour emphasis", "NTSC video" (PPUMASK).
+        # Each set bit emphasizes one channel and darkens the other two to
+        # 75%; the bits compose independently, so two set bits darken their
+        # shared channel twice and all three darken every channel. Columns
+        # $xE and $xF are exempt: measurements on NTSC hardware show the
+        # emphasis bits do not affect those blacks. Greyscale only masks the
+        # palette index in PPUVRAMPort.read, so the tint still applies there.
+        # Tables are precomputed: fetch_color runs once per dot.
+        for emphasis in range(8):
+            red = green = blue = 1.0
+            if emphasis & 0x01:
+                green *= 0.75
+                blue *= 0.75
+            if emphasis & 0x02:
+                red *= 0.75
+                blue *= 0.75
+            if emphasis & 0x04:
+                red *= 0.75
+                green *= 0.75
+            self.emphasis_panels[emphasis] = [
+                color if (index & 0x0F) >= 0x0E else
+                (int(color[0] * red + 0.5),
+                 int(color[1] * green + 0.5),
+                 int(color[2] * blue + 0.5))
+                for index, color in enumerate(self.palette_panel)
+            ]
+
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
-        color = self.vram.read(0x3F00 + (palette << 2) + pixel) & 0x3F
-        return self.palette_panel[color]
+        # PPUMASK is sampled per dot: raster effects rewrite $2001 mid-frame
+        # to draw coloured scanlines (exram/mmc5exram.nes copper bars).
+        cdef uint8_t color = self.vram.read(0x3F00 + (palette << 2) + pixel,
+                                            PPU_FETCH_OTHER) & 0x3F
+        cdef uint8_t emphasis = (self.PPUMASK.enhance_red |
+                                 (self.PPUMASK.enhance_green << 1) |
+                                 (self.PPUMASK.enhance_blue << 2))
+        return self.emphasis_panels[emphasis][color]
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -583,15 +642,27 @@ cdef class PPU2C02:
             + (which_tile << 4) \
             + (which_row) \
             + offset
-        return self.vram.read(background_tile_addr)
+        # Tell the mapper which background tile we are fetching so boards like
+        # MMC5 extended attributes can resolve a per-tile CHR bank from ExRAM,
+        # and supply the current column / scanline for per-column features
+        # such as the MMC5 vertical split.
+        self.cartridge.mapper.bg_nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
+        return self.vram.read(background_tile_addr, PPU_FETCH_BACKGROUND)
 
     cdef uint8_t _fetch_background_tile_id(self):
-        return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF))
+        # Supply the current column / scanline for per-column mapper features
+        # (MMC5 vertical split) before the nametable read.
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
+        return self.vram.read(0x2000 | (self.VRAM_addr.value & 0x0FFF),
+                              PPU_FETCH_OTHER)
     
     cdef uint8_t _fetch_background_attribute(self):
         """
         Fetch attribute byte for current tile.
-        
+
         Each attribute byte covers a 4x4 tile region (32x32 pixels).
         The attribute is stored at the corner of each 4x4 region in the nametable.
         Bits 0-1 of the attribute byte specify the palette for each quadrant:
@@ -599,22 +670,44 @@ cdef class PPU2C02:
         - Bits 2-3: upper-right quadrant
         - Bits 4-5: lower-left quadrant
         - Bits 6-7: lower-right quadrant
+
+        A board may override the per-tile palette (MMC5 extended attributes
+        return the ExRAM AA bits); in that case the quadrant extraction is
+        skipped because the value is already the 2-bit palette for this tile.
         """
-        cdef uint8_t attribute = self.vram.read(0x23C0 \
-            | (self.VRAM_addr.nametable_y << 11) \
-            | (self.VRAM_addr.nametable_x << 10) \
-            | ((self.VRAM_addr.coarse_y >> 2) << 3) \
-            | (self.VRAM_addr.coarse_x >> 2))
-                
-        # Extract the 2-bit palette index for the current quadrant
-        # based on which part of the 4x4 tile region we're in
-        if self.VRAM_addr.coarse_y & 0x02 > 0:
-            # Lower half: shift to get bits 2-3 or 6-7
-            attribute >>= 4
-        if self.VRAM_addr.coarse_x & 0x02 > 0:
-            # Right half: shift to get bits 1,3,5,7
-            attribute >>= 2
-        attribute &= 0x03
+        cdef uint16_t nt_addr = 0x2000 | (self.VRAM_addr.value & 0x0FFF)
+        # Supply the current column / scanline for per-column mapper features
+        # (MMC5 vertical split) before the attribute read.
+        self.cartridge.mapper.bg_tile_x = self.VRAM_addr.coarse_x
+        self.cartridge.mapper.bg_scanline = self.scanline
+        cdef int ext_attr = self.cartridge.mapper.background_attribute(nt_addr)
+        cdef uint8_t attribute
+        if ext_attr >= 0:
+            # Per-tile palette supplied by the mapper; quadrant bits are moot.
+            # Still issue the normal attribute read so the PPU's fetch
+            # sequence keeps its exact bus timing.
+            self.vram.read(0x23C0 \
+                | (self.VRAM_addr.nametable_y << 11) \
+                | (self.VRAM_addr.nametable_x << 10) \
+                | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+                | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
+            attribute = <uint8_t>(ext_attr & 0x03)
+        else:
+            attribute = self.vram.read(0x23C0 \
+                | (self.VRAM_addr.nametable_y << 11) \
+                | (self.VRAM_addr.nametable_x << 10) \
+                | ((self.VRAM_addr.coarse_y >> 2) << 3) \
+                | (self.VRAM_addr.coarse_x >> 2), PPU_FETCH_OTHER)
+
+            # Extract the 2-bit palette index for the current quadrant
+            # based on which part of the 4x4 tile region we're in
+            if self.VRAM_addr.coarse_y & 0x02 > 0:
+                # Lower half: shift to get bits 2-3 or 6-7
+                attribute >>= 4
+            if self.VRAM_addr.coarse_x & 0x02 > 0:
+                # Right half: shift to get bits 1,3,5,7
+                attribute >>= 2
+            attribute &= 0x03
         return attribute
 
     cdef void _eval_sprites(self):
@@ -765,8 +858,10 @@ cdef class PPU2C02:
 
         # Calculate pattern address and fetch both bytes
         cdef uint16_t tile_addr = (which_pattern_table << 12) | (which_tile << 4) | (y_offset)
-        cdef uint8_t sprite_pattern_low_bits = self.vram.read(tile_addr + 0)
-        cdef uint8_t sprite_pattern_high_bits = self.vram.read(tile_addr + 8)
+        cdef uint8_t sprite_pattern_low_bits = self.vram.read(
+            tile_addr + 0, PPU_FETCH_SPRITE)
+        cdef uint8_t sprite_pattern_high_bits = self.vram.read(
+            tile_addr + 8, PPU_FETCH_SPRITE)
         
         # Apply horizontal flip if needed
         cdef bint horizontal_flip_sprite = attribute(self.secondary_OAM[i][ATTRIBUTES], BIT_HORIZONTAL_FLIP) > 0
@@ -1039,8 +1134,13 @@ cdef class PPU2C02:
             self.odd_skip_pending = False
             self.cycle = 341
 
+        # MMC5 asserts its scanline IRQ at PPU cycle 4, after the two
+        # matching nametable reads that mark a scanline start. The
+        # post-render line is included: its detection is the 241st and ends
+        # the frame. Ref: NESdev wiki "MMC5", Scanline Detection and
+        # Scanline IRQ.
         if self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1:
-            if self.cycle == 260 and self.scanline < 240:
+            if self.cycle == 4 and 0 <= self.scanline <= 240:
                 self.cartridge.mapper.scanline()
 
         if self.cycle >= 341:

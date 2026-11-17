@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t
+from libc.stdint cimport uint8_t, uint16_t
 
 from nes.cart.cart cimport Header, Cartridge
 

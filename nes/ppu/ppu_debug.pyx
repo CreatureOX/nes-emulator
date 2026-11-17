@@ -1,4 +1,5 @@
 from libc.stdint cimport uint8_t, uint16_t
+from nes.mapper.mapper cimport PPU_FETCH_OTHER
 import numpy as np
 cimport numpy as np
 
@@ -40,8 +41,8 @@ cdef class PPUDebugger:
             for tileX in range(0,16):
                 offset = tileY * 256 + tileX * 16
                 for row in range(0,8):
-                    tile_lsb = self.ppu.vram.read(i * 0x1000 + offset + row + 0x0000)
-                    tile_msb = self.ppu.vram.read(i * 0x1000 + offset + row + 0x0008)
+                    tile_lsb = self.ppu.vram.read(i * 0x1000 + offset + row + 0x0000, PPU_FETCH_OTHER)
+                    tile_msb = self.ppu.vram.read(i * 0x1000 + offset + row + 0x0008, PPU_FETCH_OTHER)
                     for col in range(0,8):
                         pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1

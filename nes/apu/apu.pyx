@@ -2,6 +2,7 @@
 import numpy as np
 cimport numpy as np
 from libc.stdint cimport uint8_t, uint16_t
+from nes.mapper.mapper cimport Mapper
 
 cdef int LENGTH_TABLE[32]
 LENGTH_TABLE = [
@@ -43,6 +44,7 @@ cdef class APU2A03:
             cpu_rate: CPU clock rate in Hz (default: 1789772.5 for NTSC NES)
         """
         self.bus = bus
+        self.expansion_mapper = None
         self.sample_rate = sample_rate
         self.cpu_rate = cpu_rate
         self.cycles_per_sample = self.cpu_rate / self.sample_rate
@@ -649,7 +651,7 @@ cdef class APU2A03:
         Updates pulse timers, envelope generators, length counters,
         sweep units, and generates audio samples.
         """
-        cdef int cycle, channel, volume
+        cdef int cycle, channel, volume, pcm
         cdef double value, filtered
         for cycle in range(cycles):
             self.cycle_parity ^= 1
@@ -680,6 +682,13 @@ cdef class APU2A03:
                     value = 95.88 / (8128.0 / total + 100.0)
                 else:
                     value = 0.0
+                # MMC5 / mapper expansion audio (PCM) mixed additively; the
+                # mapper returns 0 on boards without extra audio, so this is a
+                # no-op for everything but the MMC5 PCM channel.
+                if self.expansion_mapper is not None:
+                    pcm = self.expansion_mapper.expansion_audio_sample()
+                    if pcm != 0:
+                        value += (<double>pcm) / 255.0 * 0.5
                 if value > 1.0:
                     value = 1.0
                 self._samples.append(<int>(value * 32767.0))

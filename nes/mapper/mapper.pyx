@@ -1,4 +1,4 @@
-from libc.stdint cimport uint8_t, uint16_t
+from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t
 
 from nes.mapper.mirror cimport *
 
@@ -40,11 +40,48 @@ cdef class Mapper:
 
     cdef void reset(self):
         """Reset mapper state."""
+        self.bg_nt_addr = 0
+        self.bg_tile_x = 0
+        self.bg_scanline = 0
         pass
 
     cdef uint8_t mirror(self):
         """Return the mirroring mode."""
         return HARDWARE
+
+    cdef int8_t nametable_source(self, uint16_t addr):
+        '''Return -1 so the PPU keeps decoding nametables by mirror_mode.
+
+        Mappers that sit between the PPU and CIRAM (e.g. MMC5) override this
+        with a per-1 KB-window source: 0/1 select a CIRAM page, 2 selects
+        mapper-owned RAM and 3 selects fill-mode data.
+        Ref: NESdev wiki "MMC5", Nametable mapping ($5105).
+        '''
+        return -1
+
+    cdef uint8_t nametable_read(self, uint16_t addr):
+        '''Return nothing for boards without mapper-owned nametable sources.'''
+        return 0x00
+
+    cdef void nametable_write(self, uint16_t addr, uint8_t data):
+        '''Ignore nametable writes on boards without mapper-owned sources.'''
+        pass
+
+    cdef void ppu_fetch_kind(self, uint8_t kind):
+        '''Ignore fetch context on boards that map CHR by address alone.'''
+        pass
+
+    cdef int background_attribute(self, uint16_t nt_addr):
+        '''No per-tile palette override; use the normal attribute table.'''
+        return -1
+
+    cdef int expansion_audio_sample(self):
+        '''No expansion audio on a plain board.'''
+        return 0
+
+    cdef uint32_t chr_ram_size(self):
+        '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
+        return 0x2000
 
     cdef bint irq_line(self):
         """Check if IRQ is pending."""

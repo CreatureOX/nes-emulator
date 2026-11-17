@@ -13,7 +13,7 @@ cdef class CartridgeCPUPort:
 
 cdef class CartridgePPUPort:
     cdef Cartridge cart
-    cdef (bint, uint8_t) read(self, uint16_t)
+    cdef (bint, uint8_t) read(self, uint16_t, uint8_t)
     cdef bint write(self, uint16_t, uint8_t)
 
 cdef class Cartridge:
@@ -34,4 +34,4 @@ cdef class Cartridge:
     cdef uint8_t mirror_mode
 
     cdef void reset(self)
-    cdef uint8_t mapper_no(self)
+    cdef uint16_t mapper_no(self)
