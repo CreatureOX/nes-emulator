@@ -459,12 +459,14 @@ cdef class PPU2C02:
         self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
         self.palette_panel[0x30],self.palette_panel[0x31],self.palette_panel[0x32],self.palette_panel[0x33],self.palette_panel[0x34],self.palette_panel[0x35],self.palette_panel[0x36],self.palette_panel[0x37],self.palette_panel[0x38],self.palette_panel[0x39],self.palette_panel[0x3a],self.palette_panel[0x3b],self.palette_panel[0x3c],self.palette_panel[0x3d],self.palette_panel[0x3e],self.palette_panel[0x3f] = (236, 238, 236), (168, 204, 236), (188, 188, 236), (212, 178, 236), (236, 174, 236), (236, 174, 212), (236, 180, 176), (228, 196, 144), (204, 210, 120), (180, 222, 120), (168, 226, 144), (152, 226, 180), (160, 214, 228), (160, 162, 160), (  0,   0,   0), (  0,   0,   0)
 
-        # Ref: NESdev wiki "Colour emphasis", "PPU registers" (PPUMASK).
+        # Ref: NESdev wiki "Colour emphasis", "NTSC video" (PPUMASK).
         # Each set bit emphasizes one channel and darkens the other two to
         # 75%; the bits compose independently, so two set bits darken their
-        # shared channel twice and all three darken every channel. Greyscale
-        # only masks the palette index in PPUVRAMPort.read, so the tint still
-        # applies there. Tables are precomputed: fetch_color runs once per dot.
+        # shared channel twice and all three darken every channel. Columns
+        # $xE and $xF are exempt: measurements on NTSC hardware show the
+        # emphasis bits do not affect those blacks. Greyscale only masks the
+        # palette index in PPUVRAMPort.read, so the tint still applies there.
+        # Tables are precomputed: fetch_color runs once per dot.
         for emphasis in range(8):
             red = green = blue = 1.0
             if emphasis & 0x01:
@@ -477,10 +479,11 @@ cdef class PPU2C02:
                 red *= 0.75
                 green *= 0.75
             self.emphasis_panels[emphasis] = [
+                color if (index & 0x0F) >= 0x0E else
                 (int(color[0] * red + 0.5),
                  int(color[1] * green + 0.5),
                  int(color[2] * blue + 0.5))
-                for color in self.palette_panel
+                for index, color in enumerate(self.palette_panel)
             ]
 
     cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
