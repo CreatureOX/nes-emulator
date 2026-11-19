@@ -31,7 +31,7 @@ cdef class CPUBus:
     cdef public CPU6502 cpu
     cdef public PPU2C02 ppu
     cdef public APU2A03 apu
-    cdef Cartridge cartridge
+    cdef public Cartridge cartridge
 
     cdef void propagate_lines(self, long long dot)
 
@@ -41,3 +41,5 @@ cdef class CPUBus:
     cpdef void power_up(self)
     cpdef void clock(self)
     cpdef void run_frame(self)
+    cpdef object battery_ram(self)
+    cpdef void load_battery_ram(self, object data)

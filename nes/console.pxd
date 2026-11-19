@@ -18,7 +18,14 @@ cdef uint8_t K_RIGHT
 
 cdef class Console:
     cdef public CPUBus bus
-    
+    cdef public str filename
+
+    # Rewind ring buffer: periodic State snapshots, oldest first.
+    cdef object _rewind_buffer
+    cdef int _rewind_interval
+    cdef int _frame_counter
+    cdef int REWIND_MAX_FRAMES
+
     cdef public CPUDebugger cpu_debugger
     cdef public PPUDebugger ppu_debugger
     cdef public CartridgeDebugger cartridge_debugger
@@ -32,3 +39,9 @@ cdef class Console:
 
     cpdef void save_state(self, str)
     cpdef void load_state(self, str)
+    cpdef bint save_battery(self, str path = *)
+    cpdef bint load_battery(self, str path = *)
+    cdef str _battery_path(self, str)
+    cpdef void enable_rewind(self, int interval = *, int max_frames = *)
+    cpdef bint rewind(self)
+    cpdef void clear_rewind(self)

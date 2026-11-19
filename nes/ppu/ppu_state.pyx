@@ -23,11 +23,14 @@ cdef class PPUState:
             ]
             for i in range(240)
         ]
-        self.PPUSTATUS = ppu.PPUSTATUS
-        self.PPUMASK = ppu.PPUMASK
-        self.PPUCTRL = ppu.PPUCTRL
-        self.VRAM_addr = ppu.VRAM_addr
-        self.temp_VRAM_addr = ppu.temp_VRAM_addr
+        # Copy register values into standalone objects. Holding the PPU's
+        # register objects by reference makes every snapshot alias the same
+        # live objects, so rewind cannot restore distinct points in time.
+        self.PPUSTATUS = Status(); self.PPUSTATUS.value = ppu.PPUSTATUS.value
+        self.PPUMASK = Mask(); self.PPUMASK.value = ppu.PPUMASK.value
+        self.PPUCTRL = Controller(); self.PPUCTRL.value = ppu.PPUCTRL.value
+        self.VRAM_addr = LoopRegister(); self.VRAM_addr.value = ppu.VRAM_addr.value
+        self.temp_VRAM_addr = LoopRegister(); self.temp_VRAM_addr.value = ppu.temp_VRAM_addr.value
         self.fine_x = ppu.fine_x
         self.address_latch = ppu.address_latch
         self.ppu_data_buffer = ppu.ppu_data_buffer
@@ -37,8 +40,12 @@ cdef class PPUState:
         self.background_next_tile_attribute = ppu.background_next_tile_attribute
         self.background_next_tile_lsb = ppu.background_next_tile_lsb
         self.background_next_tile_msb = ppu.background_next_tile_msb
-        self.background_pattern_shift_register = ppu.background_pattern_shift_register
-        self.background_attribute_shift_register = ppu.background_attribute_shift_register
+        self.background_pattern_shift_register = BackgroundShiftRegister()
+        self.background_pattern_shift_register.low_bits = ppu.background_pattern_shift_register.low_bits
+        self.background_pattern_shift_register.high_bits = ppu.background_pattern_shift_register.high_bits
+        self.background_attribute_shift_register = BackgroundShiftRegister()
+        self.background_attribute_shift_register.low_bits = ppu.background_attribute_shift_register.low_bits
+        self.background_attribute_shift_register.high_bits = ppu.background_attribute_shift_register.high_bits
         self.sprite_pattern_shift_registers = [
             [ppu.sprite_pattern_shift_registers[i][j] for j in range(2)]
             for i in range(8)
@@ -58,6 +65,18 @@ cdef class PPUState:
         self.foreground_priority = ppu.foreground_priority
         self.nmi = ppu.nmi
         self.frame_complete = ppu.frame_complete
+
+        # Timing / interrupt / open-bus state at the sampled dot.
+        self.nmi_line = ppu.nmi_line
+        self.odd_frame = ppu.odd_frame
+        self.odd_skip_pending = ppu.odd_skip_pending
+        self.vbl_suppress = ppu.vbl_suppress
+        self.overflow_dot = ppu.overflow_dot
+        self.open_bus = ppu.open_bus
+        self.open_bus_frame = [ppu.open_bus_frame[i] for i in range(8)]
+        self.frame_count = ppu.frame_count
+        self._page_cross_echo = ppu._page_cross_echo
+        self._prev_read_value = ppu._prev_read_value
 
     cdef void load_to(self, PPU2C02 ppu):
         ppu.PPUCTRL.value = self.PPUCTRL.value & 0xFF
@@ -88,6 +107,19 @@ cdef class PPUState:
         ppu.foreground_priority = self.foreground_priority
         ppu.nmi = self.nmi
         ppu.frame_complete = self.frame_complete
+
+        ppu.nmi_line = self.nmi_line
+        ppu.odd_frame = self.odd_frame
+        ppu.odd_skip_pending = self.odd_skip_pending
+        ppu.vbl_suppress = self.vbl_suppress
+        ppu.overflow_dot = self.overflow_dot
+        ppu.open_bus = self.open_bus
+        for i in range(8):
+            ppu.open_bus_frame[i] = self.open_bus_frame[i]
+        ppu.frame_count = self.frame_count
+        ppu._page_cross_echo = self._page_cross_echo
+        ppu._prev_read_value = self._prev_read_value
+
         ppu._pattern_table = self._pattern_table
         ppu._nametable = self._nametable
         ppu._palette_table = self._palette_table

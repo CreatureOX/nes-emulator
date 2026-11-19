@@ -20,8 +20,12 @@ cdef class MapperMMC1(Mapper):
         self.RAM_static = np.zeros(32768).astype(np.uint8)
         self.CHR_bank_select_4_lo, self.CHR_bank_select_4_hi, self.CHR_bank_select_8 = 0x00, 0x00, 0x00
         self.PRG_bank_select_16_lo, self.PRG_bank_select_16_hi, self.PRG_bank_select_32 = 0x00, 0x00, 0x00
-        self.load_register, self.load_register_count, self.control_register = 0x00, 0x00, 0x00  
+        self.load_register, self.load_register_count, self.control_register = 0x00, 0x00, 0x00
         self.mirrormode = HORIZONTAL
+
+    cdef object sram(self):
+        '''Battery-backed WRAM window; only the low 8 KB is addressable.'''
+        return np.asarray(self.RAM_static)[:0x2000]
 
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM or SRAM."""

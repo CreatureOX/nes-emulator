@@ -20,6 +20,7 @@ from PIL import Image
 import time
 import sys
 import json
+import pickle
 import ctypes
 from gui.freesimplegui.audio_output import AudioOutput
 
@@ -51,15 +52,52 @@ def get_resource_path(relative_path):
         base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base_path, relative_path)
 
+
+_unique_seq = 0
+
+
+def _unique_path(directory: str, prefix: str, extension: str) -> str:
+    """Build a collision-free path from a millisecond stamp and a sequence.
+
+    The monotonic counter guarantees uniqueness even for calls in the same
+    millisecond; an existence check also protects against a reused stamp
+    across a process restart.
+    """
+    global _unique_seq
+    _unique_seq += 1
+    stamp = int(time.time() * 1000)
+    candidate = os.path.join(
+        directory, '{}-{}-{}.{}'.format(prefix, stamp, _unique_seq, extension))
+    while os.path.exists(candidate):
+        _unique_seq += 1
+        candidate = os.path.join(
+            directory, '{}-{}-{}.{}'.format(prefix, stamp, _unique_seq, extension))
+    return candidate
+
+
 class EmulatorWindow(BaseView):
     __TITLE = APP_NAME
 
     __MENU_LAYOUT = [
-        ['File', ['Open', 'Save', 'Load', 'Reset', 'Screenshot', 'Exit']],
+        ['&File', ['&Open', '&Save', '&Load', '&Reset', 'Screenshot', 'Exit']],
         ['Config', ['Keymap']],
+        ['Emulation', ['Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter']],
         ['Debug', ['CPU','PPU','Disassembler','NES File Viewer']],
         ['Help', ['About',]],
     ]
+
+    # Keyboard hints appended to menu labels. Purely visual: entryconfig
+    # changes the displayed label only, leaving the bound event name intact.
+    __SHORTCUT_HINTS = {
+        'Open': 'Alt+O',
+        'Save': 'Alt+S',
+        'Load': 'Alt+L',
+        'Reset': 'Alt+R',
+        'Rewind': 'Backspace',
+        'Fast Forward': 'Space',
+    }
+    __ALT_SHORTCUTS = {'o': 'Open', 's': 'Save', 'l': 'Load', 'r': 'Reset'}
+    __TOGGLE_LABELS = ('Fast Forward', 'Fullscreen', 'CRT Filter')
 
     __SIZE = ( 800, 600 )
 
@@ -77,6 +115,12 @@ class EmulatorWindow(BaseView):
         
         self.__lock = Lock()
         self.__stop = Event()
+        self.__render_thread = None
+
+        # Emulation toggles (plain menu items flip these booleans)
+        self.__fast_forward = False
+        self.__fullscreen = False
+        self.__crt_filter = False
 
         # File Tab
         self._events["Open"] = self.__run
@@ -84,6 +128,12 @@ class EmulatorWindow(BaseView):
         self._events["Screenshot"] = self.__capture_screenshot
         self._events["Save"] = self.__open_nes_file_hint
         self._events["Load"] = self.__open_nes_file_hint
+
+        # Emulation Tab
+        self._events["Rewind"] = self.__rewind
+        self._events["Fast Forward"] = self.__toggle_fast_forward
+        self._events["Fullscreen"] = self.__toggle_fullscreen
+        self._events["CRT Filter"] = self.__toggle_crt_filter
 
         # Config Tab
         self._events["Keymap"] = self.__open_keymap
@@ -110,7 +160,7 @@ class EmulatorWindow(BaseView):
             ]
         ]
         return [
-            [ sg.Menu(self.__MENU_LAYOUT) ],
+            [ sg.Menu(self.__MENU_LAYOUT, key = '-MENU-') ],
             [ sg.Column(screen_layout, expand_x = True, expand_y = True) ],
         ]
 
@@ -139,9 +189,91 @@ class EmulatorWindow(BaseView):
         
         # Prepare audio output (will be created when a ROM is opened)
         self._audio = None
-        
+
+        self.__setup_menu_labels()
+
+    def __setup_menu_labels(self) -> None:
+        """Cache submenus and label them with shortcut hints and toggle state.
+
+        Changing a menu label leaves its command bound to the original event
+        name, so neither the hints nor the ✓ marker affect event dispatch.
+        """
+        self.__submenus = {}
+        try:
+            menubar = self._window['-MENU-'].TKMenu
+            for i in range(menubar.index('end') + 1):
+                try:
+                    top = menubar.entrycget(i, 'label')
+                    if top not in ('File', 'Emulation'):
+                        continue
+                    menu_path = menubar.entrycget(i, 'menu')
+                    self.__submenus[top] = self._window.TKroot.nametowidget(menu_path)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        self.__refresh_menu_labels()
+        # Relabeling strips the '&' that gave native menu accelerators, so
+        # bind the advertised Alt shortcuts on the Tk root explicitly.
+        try:
+            root = self._window.TKroot
+            for key, event in self.__ALT_SHORTCUTS.items():
+                root.bind('<Alt-' + key + '>',
+                          lambda _event, name=event: self._window.write_event_value(name, None))
+                root.bind('<Alt-' + key.upper() + '>',
+                          lambda _event, name=event: self._window.write_event_value(name, None))
+        except Exception:
+            pass
+
+    def __refresh_menu_labels(self) -> None:
+        """Mark active toggles and show shortcuts as right-aligned accelerators.
+
+        Tk renders the accelerator column at the menu's right edge, matching
+        Mesen's layout. Rebuilt from a fixed item list each time so a ✓ from a
+        prior toggle never accumulates; matching strips the marker.
+        """
+        state = {
+            'Fast Forward': self.__fast_forward,
+            'Fullscreen': self.__fullscreen,
+            'CRT Filter': self.__crt_filter,
+        }
+        for top, items in (
+            ('File', ('Open', 'Save', 'Load', 'Reset')),
+            ('Emulation', ('Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter')),
+        ):
+            menu = self.__submenus.get(top)
+            if menu is None:
+                continue
+            for label in items:
+                try:
+                    idx = None
+                    for i in range(menu.index('end') + 1):
+                        plain = menu.entrycget(i, 'label').lstrip('\u2713 ')
+                        plain = plain.split('  (')[0]
+                        if plain == label:
+                            idx = i
+                            break
+                    if idx is None:
+                        continue
+                    text = label
+                    if label in self.__TOGGLE_LABELS and state.get(label):
+                        text = '\u2713 ' + text
+                    menu.entryconfig(idx, label=text,
+                                     accelerator=self.__SHORTCUT_HINTS.get(label, ''))
+                except Exception:
+                    continue
+
     def _before_exit(self, values = None) -> None:
         self.__stop.set()
+        thread = self.__render_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        # Flush battery-backed SRAM before leaving.
+        try:
+            if getattr(self, '_EmulatorWindow__console', None) is not None:
+                self.__console.save_battery()
+        except Exception:
+            pass
         try:
             if getattr(self, '_audio', None) is not None:
                 self._audio.stop()
@@ -154,9 +286,31 @@ class EmulatorWindow(BaseView):
             sg.popup("Invalid .nes file path!")
             return False
         
+        # Flush the previous cartridge's battery RAM before switching ROMs.
+        if getattr(self, '_EmulatorWindow__console', None) is not None:
+            try:
+                self.__console.save_battery()
+            except Exception:
+                pass
+
+        # Stop the previous render thread before swapping consoles. Both the
+        # old and new loops read self.__console each frame; leaving the old one
+        # alive drives the new ROM twice per tick (double speed, doubled audio).
+        self.__stop_render_thread()
+
         # run .nes file
         self.__console = Console(file_path)
         self.__console.power_up()
+        # Restore a matching .sav if one exists.
+        try:
+            self.__console.load_battery()
+        except Exception:
+            pass
+        # Enable periodic rewind snapshots (one per 10 frames, ~2 s buffer).
+        try:
+            self.__console.enable_rewind(10, 120)
+        except Exception:
+            pass
 
         # Initialize audio output for this run; use bus.apu if available.
         try:
@@ -184,7 +338,7 @@ class EmulatorWindow(BaseView):
     def __save(self, values):
         if not os.path.exists("./saves"):
             os.mkdir("./saves")
-        archive_name = "./saves/{filename}-{id}.sav".format(filename = self.filename, id = int(time.time()))
+        archive_name = _unique_path("./saves", self.filename, "sav")
         self.__console.save_state(archive_name)
 
     def __load(self, values):
@@ -192,7 +346,10 @@ class EmulatorWindow(BaseView):
         if archive_path is None or archive_path == '':
             sg.popup("Invalid .sav file path!")
             return
-        self.__console.load_state(archive_path)
+        try:
+            self.__console.load_state(archive_path)
+        except (ValueError, OSError, EOFError, pickle.UnpicklingError) as exc:
+            sg.popup("Could not load save file!", str(exc))
 
     def __resize(self, original_image: np.ndarray, display_width: int, display_height: int) -> np.ndarray:
         """
@@ -225,6 +382,8 @@ class EmulatorWindow(BaseView):
                 pygame.K_z: 0x5A, pygame.K_x: 0x58, pygame.K_c: 0x43, pygame.K_v: 0x56, pygame.K_b: 0x42,
                 pygame.K_n: 0x4E, pygame.K_m: 0x4D,
                 pygame.K_UP: 0x26, pygame.K_DOWN: 0x28, pygame.K_LEFT: 0x25, pygame.K_RIGHT: 0x27,
+                pygame.K_BACKSPACE: 0x08,
+                pygame.K_SPACE: 0x20,
             }
             
             def get_key_state(key_code):
@@ -243,8 +402,18 @@ class EmulatorWindow(BaseView):
         MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
         
         last_canvas_width, last_canvas_height = 640, 480
-        
-        while not self.__stop.is_set():              
+        rewind_held = False
+
+        while not self.__stop.is_set():
+            # Backspace rewinds one snapshot on the rising edge only.
+            backspace = get_key_state(pygame.K_BACKSPACE)
+            if backspace and not rewind_held:
+                try:
+                    self.__console.rewind()
+                except Exception:
+                    pass
+            rewind_held = backspace
+
             # Get the actual canvas size from TKinter each frame
             try:
                 canvas = self._window['-SCREEN-'].TKCanvas
@@ -284,9 +453,14 @@ class EmulatorWindow(BaseView):
                 get_key_state(keyboard['RIGHT'])
             ]
             
-            self.__console.control(control_inputs)
-            
-            self.__console.run()
+            # Fast forward runs several frames per display update and skips
+            # the 60 FPS throttle. Holding Space is a temporary override;
+            # the menu toggle stays latched until clicked again.
+            space_held = get_key_state(pygame.K_SPACE)
+            frames_per_tick = 4 if (self.__fast_forward or space_held) else 1
+            for _ in range(frames_per_tick):
+                self.__console.control(control_inputs)
+                self.__console.run()
             
             # Get screen data - ensure we get a copy, not just a view
             ppu_screen = self.__console.bus.ppu.screen()
@@ -308,6 +482,11 @@ class EmulatorWindow(BaseView):
             
             # Resize image to fill the entire display
             resized_image = self.__resize(original_image, canvas_width, canvas_height)
+
+            # Optional CRT scanline shading on every other display row.
+            if self.__crt_filter:
+                for row in range(0, resized_image.shape[0], 2):
+                    resized_image[row] = (resized_image[row] * 0.72).astype(np.uint8)
             
             # Clear the entire display with black background
             self.__game_screen.fill((0, 0, 0))
@@ -340,22 +519,39 @@ class EmulatorWindow(BaseView):
                             self._audio.enqueue(samples)
             except Exception:
                 pass
-            clock.tick(60)  # Limit to 60 FPS for smooth gameplay
+            if not (self.__fast_forward or space_held):
+                clock.tick(60)  # Limit to 60 FPS for smooth gameplay
             frames_waited += 1
+
+    def __stop_render_thread(self) -> None:
+        """Signal the render loop to stop and wait for it to exit."""
+        self.__stop.set()
+        thread = self.__render_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        # Re-arm for the next ROM; a join that timed out still sees the signal.
+        self.__render_thread = None
+        self.__stop.clear()
 
     def __run(self, values) -> None:
         success = self.__open_file()
         if not success:
             return
-        async_runnable = Thread(target = self.__run_file, daemon = True)
-        async_runnable.start()
+        self.__render_thread = Thread(target = self.__run_file, daemon = True)
+        self.__render_thread.start()
 
     def __capture_screenshot(self, values) -> None:
-        image_data = np.array(self.__console.bus.ppu.screen())
+        image_data = np.array(self.__console.bus.ppu.screen(), copy = True)
+
+        # Apply the same scanline shading shown in the window so the
+        # screenshot matches what the player sees when CRT Filter is on.
+        if self.__crt_filter:
+            for row in range(0, image_data.shape[0], 2):
+                image_data[row] = (image_data[row] * 0.72).astype(np.uint8)
 
         if not os.path.exists("./screenshots"):
             os.mkdir("./screenshots")
-        screenshot_path = "./screenshots/{}.jpg".format(str(int(time.time())))
+        screenshot_path = _unique_path("./screenshots", "screenshot", "jpg")
 
         image = Image.fromarray(image_data)
         image.save(screenshot_path)
@@ -363,6 +559,28 @@ class EmulatorWindow(BaseView):
     def __reset(self, values) -> None:
         self.__console.reset()
     
+    def __rewind(self, values) -> None:
+        try:
+            self.__console.rewind()
+        except Exception:
+            pass
+
+    def __toggle_fast_forward(self, values) -> None:
+        self.__fast_forward = not self.__fast_forward
+        self.__refresh_menu_labels()
+
+    def __toggle_fullscreen(self, values) -> None:
+        self.__fullscreen = not self.__fullscreen
+        try:
+            self._window.TKroot.attributes('-fullscreen', self.__fullscreen)
+        except Exception:
+            pass
+        self.__refresh_menu_labels()
+
+    def __toggle_crt_filter(self, values) -> None:
+        self.__crt_filter = not self.__crt_filter
+        self.__refresh_menu_labels()
+
     def __show_about(self, values) -> None:
         sg.popup(f'{APP_NAME}\nVersion: {VERSION}\nAuthor: {AUTHOR}\n')
     

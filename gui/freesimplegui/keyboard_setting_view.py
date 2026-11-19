@@ -14,6 +14,7 @@ class KeyboardSettingWindow(BaseView):
         'Q':pygame.K_q,'W':pygame.K_w,'E':pygame.K_e,'R':pygame.K_r,'T':pygame.K_t,'Y':pygame.K_y,'U':pygame.K_u,'I':pygame.K_i,'O':pygame.K_o,'P':pygame.K_p,
         'A':pygame.K_a,'S':pygame.K_s,'D':pygame.K_d,'F':pygame.K_f,'G':pygame.K_g,'H':pygame.K_h,'J':pygame.K_j,'K':pygame.K_k,'L':pygame.K_l,
         'Z':pygame.K_z,'X':pygame.K_x,'C':pygame.K_c,'V':pygame.K_v,'B':pygame.K_b,'N':pygame.K_n,'M':pygame.K_m,
+        'SPACE':pygame.K_SPACE,'BACKSPACE':pygame.K_BACKSPACE,
         'UP':pygame.K_UP,'DOWN':pygame.K_DOWN,'LEFT':pygame.K_LEFT,'RIGHT':pygame.K_RIGHT,
     }
 
@@ -27,6 +28,11 @@ class KeyboardSettingWindow(BaseView):
         'B': pygame.K_x,
         'A': pygame.K_z,        
     }
+
+    # Keys bound to emulator controls rather than NES buttons. A gamepad
+    # binding must never take one of these or the two would fight each other.
+    __RESERVED_KEYCODES = {pygame.K_SPACE, pygame.K_BACKSPACE}
+    __RESERVED_KEYNAMES = {'SPACE', 'BACKSPACE'}
 
     # Use the global keyboard manager
     @classmethod
@@ -131,6 +137,12 @@ class KeyboardSettingWindow(BaseView):
         for key in setting:
             if key not in self.__MAPPING.keys():
                 sg.popup('not support {}!'.format(key))
+                return False
+            # Space and Backspace drive fast-forward and rewind; letting a
+            # gamepad binding claim one would make both react to one press.
+            if (key in self.__RESERVED_KEYNAMES or
+                    self.__MAPPING[key] in self.__RESERVED_KEYCODES):
+                sg.popup('{} is reserved for emulator controls!'.format(key))
                 return False
         return True
     

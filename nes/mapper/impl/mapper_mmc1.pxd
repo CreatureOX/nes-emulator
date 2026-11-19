@@ -19,3 +19,5 @@ cdef class MapperMMC1(Mapper):
     cdef uint8_t mirrormode
 
     cdef uint8_t[:] RAM_static
+
+    cdef object sram(self)

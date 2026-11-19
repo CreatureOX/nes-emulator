@@ -34,6 +34,10 @@ cdef class MapperMMC3(Mapper):
 
         self.RAM_static = np.zeros(32 * 1024).astype(np.uint8)
 
+    cdef object sram(self):
+        '''Battery-backed WRAM window; only the low 8 KB is addressable.'''
+        return np.asarray(self.RAM_static)[:0x2000]
+
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM or SRAM."""
         cdef CPUReadMapping mapping = CPUReadMapping()

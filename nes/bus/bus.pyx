@@ -181,6 +181,25 @@ cdef class CPUBus:
         self.dma.reset()
         self.open_bus = 0x00
 
+    cpdef object battery_ram(self):
+        '''Return a copy of the mapper's battery-backed SRAM, or None.'''
+        cdef object sram = self.cartridge.mapper.sram()
+        if sram is None:
+            return None
+        return bytes(sram)
+
+    cpdef void load_battery_ram(self, object data):
+        '''Restore battery-backed SRAM from a bytes-like object.'''
+        cdef object sram = self.cartridge.mapper.sram()
+        cdef const unsigned char[:] src
+        cdef int count
+        if sram is None:
+            return
+        src = memoryview(data).cast('B')
+        count = min(len(src), len(sram))
+        if count > 0:
+            sram[:count] = src[:count]
+
     cpdef void clock(self):
         '''
         Advance one PPU dot and dispatch the edges published by ClockDivider.

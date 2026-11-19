@@ -83,6 +83,10 @@ cdef class Mapper:
         '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
         return 0x2000
 
+    cdef object sram(self):
+        '''No persistent RAM on boards without a battery-backed window.'''
+        return None
+
     cdef bint irq_line(self):
         """Check if IRQ is pending."""
         return False

@@ -24,3 +24,5 @@ cdef class MapperMMC3(Mapper):
     cdef void _clock_irq(self)
 
     cdef uint8_t[:] RAM_static
+
+    cdef object sram(self)

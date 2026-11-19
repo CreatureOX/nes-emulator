@@ -53,6 +53,11 @@ cdef class Mapper:
 
     cdef uint32_t chr_ram_size(self)
 
+    # Battery-backed SRAM ($6000-$7FFF) owned by the board, or None when the
+    # mapper has no persistent RAM. The returned memoryview aliases the live
+    # buffer so a loader can write saved bytes straight back into it.
+    cdef object sram(self)
+
     cdef bint irq_line(self)
 
     cdef void scanline(self)
