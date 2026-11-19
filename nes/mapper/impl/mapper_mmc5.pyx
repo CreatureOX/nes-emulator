@@ -5,6 +5,30 @@ from nes.mapper.mapping cimport PPUReadMapping, PPUWriteMapping
 from nes.mapper.mapper cimport PPU_FETCH_OTHER, PPU_FETCH_BACKGROUND
 from nes.mapper.mapper cimport PPU_FETCH_SPRITE
 
+# MMC5 pulse length table: identical to the 2A03 table except index $1C,
+# which is $10 instead of $00 (the lowest output bit is not implemented).
+cdef int MMC5_LENGTH_TABLE[32]
+MMC5_LENGTH_TABLE = [
+    10, 254, 20, 2, 40, 4, 80, 6,
+    160, 8, 60, 10, 14, 12, 26, 14,
+    12, 16, 24, 18, 48, 20, 96, 22,
+    192, 24, 72, 26, 16, 28, 32, 30
+]
+MMC5_LENGTH_TABLE[0x1C] = 16
+
+cdef int MMC5_DUTY_PATTERNS[4][8]
+MMC5_DUTY_PATTERNS = [
+    [0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 0, 0, 0],
+    [1, 0, 0, 1, 1, 1, 1, 1],
+]
+
+# M2 / 7424 ~= 241 Hz: the fixed rate at which the MMC5 clocks envelope and
+# length, independently of any frame-sequencer register ($4017 has no MMC5
+# counterpart). Ref: NESdev wiki "MMC5 audio", Pulse 1 ($5000-$5003).
+cdef long long MMC5_FRAME_CYCLES = 7424
+
 
 cdef class MapperMMC5(Mapper):
     '''
@@ -36,6 +60,20 @@ cdef class MapperMMC5(Mapper):
             self.pcm_data = 0
             self.pcm_control = 0
             self.pcm_irq_pending = False
+            self.pulse_audio_cycle = 0
+            for i in range(2):
+                self.pulse_period[i] = 0
+                self.pulse_timer[i] = 0
+                self.pulse_step[i] = 0
+                self.pulse_duty[i] = 0
+                self.pulse_volume[i] = 0
+                self.pulse_constant[i] = False
+                self.pulse_halt[i] = False
+                self.pulse_enabled[i] = False
+                self.pulse_env_start[i] = False
+                self.pulse_env_decay[i] = 0
+                self.pulse_env_divider[i] = 0
+                self.pulse_length[i] = 0
             for i in range(1, 5):
                 self.prg_bank[i] = 0xFF
         else:
@@ -179,15 +217,80 @@ cdef class MapperMMC5(Mapper):
             return (self.exram[nt_addr & 0x03FF] >> 6) & 0x03
         return -1
 
-    cdef int expansion_audio_sample(self):
-        '''MMC5 PCM level for the APU mix.
+    cdef void audio_clock(self, int cycles):
+        '''Clock pulse timers one CPU cycle at a time.
 
-        The DAC at $5011 always drives its 8-bit value; no status or enable
-        bit mutes it. A zero write leaves the DAC unchanged and trips the
-        PCM IRQ instead, so the last non-zero level keeps sounding.
+        Frequency values below 8 do not silence the MMC5 channels; they
+        produce ultrasonic output, so unlike the 2A03 there is no minimum
+        period gate here. Ref: NESdev wiki "MMC5 audio", Pulse 1.
+        '''
+        cdef int channel
+        for channel in range(2):
+            if not self.pulse_enabled[channel] or self.pulse_length[channel] == 0:
+                continue
+            self.pulse_timer[channel] -= 1
+            if self.pulse_timer[channel] < 0:
+                self.pulse_timer[channel] = self.pulse_period[channel]
+                self.pulse_step[channel] = (self.pulse_step[channel] + 1) & 0x07
+        self.pulse_audio_cycle += cycles
+        while self.pulse_audio_cycle >= MMC5_FRAME_CYCLES:
+            self.pulse_audio_cycle -= MMC5_FRAME_CYCLES
+            self._clock_pulse_frame()
+
+    cdef void _clock_pulse_frame(self):
+        '''~240 Hz envelope and length clock shared by both pulse channels.
+
+        The MMC5 has no frame sequencer; envelope and length run at the same
+        fixed rate, and the halt bit doubles as the envelope loop flag.
+        Ref: NESdev wiki "MMC5 audio", Pulse 1 / Status ($5015).
+        '''
+        cdef int channel
+        for channel in range(2):
+            if self.pulse_env_start[channel]:
+                self.pulse_env_start[channel] = False
+                self.pulse_env_decay[channel] = 15
+                self.pulse_env_divider[channel] = self.pulse_volume[channel] + 1
+            else:
+                self.pulse_env_divider[channel] -= 1
+                if self.pulse_env_divider[channel] <= 0:
+                    self.pulse_env_divider[channel] = self.pulse_volume[channel] + 1
+                    if self.pulse_env_decay[channel] > 0:
+                        self.pulse_env_decay[channel] -= 1
+                    elif self.pulse_halt[channel]:
+                        self.pulse_env_decay[channel] = 15
+            if self.pulse_length[channel] > 0 and not self.pulse_halt[channel]:
+                self.pulse_length[channel] -= 1
+
+    cdef int expansion_audio_sample(self):
+        '''MMC5 raw PCM level ($5011) added into the APU mix.
+
+        The DAC drives its 8-bit value unconditionally; no status or enable
+        bit mutes it. A zero write leaves the DAC unchanged and trips the PCM
+        IRQ instead, so the last non-zero level keeps sounding.
         Ref: NESdev wiki "MMC5 audio", Raw PCM ($5011).
         '''
         return <int> self.pcm_data
+
+    cdef int expansion_pulse_sample(self):
+        '''Sum of both MMC5 pulse volumes (0-30) for the APU's pulse DAC.
+
+        MMC5 pulses are equivalent in volume to 2A03 pulses but inverted in
+        polarity, so the APU runs them through its pulse formula and subtracts
+        the result. Voltage conversion belongs there, not in this mapper.
+        Ref: NESdev wiki "MMC5 audio", Pulse channels.
+        '''
+        cdef int total = 0
+        cdef int channel
+        for channel in range(2):
+            if not self.pulse_enabled[channel] or self.pulse_length[channel] == 0:
+                continue
+            if MMC5_DUTY_PATTERNS[self.pulse_duty[channel]][self.pulse_step[channel]] == 0:
+                continue
+            if self.pulse_constant[channel]:
+                total += self.pulse_volume[channel]
+            else:
+                total += self.pulse_env_decay[channel]
+        return total
 
     cdef bint _in_split_for_col(self, int ht):
         '''True when column `ht` (0-31) lies inside the vertical split region.
@@ -371,6 +474,8 @@ cdef class MapperMMC5(Mapper):
     cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data):
         '''Decode the MMC5 register block and guard PRG RAM writes.'''
         cdef CPUWriteMapping mapping = CPUWriteMapping()
+        cdef int channel
+        cdef int reg
 
         if addr == 0x2000:
             # Only the fully decoded register is watched; $2008-$200F
@@ -385,7 +490,30 @@ cdef class MapperMMC5(Mapper):
                 self._leave_frame()
             return mapping
         if 0x5000 <= addr <= 0x5015:
-            if addr == 0x5010:
+            if 0x5000 <= addr <= 0x5007:
+                # Two pulse channels at stride 4: control, sweep (unused on
+                # the MMC5), timer low, timer high + length index. Register
+                # layout matches the 2A03 pulse except there is no sweep.
+                channel = (addr - 0x5000) >> 2
+                reg = (addr - 0x5000) & 0x03
+                if reg == 0:
+                    self.pulse_volume[channel] = data & 0x0F
+                    self.pulse_constant[channel] = (data & 0x10) != 0
+                    self.pulse_halt[channel] = (data & 0x20) != 0
+                    self.pulse_duty[channel] = (data >> 6) & 0x03
+                elif reg == 2:
+                    self.pulse_period[channel] = \
+                        (self.pulse_period[channel] & 0x700) | data
+                elif reg == 3:
+                    self.pulse_period[channel] = \
+                        (self.pulse_period[channel] & 0xFF) | ((data & 0x07) << 8)
+                    self.pulse_env_start[channel] = True
+                    if self.pulse_enabled[channel]:
+                        self.pulse_length[channel] = \
+                            MMC5_LENGTH_TABLE[(data >> 3) & 0x1F]
+                # $5001/$5005 hold a sweep register on the 2A03; the MMC5 has
+                # no sweep unit, so writes there are ignored.
+            elif addr == 0x5010:
                 # $5010 bit 7 is the PCM IRQ enable, bit 0 selects
                 # write (0) or read (1) mode. Only write mode is driven
                 # here; the read-mode DAC path is not emulated.
@@ -398,8 +526,16 @@ cdef class MapperMMC5(Mapper):
                     self.pcm_irq_pending = False
                 else:
                     self.pcm_irq_pending = True
-            # $5015 is the MMC5 pulse-channel status; it has no PCM
-            # channel-enable bit. The APU mix takes the DAC unconditionally.
+            elif addr == 0x5015:
+                # Pulse status: bits 0-1 enable channels; clearing an enable
+                # bit also clears that channel's length counter. No PCM bit.
+                for channel in range(2):
+                    if data & (1 << channel):
+                        self.pulse_enabled[channel] = True
+                    else:
+                        self.pulse_enabled[channel] = False
+                        self.pulse_length[channel] = 0
+            # The APU mix takes the PCM DAC unconditionally.
             return mapping
         if 0x5100 <= addr <= 0x5107:
             if addr == 0x5100:

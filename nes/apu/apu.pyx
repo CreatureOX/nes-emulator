@@ -655,6 +655,10 @@ cdef class APU2A03:
         cdef double value, filtered
         for cycle in range(cycles):
             self.cycle_parity ^= 1
+            # Expansion audio (e.g. MMC5 pulse) needs a per-CPU-cycle clock;
+            # expansion_audio_sample() only runs at the 44.1 kHz sample points.
+            if self.expansion_mapper is not None:
+                self.expansion_mapper.audio_clock(1)
             self._clock_frame_counter()
             self._apply_pending_length()
             self._clock_dmc()
@@ -682,9 +686,16 @@ cdef class APU2A03:
                     value = 95.88 / (8128.0 / total + 100.0)
                 else:
                     value = 0.0
-                # MMC5 / mapper expansion audio (PCM) mixed additively; the
-                # mapper returns 0 on boards without extra audio, so this is a
-                # no-op for everything but the MMC5 PCM channel.
+                # Mapper expansion pulses (MMC5) are equivalent in volume to
+                # 2A03 pulses but inverted, so they run through the same pulse
+                # DAC formula and are subtracted. Keeping this in the pulse
+                # domain (not the PCM /255 path) preserves their loudness.
+                # Ref: NESdev wiki "MMC5 audio", Pulse channels.
+                if self.expansion_mapper is not None:
+                    pulse = self.expansion_mapper.expansion_pulse_sample()
+                    if pulse > 0:
+                        value -= 95.88 / (8128.0 / pulse + 100.0)
+                # Raw PCM (MMC5 $5011) is linear and mixed additively.
                 if self.expansion_mapper is not None:
                     pcm = self.expansion_mapper.expansion_audio_sample()
                     if pcm != 0:

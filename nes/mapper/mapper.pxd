@@ -51,6 +51,12 @@ cdef class Mapper:
     # has no extra audio channel. MMC5 overrides this with its PCM level.
     cdef int expansion_audio_sample(self)
 
+    # Sum of the board's expansion pulse-channel volumes (0-30, before the
+    # APU pulse DAC), mixed with inverted polarity. 0 on boards without one.
+    cdef int expansion_pulse_sample(self)
+
+    cdef void audio_clock(self, int cycles)
+
     cdef uint32_t chr_ram_size(self)
 
     # Battery-backed SRAM ($6000-$7FFF) owned by the board, or None when the

@@ -11,12 +11,15 @@ class AudioOutput:
     It's designed for testing; a production implementation should use a
     lower-level audio callback or a ring buffer shared with SDL.
     """
-    def __init__(self, sample_rate=44100, chunk_size=1024, max_queue=16):
+    def __init__(self, sample_rate=44100, chunk_size=1024, max_queue=16,
+                 volume=1.0):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self._partial = np.zeros((0,), dtype=np.int16)
         self._q = queue.Queue(maxsize=max_queue)
         self._stop = threading.Event()
+        self._volume = max(0.0, min(1.0, float(volume)))
+        self._muted = False
 
         # Initialize mixer if not already
         try:
@@ -37,8 +40,32 @@ class AudioOutput:
             self.channels = 1
 
         self._channel = pygame.mixer.Channel(0)
+        self._apply_volume()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def _apply_volume(self):
+        """Apply gain on the mixer channel; mute wins over volume."""
+        try:
+            self._channel.set_volume(0.0 if self._muted else self._volume)
+        except Exception:
+            pass
+
+    def set_volume(self, volume):
+        """Set playback gain in [0, 1]; does not change queued samples."""
+        volume = max(0.0, min(1.0, float(volume)))
+        if volume == self._volume:
+            return
+        self._volume = volume
+        self._apply_volume()
+
+    def set_muted(self, muted):
+        """Mute output (fast-forward). Queued samples stay but play silently."""
+        muted = bool(muted)
+        if muted == self._muted:
+            return
+        self._muted = muted
+        self._apply_volume()
 
     def _prepare_pcm(self, pcm: np.ndarray) -> np.ndarray:
         if pcm.dtype != np.int16:

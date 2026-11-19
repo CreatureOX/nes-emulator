@@ -293,6 +293,16 @@ class EmulatorWindow(BaseView):
             except Exception:
                 pass
 
+        # Stop the old audio thread before the new one reuses the same mixer
+        # channel; otherwise the previous ROM's queued samples leak into the
+        # new run and ignore mute/volume changes on the new object.
+        try:
+            if getattr(self, '_audio', None) is not None:
+                self._audio.stop()
+                self._audio = None
+        except Exception:
+            pass
+
         # Stop the previous render thread before swapping consoles. Both the
         # old and new loops read self.__console each frame; leaving the old one
         # alive drives the new ROM twice per tick (double speed, doubled audio).
@@ -457,10 +467,13 @@ class EmulatorWindow(BaseView):
             # the 60 FPS throttle. Holding Space is a temporary override;
             # the menu toggle stays latched until clicked again.
             space_held = get_key_state(pygame.K_SPACE)
-            frames_per_tick = 4 if (self.__fast_forward or space_held) else 1
+            fast_forward = self.__fast_forward or space_held
+            frames_per_tick = 4 if fast_forward else 1
             for _ in range(frames_per_tick):
                 self.__console.control(control_inputs)
                 self.__console.run()
+            if getattr(self, '_audio', None) is not None:
+                self._audio.set_muted(fast_forward)
             
             # Get screen data - ensure we get a copy, not just a view
             ppu_screen = self.__console.bus.ppu.screen()
@@ -509,17 +522,21 @@ class EmulatorWindow(BaseView):
             self.__game_screen.blit(surf, (0, 0))
             pygame.display.flip()
 
-            # Generate and enqueue audio for this frame from the bus APU
+            # Generate and enqueue audio for this frame from the bus APU.
+            # Fast-forward still drains (so the APU's filter state keeps
+            # advancing) but drops the samples: the mixer cannot play 4x
+            # samples at 1x rate without pitch distortion or queue overflow.
             try:
                 if getattr(self, '_audio', None) is not None:
                     apu = getattr(self.__console.bus, 'apu', None)
                     if apu is not None:
                         samples = apu.drain_samples()
-                        if isinstance(samples, np.ndarray) and samples.dtype == np.int16 and samples.size > 0:
+                        if (not fast_forward and isinstance(samples, np.ndarray)
+                                and samples.dtype == np.int16 and samples.size > 0):
                             self._audio.enqueue(samples)
             except Exception:
                 pass
-            if not (self.__fast_forward or space_held):
+            if not fast_forward:
                 clock.tick(60)  # Limit to 60 FPS for smooth gameplay
             frames_waited += 1
 

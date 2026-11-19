@@ -1,0 +1,86 @@
+{
+  "both_pulses": {
+    "count": 2956,
+    "hash": "ef64cad8d1e305fbea5c9b35e54dcd9ac7b1e82439d172cf07eeab683542b7db",
+    "max": 5474,
+    "min": -2995,
+    "sum": 2585
+  },
+  "frame_irq_mode": {
+    "count": 2956,
+    "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
+    "max": 4277,
+    "min": -617,
+    "sum": 1610
+  },
+  "mmc5_pcm_alt": {
+    "count": 2956,
+    "hash": "88fa7f6cf95f55717057ceea0d4abc268d1bf2203303b8e15cd92f3401b75a54",
+    "max": 8160,
+    "min": -8159,
+    "sum": 1478
+  },
+  "mmc5_pulse_both": {
+    "count": 2956,
+    "hash": "79ccf5d02f8596ade9e19cebdf1b059d57e1a09a6d1ab7167eadf5445b7ea68b",
+    "max": 3509,
+    "min": -4960,
+    "sum": -2727
+  },
+  "mmc5_pulse_duty50": {
+    "count": 2956,
+    "hash": "6d30d11d1b744f3167d58e5c8e5206df6d107390e41cd5dece2b02d68765f1b7",
+    "max": 2448,
+    "min": -2446,
+    "sum": -1938
+  },
+  "pulse1_duty12_const": {
+    "count": 2956,
+    "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
+    "max": 4277,
+    "min": -617,
+    "sum": 1610
+  },
+  "pulse1_duty25_const": {
+    "count": 2956,
+    "hash": "bd5087df240ea86c92af3995e532b393297bba9cf47043e34e4531b2a5e5175d",
+    "max": 3666,
+    "min": -1228,
+    "sum": 1380
+  },
+  "pulse1_duty50_const": {
+    "count": 2956,
+    "hash": "e91af7f15962cdd802a024fb6daa7c34079fe995c3ecf2b6b7cde04685557c56",
+    "max": 2444,
+    "min": -2450,
+    "sum": 920
+  },
+  "pulse1_duty75_const": {
+    "count": 2956,
+    "hash": "8c44d0619d75ceb3836cb83fb6879c444c44a0394e89d233392858f22362bf06",
+    "max": 1229,
+    "min": -3665,
+    "sum": 1576
+  },
+  "pulse1_env_decay": {
+    "count": 2956,
+    "hash": "db28b37405a7c0ee8f42b618340db1573c339a186a264878b4454e9b629cc8d0",
+    "max": 2647,
+    "min": -2247,
+    "sum": 788
+  },
+  "pulse2_duty50_const": {
+    "count": 2956,
+    "hash": "bbba99add990828c06b79e06680dc5e0c3937a96042367fc251ad3c0905da27a",
+    "max": 2426,
+    "min": -2468,
+    "sum": 1546
+  },
+  "silence": {
+    "count": 2956,
+    "hash": "934501d23fb3608d08e79e93bab10630bbc9961d88d6d28cd2d7059685650646",
+    "max": 0,
+    "min": 0,
+    "sum": 0
+  }
+}

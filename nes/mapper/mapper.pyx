@@ -79,6 +79,14 @@ cdef class Mapper:
         '''No expansion audio on a plain board.'''
         return 0
 
+    cdef int expansion_pulse_sample(self):
+        '''No expansion pulse channels on a plain board.'''
+        return 0
+
+    cdef void audio_clock(self, int cycles):
+        '''Advance expansion-audio state by CPU cycles; no-op on plain boards.'''
+        pass
+
     cdef uint32_t chr_ram_size(self):
         '''Return the fitted CHR RAM size, 8 KB on a plain board.'''
         return 0x2000
