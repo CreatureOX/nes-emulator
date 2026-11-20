@@ -34,6 +34,7 @@ if project_dir not in sys.path:
     sys.path.insert(0, str(project_dir))
 
 from nes.console import Console
+from nes.region import NTSC, PAL, DENDY
 
 try:
     _pyproject = toml.load(project_dir / "pyproject.toml")
@@ -80,7 +81,8 @@ class EmulatorWindow(BaseView):
 
     __MENU_LAYOUT = [
         ['&File', ['&Open', '&Save', '&Load', '&Reset', 'Screenshot', 'Exit']],
-        ['Config', ['Keymap']],
+        ['Config', ['Keymap', 'Region: Auto', 'Region: NTSC', 'Region: PAL',
+                    'Region: Dendy']],
         ['Emulation', ['Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter']],
         ['Debug', ['CPU','PPU','Disassembler','NES File Viewer']],
         ['Help', ['About',]],
@@ -97,7 +99,14 @@ class EmulatorWindow(BaseView):
         'Fast Forward': 'Space',
     }
     __ALT_SHORTCUTS = {'o': 'Open', 's': 'Save', 'l': 'Load', 'r': 'Reset'}
-    __TOGGLE_LABELS = ('Fast Forward', 'Fullscreen', 'CRT Filter')
+
+    # Region menu: -1 follows the cartridge header, the rest force a profile.
+    __REGION_LABELS = {
+        'Region: Auto': -1,
+        'Region: NTSC': NTSC,
+        'Region: PAL': PAL,
+        'Region: Dendy': DENDY,
+    }
 
     __SIZE = ( 800, 600 )
 
@@ -116,6 +125,10 @@ class EmulatorWindow(BaseView):
         self.__lock = Lock()
         self.__stop = Event()
         self.__render_thread = None
+
+        # Region override: -1 follows the cartridge header.
+        self.__region = -1
+        self.__current_rom = None
 
         # Emulation toggles (plain menu items flip these booleans)
         self.__fast_forward = False
@@ -137,6 +150,8 @@ class EmulatorWindow(BaseView):
 
         # Config Tab
         self._events["Keymap"] = self.__open_keymap
+        for label, region in self.__REGION_LABELS.items():
+            self._events[label] = lambda values, r=region: self.__set_region(r)
 
         # DEBUG Tab
         self._events["CPU"] = self.__open_nes_file_hint
@@ -204,7 +219,7 @@ class EmulatorWindow(BaseView):
             for i in range(menubar.index('end') + 1):
                 try:
                     top = menubar.entrycget(i, 'label')
-                    if top not in ('File', 'Emulation'):
+                    if top not in ('File', 'Config', 'Emulation'):
                         continue
                     menu_path = menubar.entrycget(i, 'menu')
                     self.__submenus[top] = self._window.TKroot.nametowidget(menu_path)
@@ -232,13 +247,17 @@ class EmulatorWindow(BaseView):
         Mesen's layout. Rebuilt from a fixed item list each time so a ✓ from a
         prior toggle never accumulates; matching strips the marker.
         """
-        state = {
+        toggles = {
             'Fast Forward': self.__fast_forward,
             'Fullscreen': self.__fullscreen,
             'CRT Filter': self.__crt_filter,
         }
+        active_region = next(
+            (label for label, r in self.__REGION_LABELS.items()
+             if r == self.__region), None)
         for top, items in (
             ('File', ('Open', 'Save', 'Load', 'Reset')),
+            ('Config', tuple(self.__REGION_LABELS)),
             ('Emulation', ('Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter')),
         ):
             menu = self.__submenus.get(top)
@@ -256,7 +275,7 @@ class EmulatorWindow(BaseView):
                     if idx is None:
                         continue
                     text = label
-                    if label in self.__TOGGLE_LABELS and state.get(label):
+                    if label == active_region or toggles.get(label, False):
                         text = '\u2713 ' + text
                     menu.entryconfig(idx, label=text,
                                      accelerator=self.__SHORTCUT_HINTS.get(label, ''))
@@ -285,7 +304,10 @@ class EmulatorWindow(BaseView):
         if file_path is None or file_path == '':
             sg.popup("Invalid .nes file path!")
             return False
-        
+        return self.__load_rom(file_path)
+
+    def __load_rom(self, file_path) -> bool:
+        """Bind a fresh console for file_path using the active region override."""
         # Flush the previous cartridge's battery RAM before switching ROMs.
         if getattr(self, '_EmulatorWindow__console', None) is not None:
             try:
@@ -308,9 +330,10 @@ class EmulatorWindow(BaseView):
         # alive drives the new ROM twice per tick (double speed, doubled audio).
         self.__stop_render_thread()
 
-        # run .nes file
-        self.__console = Console(file_path)
+        # run .nes file with the active region override (-1 = header auto).
+        self.__console = Console(file_path, self.__region)
         self.__console.power_up()
+        self.__current_rom = file_path
         # Restore a matching .sav if one exists.
         try:
             self.__console.load_battery()
@@ -550,12 +573,24 @@ class EmulatorWindow(BaseView):
         self.__render_thread = None
         self.__stop.clear()
 
+    def __start_render_thread(self) -> None:
+        """Launch the render loop; the caller owns ROM loading."""
+        self.__render_thread = Thread(target = self.__run_file, daemon = True)
+        self.__render_thread.start()
+
     def __run(self, values) -> None:
         success = self.__open_file()
         if not success:
             return
-        self.__render_thread = Thread(target = self.__run_file, daemon = True)
-        self.__render_thread.start()
+        self.__start_render_thread()
+
+    def __set_region(self, region: int) -> None:
+        """Apply a region override and reload the current ROM with it."""
+        self.__region = region
+        self.__refresh_menu_labels()
+        if self.__current_rom is not None:
+            self.__load_rom(self.__current_rom)
+            self.__start_render_thread()
 
     def __capture_screenshot(self, values) -> None:
         image_data = np.array(self.__console.bus.ppu.screen(), copy = True)
