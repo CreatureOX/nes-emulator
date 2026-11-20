@@ -4,6 +4,7 @@ from libc.string cimport memset
 
 from nes.mapper.mapper_factory cimport MapperFactory
 from nes.mapper.mirror cimport *
+from nes.region import region_from_header
 
 
 cdef class Nes2Cart(Cartridge):
@@ -18,7 +19,9 @@ cdef class Nes2Cart(Cartridge):
         # ROMs write their result there and expect an emulator to back it.
         self.wram = np.zeros(8192, dtype=np.uint8)
         with open(filename, 'rb') as nes2:
-            self.header = Nes2Header(nes2.read(16))
+            header = nes2.read(16)
+            self.header = Nes2Header(header)
+            self.region = region_from_header(header)
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = nes2.read(512)
             if self.header.flags_9.PRG_ROM_size_MSB == 0xF:

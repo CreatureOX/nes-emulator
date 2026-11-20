@@ -49,10 +49,16 @@ cdef class APU2A03:
     cdef int frame_irq_flag
     cdef int frame_cycle
     cdef int frame_reset_delay
+    # Frame-counter step boundaries per mode, injected from RegionSpec.
+    # NTSC/Dendy share the NTSC table; PAL uses the longer PAL table.
+    cdef object frame_steps
     cdef int cycle_parity
 
     # 1 = load (first fetch after $4015), 2 = reload (buffer emptied).
     cdef int dmc_request_kind
+
+    # DMC playback period per rate index, injected from RegionSpec.
+    cdef int dmc_rate_table[16]
 
     # DMC reader and output unit. The bus services the sample-byte DMA, so the
     # APU holds the bus as a signal line rather than reading CPU memory itself.

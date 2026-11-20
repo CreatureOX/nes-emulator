@@ -9,6 +9,8 @@ data-bus open-bus latch are held here as routed signals.
 Ref: NESdev wiki "CPU memory map".
 '''
 
+from nes.region import spec_for
+
 cdef class CPUBus:
     '''
     Signal router connecting the CPU, PPU, APU, cartridge and DMA unit.
@@ -21,17 +23,28 @@ cdef class CPUBus:
     propagate_lines() drives the /NMI and /IRQ signal lines, and
     DMAController is clocked on CPU-cycle edges.
     '''
-    def __init__(self, Cartridge cartridge) -> None:
-        '''Bind the devices and start with a clean signal state.'''
+    def __init__(self, Cartridge cartridge, int region=-1) -> None:
+        '''Bind the devices and start with a clean signal state.
+
+        region overrides the cartridge header when a caller runs a ROM in
+        a non-native standard (the pal_apu_tests headers are all NTSC).
+        -1 means use the header value.
+        '''
+        cdef object spec
         self.joy1 = Joypad()
         self.joy2 = Joypad()
-        self.divider = ClockDivider()
+        if region < 0:
+            region = cartridge.region
+        self.region = region
+        spec = spec_for(region)
+        self.divider = ClockDivider(*spec.divider_args)
         self.dmc_dma_request = False
 
         self.cartridge = cartridge
         self.cpu = CPU6502(self)
-        self.ppu = PPU2C02(cartridge)
-        self.apu = APU2A03(self)
+        self.ppu = PPU2C02(cartridge, spec)
+        self.apu = APU2A03(self, 44100, spec.cpu_rate,
+                           spec.frame_steps, spec.dmc_rates)
         self.apu.expansion_mapper = self.cartridge.mapper
         self.dma = DMAController(self)
         # CPU data-bus open bus: the last value driven onto the bus.

@@ -30,9 +30,12 @@ cdef class Console:
     a complete NES system emulation. Handles power-up, reset, clocking,
     input control, and save/load state operations.
     """
-    def __init__(self, filename: str) -> None:
+    def __init__(self, filename: str, int region=-1) -> None:
         cart = FileLoader.load(filename)
-        self.bus = CPUBus(cart)
+        # region=-1 follows the cartridge header; a caller may force PAL or
+        # Dendy to run ROMs whose headers omit the TV system (blargg's PAL
+        # APU suite is one such set).
+        self.bus = CPUBus(cart, region)
         self.filename = filename
         # Rewind is opt-in; disabled until enable_rewind() is called.
         self._rewind_buffer = deque()

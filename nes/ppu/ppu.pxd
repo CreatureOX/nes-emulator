@@ -46,6 +46,13 @@ cdef class PPU2C02:
 
     cdef public int16_t scanline, cycle
 
+    # Region geometry, injected once at construction from RegionSpec.
+    cdef int16_t last_scanline
+    cdef int16_t nmi_scanline
+    cdef int16_t vblank_end
+    cdef int16_t post_render_end
+    cdef bint odd_frame_skip
+
     cdef uint8_t background_next_tile_id
     cdef uint8_t background_next_tile_attribute
     cdef uint8_t background_next_tile_lsb, background_next_tile_msb

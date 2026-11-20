@@ -8,9 +8,9 @@ cdef class ClockDivider:
     cdef public bint phi2_edge
     cdef readonly uint32_t ppu_divider
     cdef readonly uint32_t cpu_divider
-    cdef uint32_t dots_per_cpu_cycle
-    cdef uint32_t cpu_tick_dot
-    cdef uint32_t phi2_dot
+    cdef readonly uint32_t cycle_dots
+    cdef readonly uint32_t tick_mask
+    cdef readonly uint32_t phi2_mask
     cdef uint32_t phase
 
     cdef void _update_edges(self)

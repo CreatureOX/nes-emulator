@@ -173,8 +173,20 @@ cdef class PPU2C02:
     palette management, and PPU register I/O. Renders 256x240 pixels
     per frame at 60fps (NTSC) with 262 scanlines per frame.
     """
-    def __init__(self, Cartridge cartridge) -> None:
-        '''Bind the cartridge that answers CHR and nametable fetches.'''
+    def __init__(self, Cartridge cartridge, object spec=None) -> None:
+        '''Bind the cartridge and apply the region's PPU frame geometry.
+
+        spec is a nes.region.RegionSpec; None keeps the NTSC defaults so
+        direct construction in older call sites stays compatible.
+        '''
+        if spec is None:
+            from nes.region import spec_for, NTSC
+            spec = spec_for(NTSC)
+        self.last_scanline = spec.last_scanline
+        self.nmi_scanline = spec.nmi_scanline
+        self.vblank_end = spec.vblank_end
+        self.post_render_end = spec.nmi_scanline - 1
+        self.odd_frame_skip = spec.odd_frame_skip
         self._pattern_table = np.array([[0x00] * 64 * 64] * 2, dtype = np.uint8)
         self._nametable = np.array([[0x00] * 32 * 32] * 2, dtype = np.uint8)
         self._palette_table = np.array([
@@ -291,7 +303,7 @@ cdef class PPU2C02:
             data = self._open_bus_decayed()
         elif addr == 0x0002:
             # Status register READ
-            if self.scanline == 241 and self.cycle == 1:
+            if self.scanline == self.nmi_scanline and self.cycle == 1:
                 self.vbl_suppress = True
             # Bits 7-5 are real status; bits 4-0 are the open-bus latch and are
             # NOT refreshed by reading $2002 (ppu_open_bus test 6/7).
@@ -983,10 +995,12 @@ cdef class PPU2C02:
 
     cdef void clock(self) except *:
         # Determine which phase of rendering we're in
-        cdef bint pre_render_scanline = self.scanline == -1 or self.scanline == 261
+        # Region geometry is injected from RegionSpec. NTSC yields the
+        # original -1/261 pre-render, 240 post-render and 241-260 VBL.
+        cdef bint pre_render_scanline = self.scanline == -1 or self.scanline == self.last_scanline
         cdef bint visible_scanlines = 0 <= self.scanline <= 239
-        cdef bint post_render_scanline = self.scanline == 240
-        cdef bint vertical_blanking_lines = 241 <= self.scanline <= 260
+        cdef bint post_render_scanline = 240 <= self.scanline <= self.post_render_end
+        cdef bint vertical_blanking_lines = self.nmi_scanline <= self.scanline <= self.vblank_end
 
         if pre_render_scanline:
             # Pre-render scanline (-1): Clear VBL flag, reset sprite evaluation
@@ -1080,7 +1094,7 @@ cdef class PPU2C02:
             pass
         elif vertical_blanking_lines:            
             # Scanlines 241-260: Vertical blanking, set VBL flag
-            if self.scanline == 241 and self.cycle == 1:
+            if self.scanline == self.nmi_scanline and self.cycle == 1:
                 if not self.vbl_suppress:
                     self.PPUSTATUS.vertical_blank = 1
                     self._update_nmi_line()
@@ -1125,10 +1139,10 @@ cdef class PPU2C02:
         # instead of 8. Only a start-of-dot-339 sample satisfies both. The dot
         # actually dropped stays 340, so the decision is decoupled from the
         # drop through odd_skip_pending.
-        if pre_render_scanline and self.cycle == 339:
+        if self.odd_frame_skip and pre_render_scanline and self.cycle == 339:
             self.odd_skip_pending = self.odd_frame and \
                 (self.PPUMASK.render_background == 1 or self.PPUMASK.render_sprites == 1)
-        elif pre_render_scanline and self.cycle == 340 and self.odd_skip_pending:
+        elif self.odd_frame_skip and pre_render_scanline and self.cycle == 340 and self.odd_skip_pending:
             # Drop dot 340 at the same tick as the original inline check, so
             # the frame shortens identically and dot 340's body never runs.
             self.odd_skip_pending = False
@@ -1146,7 +1160,7 @@ cdef class PPU2C02:
         if self.cycle >= 341:
             self.cycle = 0
             self.scanline += 1
-            if self.scanline >= 261:
+            if self.scanline >= self.last_scanline:
                 self.scanline = -1
                 self.frame_complete = True
                 self.odd_frame = not self.odd_frame

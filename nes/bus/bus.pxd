@@ -32,6 +32,7 @@ cdef class CPUBus:
     cdef public PPU2C02 ppu
     cdef public APU2A03 apu
     cdef public Cartridge cartridge
+    cdef public uint8_t region
 
     cdef void propagate_lines(self, long long dot)
 

@@ -12,11 +12,6 @@ LENGTH_TABLE = [
     192, 24, 72, 26, 16, 28, 32, 30
 ]
 
-# DMC rate table: CPU cycles per bit (NTSC). Index = $4010 bits 3-0.
-cdef int DMC_RATE_TABLE[16]
-DMC_RATE_TABLE = [428, 380, 340, 320, 286, 254, 226, 214,
-                  190, 160, 142, 128, 106, 84, 72, 54]
-
 cdef int DUTY_PATTERNS[4][8]
 DUTY_PATTERNS = [
     [0, 1, 0, 0, 0, 0, 0, 0],
@@ -34,15 +29,31 @@ cdef class APU2A03:
     """
 
     def __cinit__(self, object bus, int sample_rate=44100,
-                  double cpu_rate=1789772.5):
+                  double cpu_rate=1789772.5, object frame_steps=None,
+                  object dmc_rates=None):
         """
         Initialize the APU.
-        
+
         Args:
             bus: CPU bus that services DMC sample-fetch requests.
             sample_rate: Audio sample rate in Hz (default: 44100)
             cpu_rate: CPU clock rate in Hz (default: 1789772.5 for NTSC NES)
+            frame_steps: Per-mode frame-counter step boundaries from
+                         RegionSpec. Defaults to the NTSC table.
+            dmc_rates: DMC playback periods from RegionSpec.
         """
+        cdef int i
+        cdef object spec
+        if frame_steps is None or dmc_rates is None:
+            from nes.region import spec_for, NTSC
+            spec = spec_for(NTSC)
+            if frame_steps is None:
+                frame_steps = spec.frame_steps
+            if dmc_rates is None:
+                dmc_rates = spec.dmc_rates
+        self.frame_steps = frame_steps
+        for i in range(16):
+            self.dmc_rate_table[i] = dmc_rates[i]
         self.bus = bus
         self.expansion_mapper = None
         self.sample_rate = sample_rate
@@ -84,9 +95,9 @@ cdef class APU2A03:
         # Reset preloads the bit timer with the FULL period, so the first delta
         # bit takes a full rate-period of CPU cycles. The stored value is
         # table[0]-1 because the countdown is decremented before it is tested;
-        # the DMC then fires one bit every DMC_RATE_TABLE[rate] CPU cycles,
+        # the DMC then fires one bit every dmc_rate_table[rate] CPU cycles,
         # matching real hardware and blargg's timing windows.
-        self.dmc_period = DMC_RATE_TABLE[0] - 1
+        self.dmc_period = self.dmc_rate_table[0] - 1
         self.dmc_timer = self.dmc_period
         self.dmc_addr = 0xC000
         self.dmc_addr_load = 0xC000
@@ -241,7 +252,7 @@ cdef class APU2A03:
         elif addr == 0x4010:
             # DMC control: bit7 = IRQ enable, bit6 = loop, bits 3-0 = rate.
             # A $4010 write updates the bit-timer period to table[rate]-1, so
-            # the timer fires one bit every DMC_RATE_TABLE[rate] CPU cycles.
+            # the timer fires one bit every dmc_rate_table[rate] CPU cycles.
             # The in-flight countdown is NOT reloaded here, so a rate change
             # takes effect on the next bit boundary (one partial old-period
             # bit, then the new period) -- exactly what blargg 8-dmc_rates
@@ -249,7 +260,7 @@ cdef class APU2A03:
             # did) stretched the sample and failed the +/-45 cycle window.
             new_rate = data & 0x0F
             self.dmc_rate = new_rate
-            self.dmc_period = DMC_RATE_TABLE[new_rate] - 1
+            self.dmc_period = self.dmc_rate_table[new_rate] - 1
             self.dmc_irq_enable = 1 if (data & 0x80) else 0
             self.dmc_loop = 1 if (data & 0x40) else 0
             # Clearing the IRQ-enable bit also clears the DMC interrupt flag.
@@ -347,11 +358,14 @@ cdef class APU2A03:
         """
         Advance the frame counter by one CPU cycle.
 
-        Step boundaries are the NTSC ones, counted in CPU cycles from the last
-        divider reset. Mode 0 runs four steps over 29830 cycles and raises the
-        frame IRQ across the last three; mode 1 runs five steps over 37282 and
-        never raises it.
+        Step boundaries come from the injected frame_steps table. The
+        step semantics are identical for NTSC, PAL and Dendy; only the
+        cycle counts differ (PAL's chapter runs longer). Mode 0 runs four
+        steps and raises the frame IRQ across the last three; mode 1 runs
+        five steps and never raises it. Dendy reuses the NTSC table.
         """
+        cdef tuple steps = self.frame_steps[self.frame_mode]
+
         if self.frame_reset_delay > 0:
             # A $4017 write restarts the divider 3-4 cycles later.
             self.frame_reset_delay -= 1
@@ -362,37 +376,37 @@ cdef class APU2A03:
         self.frame_cycle += 1
 
         if self.frame_mode == 0:
-            if self.frame_cycle == 7457:
+            if self.frame_cycle == steps[0]:
                 self._quarter_frame()
-            elif self.frame_cycle == 14913:
-                self._quarter_frame()
-                self._half_frame()
-            elif self.frame_cycle == 22371:
-                self._quarter_frame()
-            elif self.frame_cycle == 29828:
-                if not self.frame_irq_inhibit:
-                    self.frame_irq_flag = 1
-            elif self.frame_cycle == 29829:
+            elif self.frame_cycle == steps[1]:
                 self._quarter_frame()
                 self._half_frame()
+            elif self.frame_cycle == steps[2]:
+                self._quarter_frame()
+            elif self.frame_cycle == steps[3]:
                 if not self.frame_irq_inhibit:
                     self.frame_irq_flag = 1
-            elif self.frame_cycle >= 29830:
+            elif self.frame_cycle == steps[4]:
+                self._quarter_frame()
+                self._half_frame()
+                if not self.frame_irq_inhibit:
+                    self.frame_irq_flag = 1
+            elif self.frame_cycle >= steps[5]:
                 if not self.frame_irq_inhibit:
                     self.frame_irq_flag = 1
                 self.frame_cycle = 0
         else:
-            if self.frame_cycle == 7457:
+            if self.frame_cycle == steps[0]:
                 self._quarter_frame()
-            elif self.frame_cycle == 14913:
-                self._quarter_frame()
-                self._half_frame()
-            elif self.frame_cycle == 22371:
-                self._quarter_frame()
-            elif self.frame_cycle == 37281:
+            elif self.frame_cycle == steps[1]:
                 self._quarter_frame()
                 self._half_frame()
-            elif self.frame_cycle >= 37282:
+            elif self.frame_cycle == steps[2]:
+                self._quarter_frame()
+            elif self.frame_cycle == steps[4]:
+                self._quarter_frame()
+                self._half_frame()
+            elif self.frame_cycle >= steps[5]:
                 self.frame_cycle = 0
 
     cdef void _apply_pending_length(self):
@@ -483,7 +497,7 @@ cdef class APU2A03:
             continuously -- it is not gated by whether a sample is playing.
             While the channel is idle the timer keeps counting and firing,
             with the silence flag blocking the delta output. It fires once
-            every DMC_RATE_TABLE[rate] CPU cycles; on each fire it outputs one
+            every dmc_rate_table[rate] CPU cycles; on each fire it outputs one
             LSB-first delta bit, then at the 8-bit boundary it loads the next
             byte out of the 1-byte buffer and -- crucially -- requests the
             FOLLOWING byte immediately (the 1-byte lookahead that keeps the
@@ -520,7 +534,7 @@ cdef class APU2A03:
         # ---- Bit timer + byte-boundary lookahead ----
         # The rate divider fires when its countdown passes -1; with the timer
         # initialised to table[rate]-1 that is exactly one bit every
-        # DMC_RATE_TABLE[rate] CPU cycles. There is deliberately no idle gate
+        # dmc_rate_table[rate] CPU cycles. There is deliberately no idle gate
         # here -- see the docstring on the free-running timer.
         self.dmc_timer -= 1
         if self.dmc_timer < 0:

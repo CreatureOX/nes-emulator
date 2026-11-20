@@ -32,6 +32,9 @@ cdef class Cartridge:
     cdef CartridgeCPUPort cpu
     cdef CartridgePPUPort ppu
     cdef uint8_t mirror_mode
+    # Video standard resolved from the header at load time. RegionSpec in
+    # nes.region maps this id to clock/geometry configuration.
+    cdef public uint8_t region
 
     cdef void reset(self)
     cdef uint16_t mapper_no(self)

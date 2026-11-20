@@ -3,6 +3,7 @@ cimport numpy as np
 
 from nes.mapper.mapper_factory cimport MapperFactory
 from nes.mapper.mirror cimport *
+from nes.region import region_from_header
 
 
 cdef class INesCart(Cartridge):
@@ -17,7 +18,9 @@ cdef class INesCart(Cartridge):
         # ROMs write their result there and expect an emulator to back it.
         self.wram = np.zeros(8192, dtype=np.uint8)
         with open(filename, 'rb') as ines:
-            self.header = INesHeader(ines.read(16))
+            header = ines.read(16)
+            self.header = INesHeader(header)
+            self.region = region_from_header(header)
             if self.header.flags_6.present_trainer == 1:
                 self.trainer = ines.read(512)
             self.PRG_ROM_bytes = 16384 * self.header.PRG_ROM_size
