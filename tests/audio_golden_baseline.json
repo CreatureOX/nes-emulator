@@ -34,6 +34,20 @@
     "min": -2446,
     "sum": -1938
   },
+  "noise_const": {
+    "count": 2956,
+    "hash": "1dc2659e836cb985c95b9464df7d2f481c273ba7f5aaa69a9ef38e4d93985f68",
+    "max": 2843,
+    "min": -2881,
+    "sum": 1076
+  },
+  "noise_short_mode": {
+    "count": 2956,
+    "hash": "9e46759023e4223c6231155c8746f0cb4478ffec576617a14ea6dfc597bda143",
+    "max": 1004,
+    "min": -4720,
+    "sum": 2792
+  },
   "pulse1_duty12_const": {
     "count": 2956,
     "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
@@ -82,5 +96,19 @@
     "max": 0,
     "min": 0,
     "sum": 0
+  },
+  "triangle_const": {
+    "count": 2956,
+    "hash": "0ddf34809590b425c893bda1957dc4aaa9de2ca92560051c34822e90fd5c863a",
+    "max": 4088,
+    "min": -3986,
+    "sum": 1653
+  },
+  "triangle_halt": {
+    "count": 2956,
+    "hash": "b1abf5bd99ae181e08687d4bd826ff6bb73d49d2961a27755c89a4257e5069a6",
+    "max": 4262,
+    "min": -3812,
+    "sum": 2672
   }
 }
