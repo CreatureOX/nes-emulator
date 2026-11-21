@@ -1,8 +1,80 @@
 # cython: language_level=3
 import numpy as np
 cimport numpy as np
+from libc.math cimport sin, cos, pi, floor
 from libc.stdint cimport uint8_t, uint16_t
 from nes.mapper.mapper cimport Mapper
+
+cdef enum:
+    # Delta positions are quantised to 1/64 output sample; the step kernel
+    # spans +-12 samples. A delta at time p can affect samples up to p+13,
+    # so a sample is emitted only once the current position passes n+14.
+    BLIP_K = 12
+    BLIP_PHASES = 64
+    BLIP_SUB = 32
+    BLIP_SPAN = 2 * BLIP_K + 3
+    BLIP_LATENCY = BLIP_K + 2
+    BLIP_MASK = 63
+
+cdef double BLIP_T[BLIP_PHASES][BLIP_SPAN]
+
+cdef void _init_blip_table():
+    '''Build the band-limited step-response difference table once at import.
+
+    The continuous kernel is a Blackman-windowed sinc with a 0.45*fs cutoff.
+    BLIP_T[phase][k] is the increment a step at fractional sample position
+    phase/64 contributes to output sample index +k. Its cumulative sum over
+    k is unity, so a completed delta raises the running level by its height.
+    Ref: NESdev wiki "APU mixer"; blip_buf band-limited synthesis.
+    '''
+    cdef double fc = 0.45
+    cdef double total = 0.0
+    cdef double step_val, prev, t, x, w, phase, arg
+    cdef int i, k, ph
+    cdef double h[BLIP_SUB * (2 * BLIP_K) + 1]
+    cdef int count = BLIP_SUB * (2 * BLIP_K) + 1
+    for i in range(count):
+        t = (<double>i / BLIP_SUB) - BLIP_K
+        x = 2.0 * fc * t
+        if x == 0.0:
+            w = 1.0
+        else:
+            w = sin(pi * x) / (pi * x)
+        arg = pi * t / BLIP_K
+        h[i] = 2.0 * fc * w * (0.42 + 0.5 * cos(arg) + 0.08 * cos(2.0 * arg))
+        total += h[i]
+    # Normalise the discrete kernel for unity DC gain.
+    for i in range(count):
+        h[i] /= total
+    # Cumulative step response on the fine grid: response[0] is the level
+    # before the kernel starts, response[count] is the settled level (1).
+    cdef double response[BLIP_SUB * (2 * BLIP_K) + 2]
+    step_val = 0.0
+    response[0] = 0.0
+    for i in range(count):
+        step_val += h[i]
+        response[i + 1] = step_val
+    cdef int lo, hi
+    for ph in range(BLIP_PHASES):
+        phase = <double>ph / BLIP_PHASES
+        for k in range(-BLIP_K - 1, BLIP_K + 2):
+            lo = <int>((k - 1 - phase + BLIP_K) * BLIP_SUB)
+            hi = <int>((k - phase + BLIP_K) * BLIP_SUB)
+            if lo < 0:
+                prev = 0.0
+            elif lo > count:
+                prev = 1.0
+            else:
+                prev = response[lo]
+            if hi < 0:
+                step_val = 0.0
+            elif hi > count:
+                step_val = 1.0
+            else:
+                step_val = response[hi]
+            BLIP_T[ph][k + BLIP_K + 1] = step_val - prev
+
+_init_blip_table()
 
 cdef int LENGTH_TABLE[32]
 LENGTH_TABLE = [
@@ -72,7 +144,11 @@ cdef class APU2A03:
         self.sample_rate = sample_rate
         self.cpu_rate = cpu_rate
         self.cycles_per_sample = self.cpu_rate / self.sample_rate
-        self.sample_accum = 0.0
+        self.inv_cycles_per_sample = self.sample_rate / self.cpu_rate
+        self.sample_pos = 0.0
+        self.next_sample = 0
+        self.blip_level = 0.0
+        self.last_dac = 0.0
         self.last_output = 0.0
         self._samples = []
         cdef double two_pi = 6.283185307179586
@@ -85,8 +161,14 @@ cdef class APU2A03:
         self.reset()
 
     cpdef void reset(self):
-        """Reset all pulse channel state and filters."""
-        self.sample_accum = 0.0
+        """Reset all pulse channel state, resampler and filters."""
+        self.sample_pos = 0.0
+        self.next_sample = 0
+        self.blip_level = 0.0
+        self.last_dac = 0.0
+        cdef int slot
+        for slot in range(64):
+            self.blip_buf[slot] = 0.0
         self.last_output = 0.0
         self._samples = []
         self.hp1_last_input = 0.0
@@ -742,19 +824,92 @@ cdef class APU2A03:
         """
         return self.frame_irq_flag != 0 or self.dmc_irq_flag != 0
 
+    cdef double _mix_output(self):
+        '''Raw DAC level from the four 2A03 channels and expansion audio.
+
+        This is the step signal the resampler reconstructs. It deliberately
+        carries no filter state: filtering happens once per output sample in
+        the renderer, not once per CPU cycle.
+        '''
+        cdef int channel, volume, total = 0
+        cdef double value = 0.0, tnd
+        cdef int tri = 0, noise_level = 0, pulse, pcm
+        for channel in range(2):
+            if self._pulse_active(channel) and not self.pulse_sweep_mute[channel] and self.pulse_period[channel] >= 8 and self.pulse_period[channel] <= 0x7FF:
+                if self.pulse_constant[channel]:
+                    volume = self.pulse_volume[channel]
+                else:
+                    volume = self.pulse_env_decay[channel]
+                if DUTY_PATTERNS[self.pulse_duty[channel]][self.pulse_step[channel]] == 1:
+                    total += volume
+        if total > 0:
+            value = 95.88 / (8128.0 / total + 100.0)
+        # Triangle / noise / DMC share the second DAC curve. The triangle
+        # ramp is silent while either counter is zero; the noise DAC is
+        # silent while its length counter is zero. DMC always contributes
+        # its retained 7-bit level, even while the silence flag holds the
+        # output between sample bytes -- the DAC itself has no idle mute.
+        # Ref: NESdev wiki "APU mixer".
+        tri = 0
+        if self.length_counter[2] > 0 and self.tri_linear_counter > 0:
+            tri = TRIANGLE_SEQUENCE[self.tri_step]
+        noise_level = 0
+        if self.length_counter[3] > 0:
+            noise_level = self.noise_output
+        if tri > 0 or noise_level > 0 or self.dmc_output > 0:
+            tnd = 159.79 / (1.0 / (tri / 8227.0 +
+                                   noise_level / 12241.0 +
+                                   self.dmc_output / 22638.0) + 100.0)
+            value += tnd
+        # MMC5 pulses run through the pulse DAC and subtract; raw PCM is
+        # linear and additive. Ref: NESdev wiki "MMC5 audio", Pulse channels.
+        if self.expansion_mapper is not None:
+            pulse = self.expansion_mapper.expansion_pulse_sample()
+            if pulse > 0:
+                value -= 95.88 / (8128.0 / pulse + 100.0)
+            pcm = self.expansion_mapper.expansion_audio_sample()
+            if pcm != 0:
+                value += (<double>pcm) / 255.0 * 0.5
+        return value
+
+    cdef void _emit_dac_delta(self, double delta, double position):
+        '''Schedule a DAC step at a fractional output-sample position.
+
+        Each of the kernel's increments lands in the ring slot for the
+        sample it affects; the renderer sums the slot into a running level.
+        Position is kept fractional (not rounded to a CPU-cycle boundary),
+        which removes the sampling-phase drift of the old point-sampler.
+        '''
+        cdef long long base = <long long>floor(position)
+        cdef int phase = <int>((position - <double>base) * BLIP_PHASES)
+        cdef int k, slot
+        if phase >= BLIP_PHASES:
+            phase = BLIP_PHASES - 1
+        elif phase < 0:
+            phase = 0
+        for k in range(-BLIP_K - 1, BLIP_K + 2):
+            # Kernel taps before output time zero have no sample to land in;
+            # wrapping them into the ring's high slots would inject spurious
+            # energy ~64 samples later.
+            if base + k < 0:
+                continue
+            slot = <int>(((base + k) & BLIP_MASK))
+            self.blip_buf[slot] += delta * BLIP_T[phase][k + BLIP_K + 1]
+
     cpdef void clock(self, int cycles):
         """
         Clock the APU for a number of cycles.
-        
-        Updates pulse timers, envelope generators, length counters,
-        sweep units, and generates audio samples.
+
+        Updates pulse timers, envelope generators, length counters and
+        sweep units. The DAC is reconstructed as a band-limited step signal
+        and emitted as 44.1 kHz samples once the kernel window has passed.
         """
-        cdef int cycle, channel, volume, pcm
-        cdef double value, filtered, hp1, tnd, tri, noise_level
+        cdef int cycle, channel, feedback
+        cdef double value, filtered, hp1
         for cycle in range(cycles):
             self.cycle_parity ^= 1
             # Expansion audio (e.g. MMC5 pulse) needs a per-CPU-cycle clock;
-            # expansion_audio_sample() only runs at the 44.1 kHz sample points.
+            # its DAC value is now part of the reconstructed step signal.
             if self.expansion_mapper is not None:
                 self.expansion_mapper.audio_clock(1)
             self._clock_frame_counter()
@@ -769,8 +924,6 @@ cdef class APU2A03:
                     # pulse drifts against a DMC wave timed at 896 cycles per
                     # half period (blargg square/noise mixer residual tone).
                     if self.pulse_timer[channel] <= 0:
-                        # Keep the same doubled reload as the register write:
-                        # the timer is CPU-clocked but steps at APU rate.
                         self.pulse_timer[channel] = (self.pulse_period[channel] + 1) * 2
                         self.pulse_step[channel] = (self.pulse_step[channel] + 1) & 0x07
 
@@ -799,61 +952,28 @@ cdef class APU2A03:
             else:
                 self.noise_output = self.noise_env_decay
 
-            self.sample_accum += 1.0
-            if self.sample_accum >= self.cycles_per_sample:
-                self.sample_accum -= self.cycles_per_sample
-                total = 0
-                for channel in range(2):
-                    if self._pulse_active(channel) and not self.pulse_sweep_mute[channel] and self.pulse_period[channel] >= 8 and self.pulse_period[channel] <= 0x7FF:
-                        if self.pulse_constant[channel]:
-                            volume = self.pulse_volume[channel]
-                        else:
-                            volume = self.pulse_env_decay[channel]
-                        if DUTY_PATTERNS[self.pulse_duty[channel]][self.pulse_step[channel]] == 1:
-                            total += volume
-                if total > 0:
-                    value = 95.88 / (8128.0 / total + 100.0)
-                else:
-                    value = 0.0
-                # Triangle / noise / DMC share the second DAC curve. The
-                # triangle ramp is silent while either counter is zero; the
-                # noise DAC is silent while its length counter is zero. DMC
-                # always contributes its retained 7-bit level, even while the
-                # silence flag holds the output between sample bytes -- the
-                # DAC itself has no idle mute. Ref: NESdev wiki "APU mixer".
-                tri = 0
-                if self.length_counter[2] > 0 and self.tri_linear_counter > 0:
-                    tri = TRIANGLE_SEQUENCE[self.tri_step]
-                noise_level = 0
-                if self.length_counter[3] > 0:
-                    noise_level = self.noise_output
-                if tri > 0 or noise_level > 0 or self.dmc_output > 0:
-                    tnd = 159.79 / (1.0 / (tri / 8227.0 +
-                                           noise_level / 12241.0 +
-                                           self.dmc_output / 22638.0) + 100.0)
-                    value += tnd
-                # Mapper expansion pulses (MMC5) are equivalent in volume to
-                # 2A03 pulses but inverted, so they run through the same pulse
-                # DAC formula and are subtracted. Keeping this in the pulse
-                # domain (not the PCM /255 path) preserves their loudness.
-                # Ref: NESdev wiki "MMC5 audio", Pulse channels.
-                if self.expansion_mapper is not None:
-                    pulse = self.expansion_mapper.expansion_pulse_sample()
-                    if pulse > 0:
-                        value -= 95.88 / (8128.0 / pulse + 100.0)
-                # Raw PCM (MMC5 $5011) is linear and mixed additively.
-                if self.expansion_mapper is not None:
-                    pcm = self.expansion_mapper.expansion_audio_sample()
-                    if pcm != 0:
-                        value += (<double>pcm) / 255.0 * 0.5
-                # The mixer output is the DAC level; the reference recordings
-                # also carry the bandwidth limit of the capture chain. Apply
-                # the same post-DAC chain here so the stored samples match
-                # that spectral shape. All filter state lives in the APU
-                # snapshot, so save/load continues the filter phase.
-                hp1 = self.hp1_coef * (self.hp1_last_output + value -
+            # A DAC step belongs at the exact fractional output-sample time
+            # of this cycle, not at the next 44.1 kHz grid point.
+            value = self._mix_output()
+            if value != self.last_dac:
+                self._emit_dac_delta(value - self.last_dac, self.sample_pos)
+                self.last_dac = value
+
+            self.sample_pos += self.inv_cycles_per_sample
+            # Samples older than the kernel window cannot change any more:
+            # all deltas that could reach them have been scheduled already.
+            while <double>self.next_sample + BLIP_LATENCY <= self.sample_pos:
+                slot = <int>(self.next_sample & BLIP_MASK)
+                self.blip_level += self.blip_buf[slot]
+                self.blip_buf[slot] = 0.0
+
+                # Reference recordings carry the capture chain's bandwidth
+                # limit; apply the same post-DAC filter to each reconstructed
+                # sample. All filter state lives in the APU snapshot, so
+                # save/load continues the filter phase.
+                hp1 = self.hp1_coef * (self.hp1_last_output + self.blip_level -
                                        self.hp1_last_input)
-                self.hp1_last_input = value
+                self.hp1_last_input = self.blip_level
                 self.hp1_last_output = hp1
                 filtered = self.hp2_coef * (self.hp2_last_output + hp1 -
                                             self.hp2_last_input)
@@ -868,6 +988,7 @@ cdef class APU2A03:
                 elif filtered < -1.0:
                     filtered = -1.0
                 self._samples.append(<int>(filtered * 32767.0))
+                self.next_sample += 1
 
     cpdef np.ndarray drain_samples(self):
         """

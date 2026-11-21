@@ -69,7 +69,11 @@ cdef object _apu_snapshot(CPUBus bus):
     '''
     cdef APU2A03 apu = bus.apu
     return {
-        'sample_accum': apu.sample_accum,
+        'sample_pos': apu.sample_pos,
+        'next_sample': apu.next_sample,
+        'blip_level': apu.blip_level,
+        'last_dac': apu.last_dac,
+        'blip_buf': [apu.blip_buf[i] for i in range(64)],
         'pulse_duty': [apu.pulse_duty[i] for i in range(2)],
         'pulse_volume': [apu.pulse_volume[i] for i in range(2)],
         'pulse_constant': [apu.pulse_constant[i] for i in range(2)],
@@ -145,7 +149,12 @@ cdef object _apu_snapshot(CPUBus bus):
 cdef void _apu_restore(CPUBus bus, object snap):
     cdef APU2A03 apu = bus.apu
     cdef int i
-    apu.sample_accum = snap['sample_accum']
+    apu.sample_pos = snap['sample_pos']
+    apu.next_sample = snap['next_sample']
+    apu.blip_level = snap['blip_level']
+    apu.last_dac = snap['last_dac']
+    for i in range(64):
+        apu.blip_buf[i] = snap['blip_buf'][i]
     for i in range(2):
         apu.pulse_duty[i] = snap['pulse_duty'][i]
         apu.pulse_volume[i] = snap['pulse_volume'][i]

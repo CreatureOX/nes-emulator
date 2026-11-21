@@ -10,7 +10,15 @@ cdef class APU2A03:
     cdef public int sample_rate
     cdef public double cpu_rate
     cdef double cycles_per_sample
-    cdef double sample_accum
+    cdef double inv_cycles_per_sample
+    # Band-limited resampler: the DAC is a step signal whose edges land at
+    # fractional output-sample times, so it is reconstructed from deltas
+    # instead of being point-sampled every cycles_per_sample CPU cycles.
+    cdef double sample_pos
+    cdef long long next_sample
+    cdef double blip_level
+    cdef double last_dac
+    cdef double blip_buf[64]
     cdef object _samples
 
     # Pulse 1 / pulse 2: duty, envelope, timer and sweep state.
@@ -142,4 +150,6 @@ cdef class APU2A03:
     cdef void arm_dmc_sample(self)
     cpdef bint irq_level(self)
     cpdef void clock(self, int cycles)
+    cdef double _mix_output(self)
+    cdef void _emit_dac_delta(self, double delta, double position)
     cpdef np.ndarray drain_samples(self)
