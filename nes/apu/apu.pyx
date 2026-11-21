@@ -269,7 +269,10 @@ cdef class APU2A03:
                 # Timer high + length load ($4003 / $4007)
                 self.pulse_period[channel] = (self.pulse_period[channel] & 0x00FF) | ((data & 0x07) << 8)
                 self._load_length(channel, data)
-                self.pulse_timer[channel] = self.pulse_period[channel] + 1
+                # Pulse timers run at the APU rate (one clock per two CPU
+                # cycles), so a register period of P lasts 2*(P+1) CPU
+                # cycles. Ref: NESdev wiki "APU pulse", Timer.
+                self.pulse_timer[channel] = (self.pulse_period[channel] + 1) * 2
                 self.pulse_step[channel] = 0
                 self.pulse_env_start[channel] = 1
                 self.pulse_sweep_mute[channel] = 0
@@ -761,8 +764,14 @@ cdef class APU2A03:
             for channel in range(2):
                 if self._pulse_active(channel):
                     self.pulse_timer[channel] -= 1
-                    if self.pulse_timer[channel] < 0:
-                        self.pulse_timer[channel] = self.pulse_period[channel] + 1
+                    # Reload at zero, not below it: a 224 reload decremented
+                    # to -1 would make each duty step 225 CPU cycles, so the
+                    # pulse drifts against a DMC wave timed at 896 cycles per
+                    # half period (blargg square/noise mixer residual tone).
+                    if self.pulse_timer[channel] <= 0:
+                        # Keep the same doubled reload as the register write:
+                        # the timer is CPU-clocked but steps at APU rate.
+                        self.pulse_timer[channel] = (self.pulse_period[channel] + 1) * 2
                         self.pulse_step[channel] = (self.pulse_step[channel] + 1) & 0x07
 
             # Triangle: the timer runs every CPU cycle, but the sequence only
