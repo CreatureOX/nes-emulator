@@ -79,33 +79,54 @@ def _unique_path(directory: str, prefix: str, extension: str) -> str:
 class EmulatorWindow(BaseView):
     __TITLE = APP_NAME
 
+    # Top-level menus carry no '&' mnemonic: Alt + arrow keys navigate them
+    # through Tk's native menubar handling. Child items keep their mnemonics.
     __MENU_LAYOUT = [
-        ['&File', ['&Open', '&Save', '&Load', '&Reset', 'Screenshot', 'Exit']],
-        ['Config', ['Keymap', 'Region: Auto', 'Region: NTSC', 'Region: PAL',
-                    'Region: Dendy']],
-        ['Emulation', ['Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter']],
-        ['Debug', ['CPU','PPU','Disassembler','NES File Viewer']],
-        ['Help', ['About',]],
+        ['File', ['&Open', '&Save', '&Load', '&Reset', 'Screenshot', 'Exit']],
+        ['Config', ['&Keymap', '&Region', ['&NTSC', '&PAL', '&Dendy']]],
+        ['Emulation', ['&Rewind', '&Fast Forward', '&Fullscreen', '&CRT Filter']],
+        ['Debug', ['&CPU', '&PPU', '&Disassembler', '&NES File Viewer']],
+        ['Help', ['&About',]],
     ]
 
-    # Keyboard hints appended to menu labels. Purely visual: entryconfig
-    # changes the displayed label only, leaving the bound event name intact.
-    __SHORTCUT_HINTS = {
-        'Open': 'Alt+O',
-        'Save': 'Alt+S',
-        'Load': 'Alt+L',
-        'Reset': 'Alt+R',
-        'Rewind': 'Backspace',
-        'Fast Forward': 'Space',
+    # Single source of truth for every menu item's keyboard affordance:
+    # event name -> (menu mnemonic, global bind key, displayed hint).
+    # The mnemonic is a letter inside the label; Tk underlines it so a key
+    # press selects the item even after the menu grabbed the keyboard. Top
+    # levels have no mnemonic (Alt+arrows navigate them), child items do.
+    # A None bind key means no root binding: Region, CRT Filter, CPU and PPU
+    # are menu-only, while Rewind and Fast Forward stay polled in the render
+    # loop (Backspace/Space). F11/F12 bind as bare function keys; letters as
+    # Alt+letter. A None hint hides the right-aligned accelerator column.
+    __SHORTCUTS = {
+        'Open': ('o', 'o', 'Alt+O'),
+        'Save': ('s', 's', 'Alt+S'),
+        'Load': ('l', 'l', 'Alt+L'),
+        'Reset': ('r', 'r', 'Alt+R'),
+        'Screenshot': ('t', 'F12', 'F12'),
+        'Exit': ('x', 'q', 'Alt+Q'),
+        'Keymap': ('m', 'm', 'Alt+M'),
+        'NTSC': ('n', None, None),
+        'PAL': ('p', None, None),
+        'Dendy': ('d', None, None),
+        'Rewind': ('r', None, 'Backspace'),
+        'Fast Forward': ('f', None, 'Space'),
+        'Fullscreen': ('l', 'F11', 'F11'),
+        'CRT Filter': ('t', None, None),
+        'CPU': ('c', None, None),
+        'PPU': ('p', None, None),
+        'Disassembler': ('i', 'i', 'Alt+I'),
+        'NES File Viewer': ('v', 'v', 'Alt+V'),
+        'About': ('a', 'a', 'Alt+A'),
     }
-    __ALT_SHORTCUTS = {'o': 'Open', 's': 'Save', 'l': 'Load', 'r': 'Reset'}
 
-    # Region menu: -1 follows the cartridge header, the rest force a profile.
+    # Region cascade: only concrete profiles are shown. Auto is an internal
+    # state (-1) that follows the cartridge header and is reflected by
+    # checking whichever profile actually took effect.
     __REGION_LABELS = {
-        'Region: Auto': -1,
-        'Region: NTSC': NTSC,
-        'Region: PAL': PAL,
-        'Region: Dendy': DENDY,
+        'NTSC': NTSC,
+        'PAL': PAL,
+        'Dendy': DENDY,
     }
 
     __SIZE = ( 800, 600 )
@@ -219,24 +240,52 @@ class EmulatorWindow(BaseView):
             for i in range(menubar.index('end') + 1):
                 try:
                     top = menubar.entrycget(i, 'label')
-                    if top not in ('File', 'Config', 'Emulation'):
+                    if top not in ('File', 'Config', 'Emulation', 'Debug', 'Help'):
                         continue
                     menu_path = menubar.entrycget(i, 'menu')
-                    self.__submenus[top] = self._window.TKroot.nametowidget(menu_path)
+                    menu = self._window.TKroot.nametowidget(menu_path)
+                    self.__submenus[top] = menu
+                    # Region is a nested cascade under Config; cache its
+                    # child menu so the active-profile check can reach it.
+                    if top == 'Config':
+                        for j in range(menu.index('end') + 1):
+                            try:
+                                if menu.type(j) != 'cascade' or \
+                                        menu.entrycget(j, 'label') != 'Region':
+                                    continue
+                                sub_path = menu.entrycget(j, 'menu')
+                                self.__submenus['Region'] = \
+                                    self._window.TKroot.nametowidget(sub_path)
+                            except Exception:
+                                continue
                 except Exception:
                     continue
         except Exception:
             pass
         self.__refresh_menu_labels()
         # Relabeling strips the '&' that gave native menu accelerators, so
-        # bind the advertised Alt shortcuts on the Tk root explicitly.
+        # bind the advertised shortcuts on the Tk root explicitly (letters
+        # with Alt, F11/F12 bare). Menu-only and polled items (Backspace/
+        # Space) have no bind key and are skipped; they are reached through
+        # their underline mnemonic.
         try:
             root = self._window.TKroot
-            for key, event in self.__ALT_SHORTCUTS.items():
-                root.bind('<Alt-' + key + '>',
-                          lambda _event, name=event: self._window.write_event_value(name, None))
-                root.bind('<Alt-' + key.upper() + '>',
-                          lambda _event, name=event: self._window.write_event_value(name, None))
+            for event, (_mnemonic, key, _hint) in self.__SHORTCUTS.items():
+                if key is None:
+                    continue
+                callback = lambda _e, name=event: \
+                    self._window.write_event_value(name, None)
+                # Tk accepts <Alt-o> for letters (normalizes to <Alt-Key-o>)
+                # but silently ignores <Alt-1>; digits need the Key- token.
+                # Function keys such as F12 bind bare, with no Alt modifier.
+                if key.startswith('F') and key[1:].isdigit():
+                    sequences = ('<' + key + '>',)
+                elif key.isdigit():
+                    sequences = ('<Alt-Key-' + key + '>',)
+                else:
+                    sequences = ('<Alt-' + key + '>', '<Alt-' + key.upper() + '>')
+                for seq in sequences:
+                    root.bind(seq, callback)
         except Exception:
             pass
 
@@ -252,33 +301,35 @@ class EmulatorWindow(BaseView):
             'Fullscreen': self.__fullscreen,
             'CRT Filter': self.__crt_filter,
         }
+        # Reflect the region actually in effect. In Auto mode __region is -1
+        # and the console resolved it from the header; bus.region is public
+        # and carries that resolved value, so the check lands on the profile
+        # the ROM is really running under.
+        console = getattr(self, '_EmulatorWindow__console', None)
+        effective_region = getattr(console.bus, 'region', None) if console else None
         active_region = next(
             (label for label, r in self.__REGION_LABELS.items()
-             if r == self.__region), None)
-        for top, items in (
-            ('File', ('Open', 'Save', 'Load', 'Reset')),
-            ('Config', tuple(self.__REGION_LABELS)),
-            ('Emulation', ('Rewind', 'Fast Forward', 'Fullscreen', 'CRT Filter')),
-        ):
-            menu = self.__submenus.get(top)
-            if menu is None:
-                continue
-            for label in items:
+             if r == effective_region), None)
+        for menu in self.__submenus.values():
+            for i in range(menu.index('end') + 1):
                 try:
-                    idx = None
-                    for i in range(menu.index('end') + 1):
-                        plain = menu.entrycget(i, 'label').lstrip('\u2713 ')
-                        plain = plain.split('  (')[0]
-                        if plain == label:
-                            idx = i
-                            break
-                    if idx is None:
+                    plain = menu.entrycget(i, 'label').lstrip('\u2713 ')
+                    if plain not in self.__SHORTCUTS:
                         continue
-                    text = label
-                    if label == active_region or toggles.get(label, False):
+                    text = plain
+                    if plain == active_region or toggles.get(plain, False):
                         text = '\u2713 ' + text
-                    menu.entryconfig(idx, label=text,
-                                     accelerator=self.__SHORTCUT_HINTS.get(label, ''))
+                    # Point the underline at the mnemonic inside the label.
+                    # Once a menu owns the Tk grab, only its underline
+                    # responds to keys; root Alt binds are swallowed. The
+                    # offset accounts for a leading checkmark and space.
+                    mnemonic = self.__SHORTCUTS[plain][0]
+                    pos = text.lower().find(mnemonic.lower())
+                    underline = pos if pos >= 0 else -1
+                    hint = self.__SHORTCUTS[plain][2]
+                    menu.entryconfig(i, label=text,
+                                     accelerator=hint or '',
+                                     underline=underline)
                 except Exception:
                     continue
 
@@ -304,6 +355,10 @@ class EmulatorWindow(BaseView):
         if file_path is None or file_path == '':
             sg.popup("Invalid .nes file path!")
             return False
+        # A freshly opened ROM returns to Auto: its header decides the
+        # profile. A manual Region pick only overrides the current ROM and is
+        # re-applied through __set_region, which reloads without calling here.
+        self.__region = -1
         return self.__load_rom(file_path)
 
     def __load_rom(self, file_path) -> bool:
@@ -364,7 +419,11 @@ class EmulatorWindow(BaseView):
         self._events["NES File Viewer"] = NesFileWindow(self.__console).open
 
         self._events["Save"] = self.__save
-        self._events["Load"] = self.__load  
+        self._events["Load"] = self.__load
+
+        # Auto mode resolves the profile from this ROM's header; move the ✓
+        # to whichever profile the fresh console actually selected.
+        self.__refresh_menu_labels()
 
         return True
     
@@ -429,7 +488,17 @@ class EmulatorWindow(BaseView):
             def get_key_state(key_code):
                 pressed = pygame.key.get_pressed()
                 return pressed[key_code] if key_code < len(pressed) else False
-        
+
+        # Alt + letter drives menu shortcuts. While Alt is held, ignore the
+        # mapped gamepad keys so a shortcut cannot also press a NES button.
+        if sys.platform.startswith('win'):
+            def alt_held():
+                return user32.GetAsyncKeyState(0x12) & 0x8000 != 0  # VK_MENU
+        else:
+            def alt_held():
+                pressed = pygame.key.get_pressed()
+                return pressed[pygame.K_LALT] or pressed[pygame.K_RALT]
+
         # Wait a bit for the game to initialize and enable rendering
         frames_waited = 0
         MAX_WAIT_FRAMES = 300  # Wait up to 5 seconds at 60fps
@@ -475,15 +544,18 @@ class EmulatorWindow(BaseView):
             # Console.control() indexes the eight physical NES buttons in
             # A, B, Select, Start, Up, Down, Left, Right order. The keyboard
             # config is keyed by button name, so reorder it explicitly here.
+            # Suppress all gamepad input while Alt is down: menu shortcuts use
+            # Alt + letter, and those letters may double as mapped game keys.
+            suppress = alt_held()
             control_inputs = [
-                get_key_state(keyboard['A']),
-                get_key_state(keyboard['B']),
-                get_key_state(keyboard['SELECT']),
-                get_key_state(keyboard['START']),
-                get_key_state(keyboard['UP']),
-                get_key_state(keyboard['DOWN']),
-                get_key_state(keyboard['LEFT']),
-                get_key_state(keyboard['RIGHT'])
+                (not suppress) and get_key_state(keyboard['A']),
+                (not suppress) and get_key_state(keyboard['B']),
+                (not suppress) and get_key_state(keyboard['SELECT']),
+                (not suppress) and get_key_state(keyboard['START']),
+                (not suppress) and get_key_state(keyboard['UP']),
+                (not suppress) and get_key_state(keyboard['DOWN']),
+                (not suppress) and get_key_state(keyboard['LEFT']),
+                (not suppress) and get_key_state(keyboard['RIGHT'])
             ]
             
             # Fast forward runs several frames per display update and skips
@@ -587,8 +659,9 @@ class EmulatorWindow(BaseView):
     def __set_region(self, region: int) -> None:
         """Apply a region override and reload the current ROM with it."""
         self.__region = region
-        self.__refresh_menu_labels()
         if self.__current_rom is not None:
+            # __load_rom rebuilds the console and moves the ✓ to bus.region,
+            # which only reflects this override once the console exists.
             self.__load_rom(self.__current_rom)
             self.__start_render_thread()
 
