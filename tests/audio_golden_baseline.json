@@ -1,108 +1,108 @@
 {
   "both_pulses": {
     "count": 2956,
-    "hash": "ef64cad8d1e305fbea5c9b35e54dcd9ac7b1e82439d172cf07eeab683542b7db",
-    "max": 5474,
-    "min": -2995,
-    "sum": 2585
+    "hash": "7a7a23bfcf3132155fa0979ab9c2aa63aeebf13eb3c28169db016179b02297a9",
+    "max": 5511,
+    "min": -3695,
+    "sum": 1308
   },
   "dmc_direct_alt": {
     "count": 2956,
-    "hash": "831e1819bf0d12830824aa26256176ea95d30ab5ece663a2017a50af30422f1d",
-    "max": 9408,
-    "min": -9408,
-    "sum": 0
+    "hash": "fb218cef1e6603e50f7c322a37090bab9f0a56f574ca72976dbcf49c7b6dd708",
+    "max": 14925,
+    "min": -10537,
+    "sum": 989
   },
   "dmc_triangle_alt": {
     "count": 2956,
-    "hash": "b8bd188ca9b3183c84359c9c5e9090d1174e9e88d5247b7fc856910f18b70905",
-    "max": 9865,
-    "min": -12248,
-    "sum": 961
+    "hash": "3ec7d70e478d70ccb63993f4a6e04b195d88302f16e10dcf417303070673b452",
+    "max": 14933,
+    "min": -10984,
+    "sum": 2950
   },
   "frame_irq_mode": {
     "count": 2956,
-    "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
-    "max": 4277,
-    "min": -617,
-    "sum": 1610
+    "hash": "ba27fd341be247a919b0d5b5414300acf4a126285a45b2df03b460aba0de7a77",
+    "max": 3881,
+    "min": -1088,
+    "sum": 294
   },
   "mmc5_pcm_alt": {
     "count": 2956,
-    "hash": "88fa7f6cf95f55717057ceea0d4abc268d1bf2203303b8e15cd92f3401b75a54",
-    "max": 8160,
-    "min": -8159,
-    "sum": 1478
+    "hash": "0cdab7566dab2b50429996baa79d72c18a2963b0f4d2927fe43be6fb5f5f428d",
+    "max": 12975,
+    "min": -9143,
+    "sum": 2848
   },
   "mmc5_pulse_both": {
     "count": 2956,
-    "hash": "79ccf5d02f8596ade9e19cebdf1b059d57e1a09a6d1ab7167eadf5445b7ea68b",
-    "max": 3509,
-    "min": -4960,
-    "sum": -2727
+    "hash": "fdff0a10aa72258db833e6b8f501e00483c05e0f0b0a3c79eaa3f4e8b8f935ed",
+    "max": 4090,
+    "min": -6726,
+    "sum": 1483
   },
   "mmc5_pulse_duty50": {
     "count": 2956,
-    "hash": "6d30d11d1b744f3167d58e5c8e5206df6d107390e41cd5dece2b02d68765f1b7",
-    "max": 2448,
-    "min": -2446,
-    "sum": -1938
+    "hash": "19842e3fde69d93f00a46c72dd77a03add7e15a2a99c528094b5bd1a2e8d396c",
+    "max": 3115,
+    "min": -3888,
+    "sum": 2494
   },
   "noise_const": {
     "count": 2956,
-    "hash": "b12d60310448718b0d22773aa8fb06c30775d315524d365b73958a04f1783508",
-    "max": 2839,
-    "min": -2876,
-    "sum": 2464
+    "hash": "f1b65a60cd1eecf0fc37cf67ee84ec867d2f84d1b9560a6047d5ec0cfc9c762b",
+    "max": 4536,
+    "min": -3624,
+    "sum": 1985
   },
   "noise_short_mode": {
     "count": 2956,
-    "hash": "c19dffd2701934af20317690de3beebd33f32c07d290c253b216c71dcf49d407",
-    "max": 1002,
-    "min": -4713,
-    "sum": 1542
+    "hash": "a51f99d3d210234ec241014b89d89090b9ba0fcade8cad16c6cb2d5286f252fc",
+    "max": 4538,
+    "min": -3739,
+    "sum": -2884
   },
   "pulse1_duty12_const": {
     "count": 2956,
-    "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
-    "max": 4277,
-    "min": -617,
-    "sum": 1610
+    "hash": "ba27fd341be247a919b0d5b5414300acf4a126285a45b2df03b460aba0de7a77",
+    "max": 3881,
+    "min": -1088,
+    "sum": 294
   },
   "pulse1_duty25_const": {
     "count": 2956,
-    "hash": "bd5087df240ea86c92af3995e532b393297bba9cf47043e34e4531b2a5e5175d",
-    "max": 3666,
-    "min": -1228,
-    "sum": 1380
+    "hash": "171137bed7f214c591783f5290fb5adbd496f625c2bbca688692dc815c9bc6bc",
+    "max": 3881,
+    "min": -1932,
+    "sum": 1172
   },
   "pulse1_duty50_const": {
     "count": 2956,
-    "hash": "e91af7f15962cdd802a024fb6daa7c34079fe995c3ecf2b6b7cde04685557c56",
-    "max": 2444,
-    "min": -2450,
-    "sum": 920
+    "hash": "557abde1dee65cd3c38bcbb4d1888b8a0185f91ffa90fa2220bc7ff4a71116d8",
+    "max": 3884,
+    "min": -3132,
+    "sum": -240
   },
   "pulse1_duty75_const": {
     "count": 2956,
-    "hash": "8c44d0619d75ceb3836cb83fb6879c444c44a0394e89d233392858f22362bf06",
-    "max": 1229,
-    "min": -3665,
-    "sum": 1576
+    "hash": "bc82b69656bb64f55c537bd38d02770d67a61ca410885f76aa800813ba137b13",
+    "max": 3887,
+    "min": -3912,
+    "sum": -1159
   },
   "pulse1_env_decay": {
     "count": 2956,
-    "hash": "db28b37405a7c0ee8f42b618340db1573c339a186a264878b4454e9b629cc8d0",
-    "max": 2647,
-    "min": -2247,
-    "sum": 788
+    "hash": "f2fb1d16b61234e30ad1ae7ec0acb43753b1860b82e7b6bde2956cbbb473c7e2",
+    "max": 3884,
+    "min": -3109,
+    "sum": -239
   },
   "pulse2_duty50_const": {
     "count": 2956,
-    "hash": "bbba99add990828c06b79e06680dc5e0c3937a96042367fc251ad3c0905da27a",
-    "max": 2426,
-    "min": -2468,
-    "sum": 1546
+    "hash": "8cbf9742c689491616a47be0e3102492c07a130859b4cd45613fd213e431970d",
+    "max": 3885,
+    "min": -2719,
+    "sum": -517
   },
   "silence": {
     "count": 2956,
@@ -113,16 +113,16 @@
   },
   "triangle_const": {
     "count": 2956,
-    "hash": "0ddf34809590b425c893bda1957dc4aaa9de2ca92560051c34822e90fd5c863a",
-    "max": 4088,
-    "min": -3986,
-    "sum": 1653
+    "hash": "9d4b2f0b22b266b62ccdcc389e7bdff2249561c625bc62494f81ed4516cb5260",
+    "max": 6058,
+    "min": -2298,
+    "sum": -2198
   },
   "triangle_halt": {
     "count": 2956,
-    "hash": "b1abf5bd99ae181e08687d4bd826ff6bb73d49d2961a27755c89a4257e5069a6",
-    "max": 4262,
-    "min": -3812,
-    "sum": 2672
+    "hash": "d4c359b6925424403ed6767c6f6bffea1a8888666ca0a51a2d6ef6bb29c38f29",
+    "max": 6404,
+    "min": -940,
+    "sum": 2295
   }
 }

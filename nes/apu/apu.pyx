@@ -76,8 +76,11 @@ cdef class APU2A03:
         self.last_output = 0.0
         self._samples = []
         cdef double two_pi = 6.283185307179586
-        self.hp1_coef = (two_pi * 90.0) / (self.sample_rate + (two_pi * 90.0))
-        self.hp2_coef = (two_pi * 440.0) / (self.sample_rate + (two_pi * 440.0))
+        # One-pole high-pass alpha is RC/(RC+dt), i.e. sr/(sr+2*pi*fc).
+        # The previous value used the low-pass alpha here, which left DC
+        # and low-frequency rumble almost untouched.
+        self.hp1_coef = self.sample_rate / (self.sample_rate + (two_pi * 90.0))
+        self.hp2_coef = self.sample_rate / (self.sample_rate + (two_pi * 440.0))
         self.lp_coef = (two_pi * 14000.0) / (self.sample_rate + (two_pi * 14000.0))
         self.reset()
 
@@ -744,7 +747,7 @@ cdef class APU2A03:
         sweep units, and generates audio samples.
         """
         cdef int cycle, channel, volume, pcm
-        cdef double value, filtered, tnd, tri, noise_level
+        cdef double value, filtered, hp1, tnd, tri, noise_level
         for cycle in range(cycles):
             self.cycle_parity ^= 1
             # Expansion audio (e.g. MMC5 pulse) needs a per-CPU-cycle clock;
@@ -834,9 +837,28 @@ cdef class APU2A03:
                     pcm = self.expansion_mapper.expansion_audio_sample()
                     if pcm != 0:
                         value += (<double>pcm) / 255.0 * 0.5
-                if value > 1.0:
-                    value = 1.0
-                self._samples.append(<int>(value * 32767.0))
+                # The mixer output is the DAC level; the reference recordings
+                # also carry the bandwidth limit of the capture chain. Apply
+                # the same post-DAC chain here so the stored samples match
+                # that spectral shape. All filter state lives in the APU
+                # snapshot, so save/load continues the filter phase.
+                hp1 = self.hp1_coef * (self.hp1_last_output + value -
+                                       self.hp1_last_input)
+                self.hp1_last_input = value
+                self.hp1_last_output = hp1
+                filtered = self.hp2_coef * (self.hp2_last_output + hp1 -
+                                            self.hp2_last_input)
+                self.hp2_last_input = hp1
+                self.hp2_last_output = filtered
+                filtered = self.lp_last_output + self.lp_coef * (filtered -
+                                                                 self.lp_last_output)
+                self.lp_last_output = filtered
+                self.last_output = filtered
+                if filtered > 1.0:
+                    filtered = 1.0
+                elif filtered < -1.0:
+                    filtered = -1.0
+                self._samples.append(<int>(filtered * 32767.0))
 
     cpdef np.ndarray drain_samples(self):
         """
