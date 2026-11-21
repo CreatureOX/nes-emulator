@@ -805,17 +805,20 @@ cdef class APU2A03:
                     value = 0.0
                 # Triangle / noise / DMC share the second DAC curve. The
                 # triangle ramp is silent while either counter is zero; the
-                # noise DAC is silent while its length counter is zero.
-                # Ref: NESdev wiki "APU mixer".
+                # noise DAC is silent while its length counter is zero. DMC
+                # always contributes its retained 7-bit level, even while the
+                # silence flag holds the output between sample bytes -- the
+                # DAC itself has no idle mute. Ref: NESdev wiki "APU mixer".
                 tri = 0
                 if self.length_counter[2] > 0 and self.tri_linear_counter > 0:
                     tri = TRIANGLE_SEQUENCE[self.tri_step]
                 noise_level = 0
                 if self.length_counter[3] > 0:
                     noise_level = self.noise_output
-                if tri > 0 or noise_level > 0:
+                if tri > 0 or noise_level > 0 or self.dmc_output > 0:
                     tnd = 159.79 / (1.0 / (tri / 8227.0 +
-                                           noise_level / 12220.0) + 100.0)
+                                           noise_level / 12241.0 +
+                                           self.dmc_output / 22638.0) + 100.0)
                     value += tnd
                 # Mapper expansion pulses (MMC5) are equivalent in volume to
                 # 2A03 pulses but inverted, so they run through the same pulse

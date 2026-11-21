@@ -65,6 +65,13 @@ STIMULI = {
                     (0x400F, 0x00)],
     "noise_short_mode": [(0x4015, 0x0F), (0x400C, 0x1F), (0x400E, 0x80),
                          (0x400F, 0x00)],
+    # This harness clocks the APU without running the CPU, so no DMC sample
+    # byte can be DMA-fetched. Alternating $4011 direct DAC loads still pin
+    # the DMC contribution to the shared tnd curve; blargg's DMC ROMs cover
+    # the sample reader separately in the 165-ROM gate.
+    "dmc_direct_alt": [("dmc_alt", None)],
+    "dmc_triangle_alt": [(0x4015, 0x0F), (0x4008, 0x7F), (0x400A, 0x95),
+                         (0x400B, 0x00), ("dmc_alt", None)],
 }
 
 
@@ -86,10 +93,21 @@ def _run_stimulus(rom_path, writes):
     console.power_up()
     apu = console.bus.apu
     apu.drain_samples()  # discard any power-up residue
-    for addr, value in ENABLE + list(writes):
+    items = ENABLE + list(writes)
+    dynamic = [item for item in items if isinstance(item[0], str)]
+    for addr, value in items:
+        if isinstance(addr, str):
+            continue
         apu.write(addr, value)
-    for _ in range(CYCLES):
-        apu.clock(1)
+    if dynamic:
+        if len(dynamic) != 1 or dynamic[0][0] != "dmc_alt":
+            raise ValueError("unsupported dynamic stimulus: {}".format(dynamic))
+        for cycle in range(CYCLES):
+            apu.write(0x4011, 0x7F if (cycle // 300) % 2 else 0x00)
+            apu.clock(1)
+    else:
+        for _ in range(CYCLES):
+            apu.clock(1)
     samples = apu.drain_samples()
     return np.ascontiguousarray(samples, dtype=np.int16)
 

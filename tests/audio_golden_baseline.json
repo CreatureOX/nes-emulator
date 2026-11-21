@@ -6,6 +6,20 @@
     "min": -2995,
     "sum": 2585
   },
+  "dmc_direct_alt": {
+    "count": 2956,
+    "hash": "831e1819bf0d12830824aa26256176ea95d30ab5ece663a2017a50af30422f1d",
+    "max": 9408,
+    "min": -9408,
+    "sum": 0
+  },
+  "dmc_triangle_alt": {
+    "count": 2956,
+    "hash": "b8bd188ca9b3183c84359c9c5e9090d1174e9e88d5247b7fc856910f18b70905",
+    "max": 9865,
+    "min": -12248,
+    "sum": 961
+  },
   "frame_irq_mode": {
     "count": 2956,
     "hash": "c00f0be1fee2b795cb20e309cb461496f2570cda210f81a333b82945a3ed2daa",
@@ -36,17 +50,17 @@
   },
   "noise_const": {
     "count": 2956,
-    "hash": "1dc2659e836cb985c95b9464df7d2f481c273ba7f5aaa69a9ef38e4d93985f68",
-    "max": 2843,
-    "min": -2881,
-    "sum": 1076
+    "hash": "b12d60310448718b0d22773aa8fb06c30775d315524d365b73958a04f1783508",
+    "max": 2839,
+    "min": -2876,
+    "sum": 2464
   },
   "noise_short_mode": {
     "count": 2956,
-    "hash": "9e46759023e4223c6231155c8746f0cb4478ffec576617a14ea6dfc597bda143",
-    "max": 1004,
-    "min": -4720,
-    "sum": 2792
+    "hash": "c19dffd2701934af20317690de3beebd33f32c07d290c253b216c71dcf49d407",
+    "max": 1002,
+    "min": -4713,
+    "sum": 1542
   },
   "pulse1_duty12_const": {
     "count": 2956,
