@@ -220,10 +220,12 @@ cdef void _bus_restore(CPUBus bus, object snap):
     divider.dot = snap['divider_dot']
     divider.cpu_cycle = snap['divider_cpu_cycle']
     # cpu_tick_edge / phi2_edge are read by bus.clock() on the very next dot
-    # before advance() recomputes them, so they must match the restored phase.
-    divider.phase = snap['divider_phase']
-    divider.cpu_tick_edge = snap['divider_cpu_tick_edge']
-    divider.phi2_edge = snap['divider_phi2_edge']
+    # before advance() publishes new ones, so rebuild them from the phase.
+    # The phase is dot % cycle_dots in every grid. A save may load under a
+    # different region, so derive it from the dot instead of the saved value:
+    # folding the old phase into a new grid leaves it misaligned by a dot.
+    divider.phase = divider.dot % divider.cycle_dots
+    divider._update_edges()
     bus.open_bus = snap['open_bus']
     bus.dmc_dma_request = snap['dmc_dma_request']
     bus.joy1.buttons = snap['joy1_buttons']
