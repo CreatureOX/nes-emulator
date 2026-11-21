@@ -44,7 +44,8 @@ cdef class CPUBus:
         self.cpu = CPU6502(self)
         self.ppu = PPU2C02(cartridge, spec)
         self.apu = APU2A03(self, 44100, spec.cpu_rate,
-                           spec.frame_steps, spec.dmc_rates)
+                           spec.frame_steps, spec.dmc_rates,
+                           spec.noise_periods)
         self.apu.expansion_mapper = self.cartridge.mapper
         self.dma = DMAController(self)
         # CPU data-bus open bus: the last value driven onto the bus.

@@ -20,6 +20,16 @@ DUTY_PATTERNS = [
     [1, 0, 0, 1, 1, 1, 1, 1],
 ]
 
+# Triangle walks a 32-step ramp; the two middle steps repeat zero.
+# Ref: NESdev wiki "APU triangle", Sequencer.
+cdef int TRIANGLE_SEQUENCE[32]
+TRIANGLE_SEQUENCE = [
+    15, 14, 13, 12, 11, 10, 9, 8,
+    7, 6, 5, 4, 3, 2, 1, 0,
+    0, 1, 2, 3, 4, 5, 6, 7,
+    8, 9, 10, 11, 12, 13, 14, 15,
+]
+
 cdef class APU2A03:
     """
     Audio Processing Unit (APU) emulation for the 2A03 chip.
@@ -30,7 +40,7 @@ cdef class APU2A03:
 
     def __cinit__(self, object bus, int sample_rate=44100,
                   double cpu_rate=1789772.5, object frame_steps=None,
-                  object dmc_rates=None):
+                  object dmc_rates=None, object noise_periods=None):
         """
         Initialize the APU.
 
@@ -44,16 +54,19 @@ cdef class APU2A03:
         """
         cdef int i
         cdef object spec
-        if frame_steps is None or dmc_rates is None:
+        if frame_steps is None or dmc_rates is None or noise_periods is None:
             from nes.region import spec_for, NTSC
             spec = spec_for(NTSC)
             if frame_steps is None:
                 frame_steps = spec.frame_steps
             if dmc_rates is None:
                 dmc_rates = spec.dmc_rates
+            if noise_periods is None:
+                noise_periods = spec.noise_periods
         self.frame_steps = frame_steps
         for i in range(16):
             self.dmc_rate_table[i] = dmc_rates[i]
+            self.noise_periods[i] = noise_periods[i]
         self.bus = bus
         self.expansion_mapper = None
         self.sample_rate = sample_rate
@@ -123,6 +136,24 @@ cdef class APU2A03:
             self.length_reload_pending[i] = 0
             self.length_reload_prev[i] = 0
             self.length_new_halt[i] = 0
+
+        self.tri_linear_reload = 0
+        self.tri_linear_counter = 0
+        self.tri_reload_flag = 0
+        self.tri_step = 0
+        self.tri_timer = 0
+        self.tri_period = 0
+        self.noise_shift = 1
+        self.noise_mode = 0
+        self.noise_index = 0
+        self.noise_timer = self.noise_periods[0] - 1
+        self.noise_output = 0
+        self.noise_constant = 0
+        self.noise_volume = 0
+        self.noise_env_period = 0
+        self.noise_env_divider = 0
+        self.noise_env_decay = 0
+        self.noise_env_start = 0
 
         for i in range(2):
             self.pulse_duty[i] = 0
@@ -240,15 +271,38 @@ cdef class APU2A03:
                 self.pulse_env_start[channel] = 1
                 self.pulse_sweep_mute[channel] = 0
         elif addr == 0x4008:
-            # Triangle linear counter control; bit 7 also halts its length.
+            # Triangle control: bit 7 halts the length counter and selects
+            # whether the linear counter reloads continuously; bits 6-0 are
+            # the reload value. Ref: NESdev wiki "APU triangle".
             self.length_new_halt[2] = 1 if (data & 0x80) else 0
+            self.tri_linear_reload = data & 0x7F
+        elif addr == 0x400A:
+            self.tri_period = (self.tri_period & 0x0700) | data
         elif addr == 0x400B:
             self._load_length(2, data)
+            self.tri_period = (self.tri_period & 0x00FF) | ((data & 0x07) << 8)
+            # Writing $400B sets the linear-counter reload flag; the
+            # quarter-frame clock consumes it before the next decrement.
+            # The timer keeps running through a period write (hardware
+            # reloads only on its own terminal count).
+            self.tri_reload_flag = 1
         elif addr == 0x400C:
-            # Noise envelope register; bit 5 halts its length.
+            # Noise envelope register; bit 5 halts its length. Constant
+            # volume and envelope period share the pulse envelope layout.
             self.length_new_halt[3] = 1 if (data & 0x20) else 0
+            self.noise_constant = 1 if (data & 0x10) else 0
+            self.noise_env_period = data & 0x0F
+            self.noise_volume = data & 0x0F
+            self.noise_env_start = 1
+        elif addr == 0x400E:
+            # Bit 7 selects short mode (feedback from bit 6 instead of bit 1);
+            # bits 3-0 index the per-region period table.
+            self.noise_mode = 1 if (data & 0x80) else 0
+            self.noise_index = data & 0x0F
+            self.noise_timer = self.noise_periods[self.noise_index] - 1
         elif addr == 0x400F:
             self._load_length(3, data)
+            self.noise_env_start = 1
         elif addr == 0x4010:
             # DMC control: bit7 = IRQ enable, bit6 = loop, bits 3-0 = rate.
             # A $4010 write updates the bit-timer period to table[rate]-1, so
@@ -432,7 +486,7 @@ cdef class APU2A03:
             self.length_halt[channel] = self.length_new_halt[channel]
 
     cdef void _quarter_frame(self):
-        """Quarter-frame clock (~240 Hz): envelope generators."""
+        """Quarter-frame clock (~240 Hz): envelopes and linear counter."""
         cdef int channel
         for channel in range(2):
             if self.pulse_env_start[channel]:
@@ -449,6 +503,30 @@ cdef class APU2A03:
                     elif self.length_halt[channel]:
                         # The halt bit doubles as the envelope loop flag.
                         self.pulse_env_decay[channel] = 15
+
+        # Noise shares the pulse envelope layout but has its own state.
+        if self.noise_env_start:
+            self.noise_env_start = 0
+            self.noise_env_decay = 15
+            self.noise_env_divider = self.noise_env_period + 1
+        else:
+            self.noise_env_divider -= 1
+            if self.noise_env_divider <= 0:
+                self.noise_env_divider = self.noise_env_period + 1
+                if self.noise_env_decay > 0:
+                    self.noise_env_decay -= 1
+                elif self.length_halt[3]:
+                    self.noise_env_decay = 15
+
+        # Triangle linear counter: the reload flag (set by $400B) wins over
+        # the decrement; control=0 clears the flag after one reload.
+        # Ref: NESdev wiki "APU triangle", Linear counter.
+        if self.tri_reload_flag:
+            self.tri_linear_counter = self.tri_linear_reload
+        elif self.tri_linear_counter > 0:
+            self.tri_linear_counter -= 1
+        if not self.length_halt[2]:
+            self.tri_reload_flag = 0
 
     cdef void _half_frame(self):
         """Half-frame clock (~120 Hz): length counters and sweep units."""
@@ -666,7 +744,7 @@ cdef class APU2A03:
         sweep units, and generates audio samples.
         """
         cdef int cycle, channel, volume, pcm
-        cdef double value, filtered
+        cdef double value, filtered, tnd, tri, noise_level
         for cycle in range(cycles):
             self.cycle_parity ^= 1
             # Expansion audio (e.g. MMC5 pulse) needs a per-CPU-cycle clock;
@@ -684,6 +762,31 @@ cdef class APU2A03:
                         self.pulse_timer[channel] = self.pulse_period[channel] + 1
                         self.pulse_step[channel] = (self.pulse_step[channel] + 1) & 0x07
 
+            # Triangle: the timer runs every CPU cycle, but the sequence only
+            # advances while both the length and linear counters are active.
+            # Ref: NESdev wiki "APU triangle", Sequencer.
+            self.tri_timer -= 1
+            if self.tri_timer <= 0:
+                self.tri_timer = self.tri_period + 1
+                if self.length_counter[2] > 0 and self.tri_linear_counter > 0:
+                    self.tri_step = (self.tri_step + 1) & 0x1F
+
+            # Noise: the LFSR clocks when the timer expires. Feedback is
+            # bit0 XOR bit6 (short) or bit1 (long), written back into bit14.
+            # Ref: NESdev wiki "APU noise", Linear feedback shift register.
+            self.noise_timer -= 1
+            if self.noise_timer <= 0:
+                self.noise_timer = self.noise_periods[self.noise_index] - 1
+                feedback = (self.noise_shift & 0x01) ^ \
+                           ((self.noise_shift >> (6 if self.noise_mode else 1)) & 0x01)
+                self.noise_shift = (self.noise_shift >> 1) | (feedback << 14)
+            if self.noise_shift & 0x01:
+                self.noise_output = 0
+            elif self.noise_constant:
+                self.noise_output = self.noise_volume
+            else:
+                self.noise_output = self.noise_env_decay
+
             self.sample_accum += 1.0
             if self.sample_accum >= self.cycles_per_sample:
                 self.sample_accum -= self.cycles_per_sample
@@ -700,6 +803,20 @@ cdef class APU2A03:
                     value = 95.88 / (8128.0 / total + 100.0)
                 else:
                     value = 0.0
+                # Triangle / noise / DMC share the second DAC curve. The
+                # triangle ramp is silent while either counter is zero; the
+                # noise DAC is silent while its length counter is zero.
+                # Ref: NESdev wiki "APU mixer".
+                tri = 0
+                if self.length_counter[2] > 0 and self.tri_linear_counter > 0:
+                    tri = TRIANGLE_SEQUENCE[self.tri_step]
+                noise_level = 0
+                if self.length_counter[3] > 0:
+                    noise_level = self.noise_output
+                if tri > 0 or noise_level > 0:
+                    tnd = 159.79 / (1.0 / (tri / 8227.0 +
+                                           noise_level / 12220.0) + 100.0)
+                    value += tnd
                 # Mapper expansion pulses (MMC5) are equivalent in volume to
                 # 2A03 pulses but inverted, so they run through the same pulse
                 # DAC formula and are subtracted. Keeping this in the pulse

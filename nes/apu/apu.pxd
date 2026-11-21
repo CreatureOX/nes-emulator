@@ -32,16 +32,45 @@ cdef class APU2A03:
     cdef int pulse_sweep_reload[2]
     cdef int pulse_sweep_mute[2]
 
-    # Length counters exist for all four main channels even though only the
-    # pulse channels are synthesised: $4015 reports them and the frame
-    # sequencer clocks them. A write stores a pending reload plus a snapshot
-    # of the counter; the frame step applies it one cycle later.
+    # Length counters exist for all four main channels: $4015 reports them
+    # and the frame sequencer clocks them. A write stores a pending reload
+    # plus a snapshot of the counter; the frame step applies it one cycle
+    # later.
     cdef int channel_enabled[4]
     cdef int length_counter[4]
     cdef int length_halt[4]
     cdef int length_reload_pending[4]
     cdef int length_reload_prev[4]
     cdef int length_new_halt[4]
+
+    # Triangle: a 32-step DAC driven while both counters are non-zero.
+    # $4008 bit7 doubles as the halt bit (index 2 above); bit6-0 is the
+    # linear reload value. $400B writes raise the reload flag, which is
+    # consumed by the quarter-frame clock. Output is a 0-15 step value.
+    cdef int tri_linear_reload
+    cdef int tri_linear_counter
+    cdef int tri_reload_flag
+    cdef int tri_step
+    cdef int tri_timer
+    cdef int tri_period
+
+    # Noise: a 15-bit LFSR clocked by the timer. Bit 0 mutes the output;
+    # otherwise the DAC sees the envelope volume (0-15). Mode selects
+    # feedback from bit 6 (short) instead of bit 1 (long).
+    cdef int noise_shift
+    cdef int noise_mode
+    cdef int noise_index
+    cdef int noise_timer
+    cdef int noise_output
+    cdef int noise_constant
+    cdef int noise_volume
+    cdef int noise_env_period
+    cdef int noise_env_divider
+    cdef int noise_env_decay
+    cdef int noise_env_start
+
+    # Noise playback period per index, injected from RegionSpec.
+    cdef int noise_periods[16]
 
     # Frame sequencer driven from $4017 (4-step / 5-step mode).
     cdef int frame_mode

@@ -93,6 +93,22 @@ cdef object _apu_snapshot(CPUBus bus):
         'length_reload_pending': [apu.length_reload_pending[i] for i in range(4)],
         'length_reload_prev': [apu.length_reload_prev[i] for i in range(4)],
         'length_new_halt': [apu.length_new_halt[i] for i in range(4)],
+        'tri_linear_reload': apu.tri_linear_reload,
+        'tri_linear_counter': apu.tri_linear_counter,
+        'tri_reload_flag': apu.tri_reload_flag,
+        'tri_step': apu.tri_step,
+        'tri_timer': apu.tri_timer,
+        'tri_period': apu.tri_period,
+        'noise_shift': apu.noise_shift,
+        'noise_mode': apu.noise_mode,
+        'noise_index': apu.noise_index,
+        'noise_timer': apu.noise_timer,
+        'noise_constant': apu.noise_constant,
+        'noise_volume': apu.noise_volume,
+        'noise_env_period': apu.noise_env_period,
+        'noise_env_divider': apu.noise_env_divider,
+        'noise_env_decay': apu.noise_env_decay,
+        'noise_env_start': apu.noise_env_start,
         'frame_mode': apu.frame_mode,
         'frame_irq_inhibit': apu.frame_irq_inhibit,
         'frame_irq_flag': apu.frame_irq_flag,
@@ -155,6 +171,27 @@ cdef void _apu_restore(CPUBus bus, object snap):
         apu.length_reload_pending[i] = snap['length_reload_pending'][i]
         apu.length_reload_prev[i] = snap['length_reload_prev'][i]
         apu.length_new_halt[i] = snap['length_new_halt'][i]
+    apu.tri_linear_reload = snap['tri_linear_reload']
+    apu.tri_linear_counter = snap['tri_linear_counter']
+    apu.tri_reload_flag = snap['tri_reload_flag']
+    apu.tri_step = snap['tri_step']
+    apu.tri_timer = snap['tri_timer']
+    apu.tri_period = snap['tri_period']
+    apu.noise_shift = snap['noise_shift']
+    apu.noise_mode = snap['noise_mode']
+    apu.noise_index = snap['noise_index']
+    apu.noise_timer = snap['noise_timer']
+    apu.noise_constant = snap['noise_constant']
+    apu.noise_volume = snap['noise_volume']
+    apu.noise_env_period = snap['noise_env_period']
+    apu.noise_env_divider = snap['noise_env_divider']
+    apu.noise_env_decay = snap['noise_env_decay']
+    apu.noise_env_start = snap['noise_env_start']
+    # noise_output is derived from the LFSR bit and the envelope each cycle.
+    # Rebuild it from the restored inputs instead of storing a value whose
+    # phase can lag one clock behind the shift register it came from.
+    apu.noise_output = 0 if (apu.noise_shift & 0x01) else \
+        (apu.noise_volume if apu.noise_constant else apu.noise_env_decay)
     apu.frame_mode = snap['frame_mode']
     apu.frame_irq_inhibit = snap['frame_irq_inhibit']
     apu.frame_irq_flag = snap['frame_irq_flag']

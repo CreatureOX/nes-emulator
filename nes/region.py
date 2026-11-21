@@ -67,6 +67,9 @@ class RegionSpec:
             # Mesen2 APU/DeltaModulationChannel.h _dmcPeriodLookupTablePal.
             self.dmc_rates = (398, 354, 316, 298, 276, 236, 210, 198,
                               176, 148, 132, 118, 98, 78, 66, 50)
+            # Mesen2 APU/NoiseChannel.h _noisePeriodLookupTablePal.
+            self.noise_periods = (4, 8, 14, 30, 60, 88, 118, 148,
+                                  188, 236, 354, 472, 708, 944, 1890, 3778)
         elif region == DENDY:
             self.name = 'Dendy'
             self.divider_args = (5, 15, 3, 0b010, 0b100)
@@ -79,6 +82,7 @@ class RegionSpec:
             # GetApuRegion).
             self.frame_steps = RegionSpec(NTSC).frame_steps
             self.dmc_rates = RegionSpec(NTSC).dmc_rates
+            self.noise_periods = RegionSpec(NTSC).noise_periods
         else:
             self.name = 'NTSC'
             self.divider_args = (4, 12, 3, 0b010, 0b100)
@@ -95,6 +99,9 @@ class RegionSpec:
             # Mesen2 APU/DeltaModulationChannel.h _dmcPeriodLookupTableNtsc.
             self.dmc_rates = (428, 380, 340, 320, 286, 254, 226, 214,
                               190, 160, 142, 128, 106, 84, 72, 54)
+            # Mesen2 APU/NoiseChannel.h _noisePeriodLookupTableNtsc.
+            self.noise_periods = (4, 8, 16, 32, 64, 96, 128, 160,
+                                  202, 254, 380, 508, 762, 1016, 2034, 4068)
 
 
 _SPECS = {NTSC: RegionSpec(NTSC), PAL: RegionSpec(PAL), DENDY: RegionSpec(DENDY)}
