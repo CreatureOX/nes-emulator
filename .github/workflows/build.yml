@@ -62,7 +62,7 @@ jobs:
             nes/**/*.pyd
             nes/**/*.so
             build
-          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt', 'gui/**/*.py', 'nes-emulator.spec') }}
 
       - name: Compile Cython extensions
         shell: bash
@@ -138,7 +138,7 @@ jobs:
             nes/**/*.pyd
             nes/**/*.so
             build
-          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt', 'gui/**/*.py', 'nes-emulator.spec') }}
 
       - name: Compile Cython extensions
         shell: bash
@@ -218,7 +218,7 @@ jobs:
             nes/**/*.pyd
             nes/**/*.so
             build
-          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt', 'gui/**/*.py', 'nes-emulator.spec') }}
 
       - name: Compile Cython extensions
         shell: bash
@@ -249,7 +249,15 @@ jobs:
           retention-days: 5
 
   build-macos:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -265,8 +273,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/Library/Caches/pip
-          key: ${{ runner.os }}-pip-ci-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-ci-
+          key: ${{ runner.os }}-${{ matrix.arch }}-pip-ci-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.arch }}-pip-ci-
 
       - name: Install build dependencies
         shell: bash
@@ -283,7 +291,7 @@ jobs:
             nes/**/*.pyd
             nes/**/*.so
             build
-          key: ${{ runner.os }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-py312-cython-${{ hashFiles('nes/**/*.pyx', 'nes/**/*.pxd', 'nes/**/*.h', 'setup.py', 'requirements.txt', 'gui/**/*.py', 'nes-emulator.spec') }}
 
       - name: Compile Cython extensions
         shell: bash
@@ -302,10 +310,6 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
-      - name: Build macOS App
-        run: |
-          pyinstaller nes-emulator.spec --noconfirm
-
       - name: Create macOS icon
         run: |
           mkdir -p FanNes.iconset
@@ -318,48 +322,12 @@ jobs:
           iconutil -c icns FanNes.iconset -o images/FanNes.icns
           rm -rf FanNes.iconset
 
-      - name: Resolve app version
-        shell: bash
-        run: echo "APP_VERSION=$(python -c 'import toml; print(toml.load("pyproject.toml")["project"]["version"])')" >> "$GITHUB_ENV"
-
-      - name: Create macOS app bundle
+      - name: Build macOS App
         run: |
-          APP_PATH="dist/FanNes.app"
-          mkdir -p "$APP_PATH/Contents/MacOS"
-          mkdir -p "$APP_PATH/Contents/Resources"
-          # PyInstaller 6 onedir keeps the executable beside _internal; the
-          # plist's CFBundleExecutable must point at the file, not the folder.
-          mv "dist/FanNes/FanNes" "$APP_PATH/Contents/MacOS/FanNes"
-          mv "dist/FanNes/_internal" "$APP_PATH/Contents/MacOS/_internal"
-          rm -rf "dist/FanNes"
-          chmod +x "$APP_PATH/Contents/MacOS/FanNes"
-          cp images/FanNes.icns "$APP_PATH/Contents/Resources/"
-          cat > "$APP_PATH/Contents/Info.plist" << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>FanNes</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.fannes.emulator</string>
-              <key>CFBundleName</key>
-              <string>FanNes</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>${{ env.APP_VERSION }}</string>
-              <key>CFBundleVersion</key>
-              <string>${{ env.APP_VERSION }}</string>
-              <key>CFBundleIconFile</key>
-              <string>FanNes.icns</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>10.13</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
+          # build/ is restored from a cache keyed only on Cython sources; stale
+          # PyInstaller analysis would keep old GUI code. Force a fresh analysis.
+          rm -rf build
+          pyinstaller nes-emulator.spec --noconfirm
 
       - name: Verify macOS app bundle
         shell: bash
@@ -367,14 +335,23 @@ jobs:
           APP="dist/FanNes.app/Contents"
           plutil -lint "$APP/Info.plist"
           test -f "$APP/MacOS/FanNes"
-          test -d "$APP/MacOS/_internal"
           test -f "$APP/Resources/FanNes.icns"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")" = "FanNes"
+          codesign --verify --deep --strict --verbose=2 dist/FanNes.app
+
+          # Confirm the packaged executable is the requested architecture.
+          echo "Packaged binary architecture:"
+          lipo -archs "$APP/MacOS/FanNes" || file "$APP/MacOS/FanNes"
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            file "$APP/MacOS/FanNes" | grep -q 'x86_64' || { echo "ERROR: expected x86_64 binary" >&2; exit 1; }
+          else
+            file "$APP/MacOS/FanNes" | grep -q 'arm64' || { echo "ERROR: expected arm64 binary" >&2; exit 1; }
+          fi
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fannes-macos
+          name: fannes-macos-${{ matrix.arch }}
           # Uploading the parent keeps the FanNes.app wrapper in the archive.
           path: dist
           retention-days: 5
@@ -408,28 +385,42 @@ jobs:
           name: fannes-windows
           path: release/Windows
 
-      - name: Download macOS artifact
+      - name: Download macOS arm64 artifact
         uses: actions/download-artifact@v7
         with:
-          name: fannes-macos
-          path: release/macOS
+          name: fannes-macos-arm64
+          path: release/macOS-arm64
+
+      - name: Download macOS x86_64 artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: fannes-macos-x86_64
+          path: release/macOS-x86_64
 
       - name: Create Windows ZIP archive
         run: |
           cd release/Windows
           zip -r "../FanNes-${RELEASE_VERSION}-Windows.zip" .
 
-      - name: Create macOS ZIP archive
+      - name: Fix macOS executable bits
         run: |
-          cd release/macOS
-          zip -r -y "../FanNes-${RELEASE_VERSION}-macOS.zip" .
+          chmod +x release/macOS-arm64/FanNes.app/Contents/MacOS/FanNes
+          chmod +x release/macOS-x86_64/FanNes.app/Contents/MacOS/FanNes
+
+      - name: Create macOS ZIP archives
+        run: |
+          cd release/macOS-arm64
+          zip -r -y "../FanNes-${RELEASE_VERSION}-macOS-arm64.zip" .
+          cd ../macOS-x86_64
+          zip -r -y "../FanNes-${RELEASE_VERSION}-macOS-x86_64.zip" .
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/FanNes-${{ env.RELEASE_VERSION }}-Windows.zip
-            release/FanNes-${{ env.RELEASE_VERSION }}-macOS.zip
+            release/FanNes-${{ env.RELEASE_VERSION }}-macOS-arm64.zip
+            release/FanNes-${{ env.RELEASE_VERSION }}-macOS-x86_64.zip
           fail_on_unmatched_files: true
           draft: false
         env:

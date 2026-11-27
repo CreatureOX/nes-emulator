@@ -1,6 +1,7 @@
 import FreeSimpleGUI as sg
 import sys
 import os
+import tkinter as tk
 import ctypes
 import ctypes.wintypes
 from gui.freesimplegui.base_view import BaseView
@@ -16,7 +17,7 @@ import pygame
 import numpy as np
 import os
 import cv2
-from PIL import Image
+from PIL import Image, ImageTk
 import time
 import sys
 import json
@@ -214,23 +215,269 @@ class EmulatorWindow(BaseView):
                 icon_data = f.read()
             self._window.set_icon(icon_data)
         
-        # bind Graph (key = "SCREEN") with pygame window
-        os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
+        # On macOS we render into the embedded Tk canvas with PIL/ImageTk
+        # (see __present_frame). SDL's Cocoa backend cannot embed a foreign
+        # NSView via SDL_WINDOWID -- that path crashes at startup -- so no
+        # pygame display window is created at all. On X11/Windows we keep the
+        # original SDL_WINDOWID embed into the Tk canvas.
+        if sys.platform == 'darwin':
+            os.environ.pop('SDL_WINDOWID', None)
+            pygame.display.quit()
+            self.__game_screen = None
+        else:
+            os.environ['SDL_WINDOWID'] = str(self._window['-SCREEN-'].TKCanvas.winfo_id())
+            pygame.display.quit()  # Quit any existing display
+            pygame.display.init()  # Reinitialize display
+            # Start with a default size, will be updated in the game loop
+            self.__game_screen = pygame.display.set_mode((640, 480), pygame.RESIZABLE)
 
-        # Minimal pygame initialization
-        pygame.display.quit()  # Quit any existing display
-        pygame.display.init()  # Reinitialize display
-        
-        # Start with a default size, will be updated in the game loop
-        self.__game_screen = pygame.display.set_mode((640, 480), pygame.RESIZABLE)
-
-        # Initialize pygame font and event handling
+        # pygame.font is display-independent; keep it initialized on all
+        # platforms. AudioOutput uses pygame.mixer, also independent of display.
         pygame.font.init()
-        
+
         # Prepare audio output (will be created when a ROM is opened)
         self._audio = None
 
+        # macOS-only: create the Tk canvas image item used as the screen and
+        # bind keyboard events. These are no-ops on other platforms.
+        self.__setup_mac_display()
+        self.__setup_mac_keyboard()
+        # Kick off the main-thread frame pump (no-op off macOS). It reschedules
+        # itself; before the first ROM frame it simply finds nothing to paint.
+        if sys.platform == 'darwin':
+            try:
+                self._window.TKroot.after(self.__MAC_FRAME_INTERVAL_MS,
+                                          self.__pump_mac_frame)
+            except Exception:
+                pass
+
+        # On macOS, move the menu from the system menu bar into the window.
+        self.__setup_mac_menubar()
         self.__setup_menu_labels()
+
+        # Optional headless self-check hook for CI smoke tests. When set to a
+        # .nes path, auto-load that ROM and start rendering so a screenshot can
+        # verify the embedded canvas actually shows game frames. No-op for
+        # normal users (env var absent).
+        smoke_rom = os.environ.get('FANNES_SMOKE_ROM')
+        if smoke_rom and os.path.exists(smoke_rom):
+            try:
+                if self.__load_rom(smoke_rom):
+                    self.__start_render_thread()
+            except Exception:
+                pass
+
+        # CI-only keyboard self-test: inject a Tk KeyPress event through the
+        # very same binding the game uses, then report whether our handler
+        # saw it and whether the normalized configured key matched. Writes a
+        # small JSON file; completely inert for normal users.
+        keytest = os.environ.get('FANNES_SMOKE_KEYTEST')
+        if keytest and sys.platform == 'darwin':
+            try:
+                import json as _json
+                root = self._window.TKroot
+                # Use the configured START key's normalized keysym.
+                configured = keyboard_manager.get_keyboard().get('START', 118)
+                probe = self.__normalize_key(configured)
+                before = set(self._mac_pressed)
+                root.event_generate('<KeyPress>', keysym=probe)
+                root.update()
+                after = set(self._mac_pressed)
+                result = {
+                    'probe_keysym': probe,
+                    'received': probe in after,
+                    'before': sorted(before),
+                    'after': sorted(after),
+                    'held_start': self.__mac_key_held(configured),
+                }
+                # Release so we leave no stuck key.
+                root.event_generate('<KeyRelease>', keysym=probe)
+                root.update()
+                with open(keytest, 'w') as _f:
+                    _json.dump(result, _f)
+            except Exception as _e:
+                try:
+                    with open(keytest, 'w') as _f:
+                        _f.write('ERROR: ' + repr(_e))
+                except Exception:
+                    pass
+
+    # ---- macOS single-window rendering -------------------------------------
+    # On macOS the pygame window is eliminated. Frames are drawn into the
+    # FreeSimpleGUI Graph's Tk canvas through a Tk PhotoImage. Tkinter is not
+    # thread-safe, so the render thread publishes numpy frames into a shared
+    # slot and the Tk main thread drains that slot on a periodic after() timer.
+    __MAC_FRAME_INTERVAL_MS = 16  # ~60 fps UI refresh
+
+    def __setup_mac_display(self) -> None:
+        if sys.platform != 'darwin':
+            return
+        self._mac_frame_lock = Lock()
+        self._mac_frame = None
+        self._mac_photo = None
+        self._mac_canvas_item = None
+        self._mac_last_size = None
+        try:
+            canvas = self._window['-SCREEN-'].TKCanvas
+            # A Tk PhotoImage placed at the canvas origin; we retarget its
+            # image data each refresh instead of recreating canvas items.
+            self._mac_canvas_item = canvas.create_image(0, 0, anchor='nw')
+        except Exception:
+            self._mac_canvas_item = None
+
+    def __setup_mac_keyboard(self) -> None:
+        if sys.platform != 'darwin':
+            return
+        self._mac_pressed = set()
+        self._mac_pressed_lock = Lock()
+        root = self._window.TKroot
+        root.bind('<KeyPress>', self.__on_mac_key_press, add='+')
+        root.bind('<KeyRelease>', self.__on_mac_key_release, add='+')
+        # Losing focus must clear held keys, otherwise a button stays stuck.
+        root.bind('<FocusOut>', lambda e: self.__clear_mac_keys(), add='+')
+
+    @staticmethod
+    def __normalize_key(key) -> int:
+        """Normalize a configured key to a Tk keysym-name token.
+
+        keyboard.json stores a mix of SDL scancode-derived values (large
+        ints such as 1073741906 for Up) and ASCII codes (122 for Z). Tk's
+        event.keysym is a string. Map both worlds onto lowercase keysym
+        names so comparisons are stable.
+        """
+        try:
+            code = int(key)
+        except (TypeError, ValueError):
+            return str(key).lower()
+        # SDL 2 scancode mask base + arrow scancodes
+        sdl = {
+            1073741906: 'up', 1073741905: 'down',
+            1073741904: 'left', 1073741903: 'right',
+        }
+        if code in sdl:
+            return sdl[code]
+        # pygame keycode constants for arrows
+        pg = {
+            273: 'up', 274: 'down', 275: 'right', 276: 'left',
+        }
+        if code in pg:
+            return pg[code]
+        if 65 <= code <= 90:
+            return chr(code).lower()
+        if 97 <= code <= 122:
+            return chr(code)
+        if code == 32:
+            return 'space'
+        if code == 8:
+            return 'backspace'
+        if code == 27:
+            return 'escape'
+        return str(code)
+
+    def __on_mac_key_press(self, event) -> None:
+        keysym = (event.keysym or '').lower()
+        with self._mac_pressed_lock:
+            self._mac_pressed.add(keysym)
+
+    def __on_mac_key_release(self, event) -> None:
+        keysym = (event.keysym or '').lower()
+        with self._mac_pressed_lock:
+            self._mac_pressed.discard(keysym)
+
+    def __clear_mac_keys(self) -> None:
+        with self._mac_pressed_lock:
+            self._mac_pressed.clear()
+
+    def __mac_key_held(self, key) -> bool:
+        try:
+            with self._mac_pressed_lock:
+                return self.__normalize_key(key) in self._mac_pressed
+        except Exception:
+            return False
+
+    def __pump_mac_frame(self) -> None:
+        """Tk-main-thread callback: paint the newest published frame."""
+        if sys.platform != 'darwin':
+            return
+        try:
+            with self._mac_frame_lock:
+                frame = self._mac_frame
+                self._mac_frame = None
+            if frame is not None:
+                img = Image.fromarray(frame)
+                photo = ImageTk.PhotoImage(img)
+                canvas = self._window['-SCREEN-'].TKCanvas
+                if self._mac_canvas_item is None:
+                    self._mac_canvas_item = canvas.create_image(0, 0, anchor='nw', image=photo)
+                else:
+                    canvas.itemconfig(self._mac_canvas_item, image=photo)
+                # Keep a reference so Tk does not garbage-collect the image.
+                self._mac_photo = photo
+        except Exception:
+            pass
+        # Reschedule while the window lives.
+        try:
+            self._window.TKroot.after(self.__MAC_FRAME_INTERVAL_MS, self.__pump_mac_frame)
+        except Exception:
+            pass
+
+    def __publish_mac_frame(self, rgb_image: np.ndarray) -> None:
+        with self._mac_frame_lock:
+            self._mac_frame = rgb_image.copy()
+
+    def __setup_mac_menubar(self) -> None:
+        """Render the menu bar inside the window on macOS.
+
+        FreeSimpleGUI builds its menu with ``TKroot.configure(menu=...)``.
+        On macOS Aqua that promotes the menu to the screen-wide system menu
+        bar, so the menu and the game canvas end up looking like two separate
+        places. Aqua Tk cannot ``pack`` a Menu widget (it is a toplevel), so
+        we detach the native menubar and rebuild an in-window bar from
+        packable ``Menubutton`` widgets that reuse the ORIGINAL submenus —
+        event callbacks, accelerators and checkmarks therefore keep working.
+        No-op on Windows/Linux, where the native in-window menu is fine.
+        """
+        if sys.platform != 'darwin':
+            return
+        try:
+            root = self._window.TKroot
+            menubar = self._window['-MENU-'].TKMenu
+
+            # Cache the original top-level submenus before detaching. These
+            # are the very menus FreeSimpleGUI wired the menu-item callbacks
+            # to, so reusing them preserves all event dispatch.
+            tops = []
+            for i in range(menubar.index('end') + 1):
+                try:
+                    label = menubar.entrycget(i, 'label')
+                    path = menubar.entrycget(i, 'menu')
+                    submenu = root.nametowidget(path)
+                    tops.append((label, submenu))
+                except Exception:
+                    continue
+
+            # Detach from the system menu bar. Keep the menubar object alive
+            # (still referenced by the element) so its child menus stay valid.
+            root.configure(menu='')
+
+            # sg.Menu's row is the first packed child of root and is now empty
+            # (the Menu was never packed — it lived on the system menubar).
+            # Put the Menubuttons into that row so the bar sits directly above
+            # the game canvas with no extra gap.
+            slaves = root.pack_slaves()
+            row = slaves[0] if slaves else root
+            self.__mac_menubuttons = []
+            for label, submenu in tops:
+                mb = tk.Menubutton(
+                    row, text=label, indicatoron=False, relief='flat',
+                    padx=8, pady=2,
+                )
+                mb.config(menu=submenu)
+                mb.pack(side='left')
+                self.__mac_menubuttons.append(mb)
+        except Exception:
+            # Any failure leaves the native menu intact — never break startup.
+            pass
 
     def __setup_menu_labels(self) -> None:
         """Cache submenus and label them with shortcut hints and toggle state.
@@ -495,8 +742,13 @@ class EmulatorWindow(BaseView):
                 if vk is None:
                     return False
                 return user32.GetAsyncKeyState(vk) & 0x8000 != 0
+        elif sys.platform == 'darwin':
+            # macOS: pygame has no display/window, so SDL receives no key
+            # events. Use the Tk-bound key set populated on the main thread.
+            def get_key_state(key_code):
+                return self.__mac_key_held(key_code)
         else:
-            # For non-Windows platforms, use pygame key detection
+            # For X11/Linux, use pygame key detection
             def get_key_state(key_code):
                 pressed = pygame.key.get_pressed()
                 return pressed[key_code] if key_code < len(pressed) else False
@@ -506,6 +758,11 @@ class EmulatorWindow(BaseView):
         if sys.platform.startswith('win'):
             def alt_held():
                 return user32.GetAsyncKeyState(0x12) & 0x8000 != 0  # VK_MENU
+        elif sys.platform == 'darwin':
+            def alt_held():
+                with self._mac_pressed_lock:
+                    return ('alt_l' in self._mac_pressed or
+                            'alt_r' in self._mac_pressed)
         else:
             def alt_held():
                 pressed = pygame.key.get_pressed()
@@ -539,14 +796,16 @@ class EmulatorWindow(BaseView):
                     canvas_width, canvas_height = last_canvas_width, last_canvas_height
                 else:
                     last_canvas_width, last_canvas_height = canvas_width, canvas_height
-                    
-                    # Resize pygame display to match canvas size
-                    try:
-                        current_size = self.__game_screen.get_size()
-                        if current_size[0] != canvas_width or current_size[1] != canvas_height:
+
+                    # On macOS there is no pygame surface to resize; the Tk
+                    # canvas image is stretched to fit by pygame/Cocoa-free path.
+                    if sys.platform != 'darwin':
+                        try:
+                            current_size = self.__game_screen.get_size()
+                            if current_size[0] != canvas_width or current_size[1] != canvas_height:
+                                self.__game_screen = pygame.display.set_mode((canvas_width, canvas_height), pygame.RESIZABLE)
+                        except:
                             self.__game_screen = pygame.display.set_mode((canvas_width, canvas_height), pygame.RESIZABLE)
-                    except:
-                        self.__game_screen = pygame.display.set_mode((canvas_width, canvas_height), pygame.RESIZABLE)
             except:
                 canvas_width, canvas_height = last_canvas_width, last_canvas_height
             
@@ -589,7 +848,8 @@ class EmulatorWindow(BaseView):
             ppu_screen = self.__console.bus.ppu.screen()
             if ppu_screen is None:
                 frames_waited += 1
-                pygame.display.flip()
+                if sys.platform != 'darwin':
+                    pygame.display.flip()
                 clock.tick(60)
                 continue
                 
@@ -599,7 +859,8 @@ class EmulatorWindow(BaseView):
             is_black = np.all(original_image == 0)
             if frames_waited < MAX_WAIT_FRAMES and is_black:
                 frames_waited += 1
-                pygame.display.flip()
+                if sys.platform != 'darwin':
+                    pygame.display.flip()
                 clock.tick(60)
                 continue
             
@@ -611,14 +872,19 @@ class EmulatorWindow(BaseView):
                 for row in range(0, resized_image.shape[0], 2):
                     resized_image[row] = (resized_image[row] * 0.72).astype(np.uint8)
             
-            # Copy directly into the embedded SDL surface. Creating a new
-            # pygame Surface and blitting it each frame allocates a full-size
-            # RGB buffer; blit_array writes the resized frame in place.
             if len(resized_image.shape) == 2:
                 resized_image = np.repeat(resized_image[:, :, None], 3, axis=2)
-            pygame.surfarray.blit_array(
-                self.__game_screen, np.transpose(resized_image, (1, 0, 2)))
-            pygame.display.flip()
+            if sys.platform == 'darwin':
+                # ImageTk.PhotoImage consumes a standard [row, col, channel]
+                # (height, width, RGB) array -- no transpose. Publishing the
+                # transposed array would rotate the picture 90 degrees.
+                self.__publish_mac_frame(np.ascontiguousarray(resized_image))
+            else:
+                # pygame.surfarray.blit_array expects [x, y, channel], so the
+                # [row, col, channel] numpy frame must be transposed here.
+                rgb_image = np.transpose(resized_image, (1, 0, 2))
+                pygame.surfarray.blit_array(self.__game_screen, rgb_image)
+                pygame.display.flip()
 
             # Generate and enqueue audio for this frame from the bus APU.
             # Fast-forward still drains (so the APU's filter state keeps
