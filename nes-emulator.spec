@@ -1,6 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import glob
+import sys
+import pathlib
+import tomllib
 
 # Collect compiled Cython extensions: .pyd on Windows, .so on POSIX.
 nes_ext_files = []
@@ -134,3 +137,25 @@ coll = COLLECT(
     upx_exclude=[],
     name='FanNes',
 )
+
+# macOS: let PyInstaller assemble the real .app bundle (correct Contents/Frameworks
+# layout and ad-hoc signature). BUNDLE is ignored on other platforms.
+if sys.platform == 'darwin':
+    _version = tomllib.loads(
+        pathlib.Path('pyproject.toml').read_text(encoding='utf-8')
+    )['project']['version']
+    app = BUNDLE(
+        coll,
+        name='FanNes.app',
+        icon='images/FanNes.icns',
+        bundle_identifier='com.fannes.emulator',
+        version=_version,
+        info_plist={
+            'CFBundleName': 'FanNes',
+            'CFBundleDisplayName': 'FanNes',
+            'LSMinimumSystemVersion': '11.0',
+            'NSHighResolutionCapable': True,
+            'NSPrincipalClass': 'NSApplication',
+            'NSAppleScriptEnabled': False,
+        },
+    )
