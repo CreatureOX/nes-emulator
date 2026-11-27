@@ -17,7 +17,7 @@ cdef class PPU2C02:
     cdef uint8_t[:] _palette_table
 
     cdef list palette_panel
-    cdef list emphasis_panels
+    cdef uint8_t emphasis_panels[8][64][3]
     cdef uint8_t[240][256][3] _screen
 
     cdef Status PPUSTATUS
@@ -105,7 +105,7 @@ cdef class PPU2C02:
     cdef void write(self, uint16_t, uint8_t)
 
     cdef void _set_palette_panel(self)
-    cdef tuple fetch_color(self, uint8_t, uint8_t)
+    cdef unsigned int fetch_color(self, uint8_t, uint8_t)
     cdef void reset(self)
 
     cdef void _incr_coarseX(self)
@@ -133,6 +133,6 @@ cdef class PPU2C02:
     cdef void _fetch_sprites(self)
     cdef void _fetch_sprite(self, int)
     
-    cdef tuple _draw_background(self)
-    cdef tuple _draw_sprites(self)
-    cdef tuple _draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t)
+    cdef uint16_t _draw_background(self)
+    cdef uint16_t _draw_sprites(self)
+    cdef uint16_t _draw_by_rule(self, uint8_t, uint8_t, uint8_t, uint8_t)

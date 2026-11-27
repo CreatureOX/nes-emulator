@@ -10,6 +10,14 @@ from nes.mapper.impl.mapper_colordreams cimport MapperColorDreams
 from nes.mapper.impl.mapper_bnrom cimport MapperBNROM
 from nes.mapper.impl.mapper_vrc2a cimport MapperVRC2a
 from nes.mapper.impl.mapper_action53 cimport MapperAction53
+from nes.mapper.impl.mapper_cprom cimport MapperCPROM
+from nes.mapper.impl.mapper_mmc2 cimport MapperMMC2
+from nes.mapper.impl.mapper_mmc4 cimport MapperMMC4
+from nes.mapper.impl.mapper_rambo1 cimport MapperRambo1
+from nes.mapper.impl.mapper_fme7 cimport MapperFME7
+from nes.mapper.impl.mapper_078 cimport Mapper078
+from nes.mapper.impl.mapper_118 cimport Mapper118
+from nes.mapper.impl.mapper_180 cimport Mapper180
 
 
 mappers = {
@@ -20,11 +28,19 @@ mappers = {
     "004": MapperMMC3,
     "005": MapperMMC5,
     "007": MapperAxROM,
+    "009": MapperMMC2,
+    "010": MapperMMC4,
     "011": MapperColorDreams,
+    "013": MapperCPROM,
     "022": MapperVRC2a,
     "028": MapperAction53,
     "034": MapperBNROM,
+    "064": MapperRambo1,
     "066": MapperGxROM,
+    "069": MapperFME7,
+    "078": Mapper078,
+    "118": Mapper118,
+    "180": Mapper180,
 }
 
 cdef class MapperFactory:

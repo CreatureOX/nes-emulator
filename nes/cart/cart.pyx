@@ -57,8 +57,20 @@ cdef class CartridgeCPUPort:
         Returns:
             True if write was handled by mapper, False otherwise
         '''
-        cdef CPUWriteMapping mapping = self.cart.mapper.map_cpu_write(addr, data)
-        cdef uint8_t mirror_mode = self.cart.mapper.mirror()
+        cdef CPUReadMapping rom_mapping
+        cdef CPUWriteMapping mapping
+        cdef uint8_t mirror_mode
+
+        if addr >= 0x8000 and self.cart.has_bus_conflict:
+            # Register writes overlap ROM on these boards. Both drivers pull
+            # low harder than high, so the mapper sees CPU AND ROM.
+            # Ref: NESdev wiki "Bus conflict".
+            rom_mapping = self.cart.mapper.map_cpu_read(addr)
+            if rom_mapping.success and rom_mapping.addr != UINT32_MAX:
+                data &= self.cart.PRG_ROM_data[rom_mapping.addr]
+
+        mapping = self.cart.mapper.map_cpu_write(addr, data)
+        mirror_mode = self.cart.mapper.mirror()
 
         # Boards with switchable nametable mirroring publish it on the
         # mapper; the PPU reads the cartridge-level mode. Ref: NESdev wiki

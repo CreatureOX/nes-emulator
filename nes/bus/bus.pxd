@@ -40,6 +40,7 @@ cdef class CPUBus:
     cpdef void write(self, uint16_t, uint8_t)
     cpdef void reset(self)
     cpdef void power_up(self)
+    cdef void _clock(self) except *
     cpdef void clock(self)
     cpdef void run_frame(self)
     cpdef object battery_ram(self)

@@ -36,17 +36,17 @@
   },
   "mmc5_pulse_both": {
     "count": 2943,
-    "hash": "ad50e7c6e6f718cbd611399bcec452de6fa71ba698a15eb65b516e7bca3767d4",
-    "max": 4146,
-    "min": -7348,
-    "sum": -1495
+    "hash": "bb2ad24403afb8d9bc9e6c7f954bfa245cc5f4df3ad9e7f8e3ccb0a7492fc670",
+    "max": 4843,
+    "min": -7180,
+    "sum": 2474
   },
   "mmc5_pulse_duty50": {
     "count": 2943,
-    "hash": "f3ffde72551ca80ece14ed42d59ef1c1a92ad91649af30aecf78fc1872875733",
-    "max": 3132,
-    "min": -4135,
-    "sum": -144
+    "hash": "cdefb620dfdf213ef3c4941735f25b6578c630f2c08e8c95f5a478ae89e78834",
+    "max": 3785,
+    "min": -4144,
+    "sum": 2094
   },
   "noise_const": {
     "count": 2943,

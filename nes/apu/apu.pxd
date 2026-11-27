@@ -89,6 +89,7 @@ cdef class APU2A03:
     # Frame-counter step boundaries per mode, injected from RegionSpec.
     # NTSC/Dendy share the NTSC table; PAL uses the longer PAL table.
     cdef object frame_steps
+    cdef int frame_step_table[2][6]
     cdef int cycle_parity
 
     # 1 = load (first fetch after $4015), 2 = reload (buffer emptied).
@@ -148,6 +149,7 @@ cdef class APU2A03:
     cpdef int dmc_dma_request_kind(self)
     cdef void start_dmc_transfer(self, int kind)
     cdef void arm_dmc_sample(self)
+    cdef bint _irq_level(self) noexcept
     cpdef bint irq_level(self)
     cpdef void clock(self, int cycles)
     cdef double _mix_output(self)

@@ -4,24 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "FanNes"
-version = "0.0.2"
-description = "FanNes - A NES/SNES Emulator"
+version = "0.1.0"
+description = "FanNes - a cycle-accurate NES emulator written in Python and Cython"
 authors = [
     {name = "CreatureOX", email = "creatureox0726@gmail.com"}
 ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
-    "pygame>=2.0.0",
-    "numpy>=1.20.0",
-    "Pillow>=8.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "black>=22.0.0",
+    "pygame>=2.5.0",
+    "FreeSimpleGUI>=4.6.0",
+    "numpy>=1.21.0",
+    "opencv-python>=4.8.0.0",
+    "Pillow>=9.3.0",
+    "Cython>=3.0.6",
+    "keyboard",
+    "toml>=0.10.2",
 ]
 
 [tool.setuptools]

@@ -45,6 +45,20 @@ cdef class Mapper:
         self.bg_scanline = 0
         pass
 
+    cdef void set_submapper(self, uint8_t submapper):
+        '''Ignore header variants on boards with no distinct submappers.'''
+        pass
+
+    def carray_snapshot(self):
+        '''Return live uint8_t[N] arrays as bytes in reduce-field order.
+
+        Cython's auto-generated reducer converts a uint8_t[N] field through
+        C-string semantics, so a zero first byte truncates the field to b''.
+        Boards holding C arrays override this so the state layer can repair
+        the snapshot before pickling; the base class owns none.
+        '''
+        return ()
+
     cdef uint8_t mirror(self):
         """Return the mirroring mode."""
         return HARDWARE

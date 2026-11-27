@@ -65,7 +65,7 @@ cdef class CPUBus:
         self.cpu.set_nmi_line(self.ppu.nmi_line)
         self.cpu.set_irq_line(
             (self.cartridge.mapper.irq_line() != 0)
-            or self.apu.irq_level(),
+            or self.apu._irq_level(),
             dot
         )
         if self.divider.phi2_edge:
@@ -214,7 +214,7 @@ cdef class CPUBus:
         if count > 0:
             sram[:count] = src[:count]
 
-    cpdef void clock(self):
+    cdef void _clock(self) except *:
         '''
         Advance one PPU dot and dispatch the edges published by ClockDivider.
 
@@ -255,6 +255,10 @@ cdef class CPUBus:
 
         self.divider.advance()
 
+    cpdef void clock(self):
+        '''Python-visible name for one PPU dot; internal loops call _clock().'''
+        self._clock()
+
     cpdef void run_frame(self):
         '''Execute a complete video frame.
 
@@ -264,4 +268,4 @@ cdef class CPUBus:
         '''
         self.ppu.frame_complete = False
         while not self.ppu.frame_complete:
-            self.clock()
+            self._clock()

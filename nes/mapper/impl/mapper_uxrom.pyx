@@ -14,7 +14,9 @@ cdef class MapperUxROM(Mapper):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "002"
 
-        self.PRG_bank_select_lo, self.PRG_bank_select_hi = 0x00, 0x00
+        # Mapper.__init__ already called reset(), which powers the fixed
+        # upper window at the last PRG bank. Do not zero it again here.
+        pass
 
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         """Map CPU read to PRG ROM with selectable lower bank."""

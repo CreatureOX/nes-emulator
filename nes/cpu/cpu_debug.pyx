@@ -11,13 +11,13 @@ cdef class CPUDebugger:
     cpdef dict status(self):
         """Get CPU status flags as a dictionary."""
         return {
-            "N": self.bus.cpu.registers.status.bits.N,
-            "V": self.bus.cpu.registers.status.bits.V,
-            "U": self.bus.cpu.registers.status.bits.U,
-            "B": self.bus.cpu.registers.status.bits.B,
-            "D": self.bus.cpu.registers.status.bits.D,
-            "I": self.bus.cpu.registers.status.bits.I,
-            "Z": self.bus.cpu.registers.status.bits.Z,
+            "N": self.bus.cpu.registers.status.flag_N,
+            "V": self.bus.cpu.registers.status.flag_V,
+            "U": self.bus.cpu.registers.status.flag_U,
+            "B": self.bus.cpu.registers.status.flag_B,
+            "D": self.bus.cpu.registers.status.flag_D,
+            "I": self.bus.cpu.registers.status.flag_I,
+            "Z": self.bus.cpu.registers.status.flag_Z,
         }
 
     cpdef dict registers(self):

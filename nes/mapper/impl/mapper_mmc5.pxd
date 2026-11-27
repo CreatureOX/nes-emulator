@@ -55,6 +55,10 @@ cdef class MapperMMC5(Mapper):
     cdef int pulse_length[2]
     cdef long long pulse_audio_cycle
 
+    # 32 KiB switchable PRG RAM. $5113 owns the $6000 window; $5114-$5116
+    # bit 7 clears route their $8000+ window here instead of PRG ROM.
+    cdef uint8_t[:] prg_ram
+
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr)
     cdef CPUWriteMapping map_cpu_write(self, uint16_t addr, uint8_t data)
     cdef PPUReadMapping map_ppu_read(self, uint16_t addr)
@@ -75,6 +79,7 @@ cdef class MapperMMC5(Mapper):
     cdef bint _in_split_for_col(self, int ht)
 
     cdef uint32_t _prg_addr(self, uint16_t addr)
+    cdef bint _prg_ram_offset(self, uint16_t addr, uint32_t* offset)
     cdef uint32_t _chr_addr(self, uint16_t addr)
     cdef void _on_scanline(self)
     cdef void _leave_frame(self)

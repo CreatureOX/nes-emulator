@@ -43,7 +43,7 @@ try:
     AUTHOR = _pyproject["project"]["authors"][0]["name"]
 except Exception:
     APP_NAME = "FanNes"
-    VERSION = "0.0.1"
+    VERSION = "0.1.0"
     AUTHOR = "Unknown"
 
 def get_resource_path(relative_path):
@@ -84,7 +84,8 @@ class EmulatorWindow(BaseView):
     __MENU_LAYOUT = [
         ['File', ['&Open', '&Save', '&Load', '&Reset', 'Screenshot', 'Exit']],
         ['Config', ['&Keymap', '&Region', ['&NTSC', '&PAL', '&Dendy']]],
-        ['Emulation', ['&Rewind', '&Fast Forward', '&Fullscreen', '&CRT Filter']],
+        ['Emulation', ['&Pause', '&Rewind', '&Fast Forward', '&Fullscreen',
+                       '&CRT Filter']],
         ['Debug', ['&CPU', '&PPU', '&Disassembler', '&NES File Viewer']],
         ['Help', ['&About',]],
     ]
@@ -109,6 +110,7 @@ class EmulatorWindow(BaseView):
         'NTSC': ('n', None, None),
         'PAL': ('p', None, None),
         'Dendy': ('d', None, None),
+        'Pause': ('a', 'Esc', 'Esc'),
         'Rewind': ('r', None, 'Backspace'),
         'Fast Forward': ('f', None, 'Space'),
         'Fullscreen': ('l', 'F11', 'F11'),
@@ -155,6 +157,7 @@ class EmulatorWindow(BaseView):
         self.__fast_forward = False
         self.__fullscreen = False
         self.__crt_filter = False
+        self.__paused = False
 
         # File Tab
         self._events["Open"] = self.__run
@@ -164,6 +167,7 @@ class EmulatorWindow(BaseView):
         self._events["Load"] = self.__open_nes_file_hint
 
         # Emulation Tab
+        self._events["Pause"] = self.__toggle_pause
         self._events["Rewind"] = self.__rewind
         self._events["Fast Forward"] = self.__toggle_fast_forward
         self._events["Fullscreen"] = self.__toggle_fullscreen
@@ -277,8 +281,10 @@ class EmulatorWindow(BaseView):
                     self._window.write_event_value(name, None)
                 # Tk accepts <Alt-o> for letters (normalizes to <Alt-Key-o>)
                 # but silently ignores <Alt-1>; digits need the Key- token.
-                # Function keys such as F12 bind bare, with no Alt modifier.
-                if key.startswith('F') and key[1:].isdigit():
+                # Bare keys (function keys and Escape) carry no Alt modifier.
+                if key == 'Esc':
+                    sequences = ('<Escape>',)
+                elif key.startswith('F') and key[1:].isdigit():
                     sequences = ('<' + key + '>',)
                 elif key.isdigit():
                     sequences = ('<Alt-Key-' + key + '>',)
@@ -297,6 +303,7 @@ class EmulatorWindow(BaseView):
         prior toggle never accumulates; matching strips the marker.
         """
         toggles = {
+            'Pause': self.__paused,
             'Fast Forward': self.__fast_forward,
             'Fullscreen': self.__fullscreen,
             'CRT Filter': self.__crt_filter,
@@ -384,6 +391,11 @@ class EmulatorWindow(BaseView):
         # old and new loops read self.__console each frame; leaving the old one
         # alive drives the new ROM twice per tick (double speed, doubled audio).
         self.__stop_render_thread()
+
+        # A fresh ROM starts running; a pause held over from the previous
+        # cartridge would freeze it with no visible way to resume in the new
+        # title's context until the player notices the menu checkmark.
+        self.__paused = False
 
         # run .nes file with the active region override (-1 = header auto).
         self.__console = Console(file_path, self.__region)
@@ -560,15 +572,18 @@ class EmulatorWindow(BaseView):
             
             # Fast forward runs several frames per display update and skips
             # the 60 FPS throttle. Holding Space is a temporary override;
-            # the menu toggle stays latched until clicked again.
+            # the menu toggle stays latched until clicked again. Pause wins
+            # over both: zero frames advance, audio is muted, and the last
+            # rendered frame stays on screen until Esc toggles it off.
             space_held = get_key_state(pygame.K_SPACE)
             fast_forward = self.__fast_forward or space_held
-            frames_per_tick = 4 if fast_forward else 1
+            paused = self.__paused
+            frames_per_tick = 0 if paused else (4 if fast_forward else 1)
             for _ in range(frames_per_tick):
                 self.__console.control(control_inputs)
                 self.__console.run()
             if getattr(self, '_audio', None) is not None:
-                self._audio.set_muted(fast_forward)
+                self._audio.set_muted(paused or fast_forward)
             
             # Get screen data - ensure we get a copy, not just a view
             ppu_screen = self.__console.bus.ppu.screen()
@@ -596,25 +611,13 @@ class EmulatorWindow(BaseView):
                 for row in range(0, resized_image.shape[0], 2):
                     resized_image[row] = (resized_image[row] * 0.72).astype(np.uint8)
             
-            # Clear the entire display with black background
-            self.__game_screen.fill((0, 0, 0))
-            
-            # Ensure the array is in the right format for pygame surfarray
-            resized_image = resized_image.astype(np.uint8)
-            
-            # Create surface from the resized image
-            try:
-                if len(resized_image.shape) == 2:
-                    # Grayscale - convert to RGB
-                    resized_image = np.stack([resized_image] * 3, axis=2)
-                
-                surf = pygame.surfarray.make_surface(np.transpose(resized_image, (1, 0, 2)))
-            except:
-                # Fallback: try direct surface creation
-                surf = pygame.surfarray.make_surface(resized_image)
-            
-            # Blit the image to fill the entire screen
-            self.__game_screen.blit(surf, (0, 0))
+            # Copy directly into the embedded SDL surface. Creating a new
+            # pygame Surface and blitting it each frame allocates a full-size
+            # RGB buffer; blit_array writes the resized frame in place.
+            if len(resized_image.shape) == 2:
+                resized_image = np.repeat(resized_image[:, :, None], 3, axis=2)
+            pygame.surfarray.blit_array(
+                self.__game_screen, np.transpose(resized_image, (1, 0, 2)))
             pygame.display.flip()
 
             # Generate and enqueue audio for this frame from the bus APU.
@@ -626,7 +629,8 @@ class EmulatorWindow(BaseView):
                     apu = getattr(self.__console.bus, 'apu', None)
                     if apu is not None:
                         samples = apu.drain_samples()
-                        if (not fast_forward and isinstance(samples, np.ndarray)
+                        if (not paused and not fast_forward
+                                and isinstance(samples, np.ndarray)
                                 and samples.dtype == np.int16 and samples.size > 0):
                             self._audio.enqueue(samples)
             except Exception:
@@ -682,6 +686,10 @@ class EmulatorWindow(BaseView):
         image.save(screenshot_path)
 
     def __reset(self, values) -> None:
+        # Reset restarts the game; staying paused would freeze it at the
+        # power-on screen with no obvious way to tell why it is not running.
+        self.__paused = False
+        self.__refresh_menu_labels()
         self.__console.reset()
     
     def __rewind(self, values) -> None:
@@ -689,6 +697,10 @@ class EmulatorWindow(BaseView):
             self.__console.rewind()
         except Exception:
             pass
+
+    def __toggle_pause(self, values) -> None:
+        self.__paused = not self.__paused
+        self.__refresh_menu_labels()
 
     def __toggle_fast_forward(self, values) -> None:
         self.__fast_forward = not self.__fast_forward

@@ -46,12 +46,27 @@ cdef class INesCart(Cartridge):
                 self.playchoice10_inst_rom = ines.read(8192)
                 self.playchoice10_prom = ines.read(16)
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
+            # iNES has no submapper nibble; on mapper 78 the alternative
+            # nametable flag stands in for the Holy Diver / Cosmo Carrier
+            # board choice. All other boards receive 0 and ignore the hook.
+            # Ref: NESdev wiki "INES Mapper 078".
+            submapper = 0
+            if self.mapper_no() == 78:
+                submapper = 3 if self.header.flags_6.has_alternative_nametable_layout else 1
+            self.mapper.set_submapper(submapper)
             # Some boards fit more CHR RAM than an iNES header can describe;
             # the mapper owns that hardware fact.
             if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < self.mapper.chr_ram_size():
                 self.CHR_RAM_bytes = self.mapper.chr_ram_size()
                 self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
+            # iNES 1.0 byte 10 bit 5 is often left clear by old ROMs, so the
+            # board family still supplies the default. Ref: NESdev wiki
+            # "Bus conflict", "Category:Mappers with bus conflicts".
+            self.has_bus_conflict = (
+                self.header.flags_10.has_bus_conflict == 1
+                or self.mapper_no() in (2, 3, 7, 11, 13, 30, 34, 66, 78, 152, 180, 185, 188)
+            )
 
     cdef uint16_t mapper_no(self):
         """Extract the mapper number from header flags 6 and 7."""

@@ -13,9 +13,10 @@ from nes.bus.bus cimport CPUBus
 cdef object _freeze(object value):
     '''Convert a mapper snapshot field into a picklable value.
 
-    Cython's __reduce_cython__() emits numpy memoryviews and C arrays as
-    list/tuple fields. Memoryviews cannot be pickled, so they are wrapped
-    with their bytes payload and dtype/shape to be rebuilt on load.
+    Cython's __reduce_cython__() emits numpy memoryviews as memoryviewslice
+    fields; those cannot be pickled, so they are wrapped with their bytes
+    payload to be rebuilt on load. C arrays arrive as bytes already repaired
+    by _mapper_snapshot() and pass through unchanged.
     '''
     if isinstance(value, np.ndarray):
         return ('nd', value.tobytes(), str(value.dtype), value.shape)
@@ -47,10 +48,32 @@ cdef object _mapper_snapshot(CPUBus bus):
     '''Capture the active mapper's internal registers for persistence.'''
     cdef object mapper = bus.cartridge.mapper
     cdef tuple reduce_tuple = mapper.__reduce_cython__()
+    cdef object fields = reduce_tuple[-1]
+    cdef object arrays = mapper.carray_snapshot()
+    cdef list repaired
+    cdef Py_ssize_t i
+    cdef int used = 0
+
     # __reduce_cython__() is (rebuild_fn, (cls, id, init_state), fields) for
     # __init__-based mappers, or (rebuild_fn, (cls, id, cinit_state)) when a
     # __cinit__ exists. The field payload is the last element either way.
-    return _freeze(reduce_tuple[-1])
+    #
+    # Cython emits uint8_t[N] fields as C strings, so a zero first byte
+    # truncates the field to b'' and __setstate_cython__() then rejects it.
+    # Repair those slots from the live arrays; every bytes field in a mapper
+    # payload is one of these C arrays (audited across all registered boards).
+    if arrays:
+        repaired = list(fields)
+        for i in range(len(repaired)):
+            if isinstance(repaired[i], bytes):
+                if used >= len(arrays):
+                    raise ValueError("mapper C array snapshot does not match fields")
+                repaired[i] = arrays[used]
+                used += 1
+        if used != len(arrays):
+            raise ValueError("mapper C array snapshot does not match fields")
+        fields = tuple(repaired)
+    return _freeze(fields)
 
 
 cdef void _mapper_restore(CPUBus bus, object snapshot):
@@ -248,6 +271,9 @@ cdef object _bus_snapshot(CPUBus bus):
         'divider_cpu_tick_edge': divider.cpu_tick_edge,
         'divider_phi2_edge': divider.phi2_edge,
         'open_bus': bus.open_bus,
+        # The cartridge exposes $6000-$7FFF on the CPU bus; keep its contents
+        # with the routed bus signals so save/load and rewind agree.
+        'cartridge_wram': bytes(bus.cartridge.wram),
         'dmc_dma_request': bus.dmc_dma_request,
         'joy1_buttons': bus.joy1.buttons,
         'joy1_shift': bus.joy1.shift,
@@ -262,6 +288,8 @@ cdef object _bus_snapshot(CPUBus bus):
 
 cdef void _bus_restore(CPUBus bus, object snap):
     cdef ClockDivider divider = bus.divider
+    cdef object wram = snap.get('cartridge_wram')
+    cdef const unsigned char[:] wram_src
     cdef list dma_list = list(_thaw(snap['dma_fields']))
     divider.dot = snap['divider_dot']
     divider.cpu_cycle = snap['divider_cpu_cycle']
@@ -273,6 +301,10 @@ cdef void _bus_restore(CPUBus bus, object snap):
     divider.phase = divider.dot % divider.cycle_dots
     divider._update_edges()
     bus.open_bus = snap['open_bus']
+    # Saves written before this field existed leave WRAM at its current value.
+    if wram is not None:
+        wram_src = memoryview(wram).cast('B')
+        bus.cartridge.wram[:] = wram_src
     bus.dmc_dma_request = snap['dmc_dma_request']
     bus.joy1.buttons = snap['joy1_buttons']
     bus.joy1.shift = snap['joy1_shift']

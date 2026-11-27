@@ -65,11 +65,11 @@ cdef class Console:
         multiple complete() checks within a single instruction.
         """
         while True:
-            self.bus.clock()
+            self.bus._clock()
             if self.bus.cpu.complete():
                 break
         while True:
-            self.bus.clock()
+            self.bus._clock()
             if not self.bus.cpu.complete():
                 break
 
@@ -85,12 +85,12 @@ cdef class Console:
         """
         # Execute until frame rendering is complete
         while True:
-            self.bus.clock()
+            self.bus._clock()
             if self.bus.ppu.frame_complete:
                 break
         # Execute until CPU cycle is complete
         while True:
-            self.bus.clock()
+            self.bus._clock()
             if self.bus.cpu.complete():
                 break
         # Reset frame flag for next frame

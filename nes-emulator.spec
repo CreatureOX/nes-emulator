@@ -2,14 +2,14 @@
 import os
 import glob
 
-# Get all .pyd files from nes module (Cython extensions)
-nes_pyd_files = []
+# Collect compiled Cython extensions: .pyd on Windows, .so on POSIX.
+nes_ext_files = []
 nes_path = 'nes'
 for root, dirs, files in os.walk(nes_path):
     for f in files:
-        if f.endswith('.pyd'):
+        if f.endswith(('.pyd', '.so')):
             full_path = os.path.join(root, f).replace('\\', '/')
-            nes_pyd_files.append((full_path, root.replace('\\', '/')))
+            nes_ext_files.append((full_path, root.replace('\\', '/')))
 
 # Get only necessary .py files (exclude .pyx, .pxd, .c, .html)
 nes_py_files = []
@@ -32,7 +32,7 @@ for root, dirs, files in os.walk('gui'):
 a = Analysis(
     ['nes-emulator.py'],
     pathex=[],
-    binaries=nes_pyd_files,
+    binaries=nes_ext_files,
     datas=nes_py_files + gui_py_files + [
         ('keyboard.json', '.'),
         ('pyproject.toml', '.'),
@@ -41,12 +41,6 @@ a = Analysis(
     hiddenimports=[
         'nes.cart.impl.cart_ines',
         'nes.cart.impl.cart_nes2',
-        'nes.cart.impl.cart_nrom',
-        'nes.cart.impl.cart_uxrom',
-        'nes.cart.impl.cart_mmc1',
-        'nes.cart.impl.cart_mmc3',
-        'nes.cart.impl.cart_gxrom',
-        'nes.cart.impl.cart_ines003',
         'nes.cpu.cpu',
         'nes.cpu.status_register',
         'nes.cpu.cpu_op',
@@ -67,11 +61,25 @@ a = Analysis(
         'nes.mapper.mapping',
         'nes.mapper.mirror',
         'nes.mapper.impl.mapper_nrom',
-        'nes.mapper.impl.mapper_uxrom',
         'nes.mapper.impl.mapper_mmc1',
-        'nes.mapper.impl.mapper_mmc3',
-        'nes.mapper.impl.mapper_gxrom',
+        'nes.mapper.impl.mapper_uxrom',
         'nes.mapper.impl.mapper_ines003',
+        'nes.mapper.impl.mapper_mmc3',
+        'nes.mapper.impl.mapper_mmc5',
+        'nes.mapper.impl.mapper_gxrom',
+        'nes.mapper.impl.mapper_axrom',
+        'nes.mapper.impl.mapper_colordreams',
+        'nes.mapper.impl.mapper_bnrom',
+        'nes.mapper.impl.mapper_vrc2a',
+        'nes.mapper.impl.mapper_action53',
+        'nes.mapper.impl.mapper_cprom',
+        'nes.mapper.impl.mapper_mmc2',
+        'nes.mapper.impl.mapper_mmc4',
+        'nes.mapper.impl.mapper_rambo1',
+        'nes.mapper.impl.mapper_fme7',
+        'nes.mapper.impl.mapper_078',
+        'nes.mapper.impl.mapper_118',
+        'nes.mapper.impl.mapper_180',
         'nes.cart.cart',
         'nes.cart.cart_state',
         'nes.cart.cart_debug',

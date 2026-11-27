@@ -1,3 +1,4 @@
+import numpy as np
 from libc.stdint cimport uint8_t, int8_t, uint16_t, uint32_t, UINT32_MAX
 
 from nes.mapper.mapping cimport CPUReadMapping, CPUWriteMapping
@@ -47,6 +48,24 @@ cdef class MapperMMC5(Mapper):
     def __init__(self, uint8_t PRG_banks, uint8_t CHR_banks):
         super().__init__(PRG_banks, CHR_banks)
         self.mapper_no = "005"
+        # Mapper.reset() runs from the base constructor and never touches
+        # prg_ram, so it is safe to allocate the buffer afterwards.
+        self.prg_ram = np.zeros(32 * 1024, dtype=np.uint8)
+
+    def carray_snapshot(self):
+        '''Supply the four uint8_t[N] arrays the auto-reducer truncates.
+
+        __reduce_cython__() orders fields alphabetically, so the broken bytes
+        slots are chr_bank_a, chr_bank_b, exram, prg_bank in that order.
+        Only the save/load path calls this; the hot path keeps C arrays.
+        '''
+        cdef int i
+        return (
+            bytes([self.chr_bank_a[i] for i in range(8)]),
+            bytes([self.chr_bank_b[i] for i in range(4)]),
+            bytes([self.exram[i] for i in range(1024)]),
+            bytes([self.prg_bank[i] for i in range(5)]),
+        )
 
     cdef void reset(self):
         '''Apply power-on state; a CPU reset only disables the scanline IRQ.'''
@@ -220,17 +239,18 @@ cdef class MapperMMC5(Mapper):
     cdef void audio_clock(self, int cycles):
         '''Clock pulse timers one CPU cycle at a time.
 
-        Frequency values below 8 do not silence the MMC5 channels; they
-        produce ultrasonic output, so unlike the 2A03 there is no minimum
-        period gate here. Ref: NESdev wiki "MMC5 audio", Pulse 1.
+        A duty step lasts 2*(P+1) CPU cycles, as on the 2A03. Frequency
+        values below 8 do not silence the MMC5 channels; they produce
+        ultrasonic output, so unlike the 2A03 there is no minimum period
+        gate here. Ref: NESdev wiki "MMC5 audio", Pulse 1.
         '''
         cdef int channel
         for channel in range(2):
             if not self.pulse_enabled[channel] or self.pulse_length[channel] == 0:
                 continue
             self.pulse_timer[channel] -= 1
-            if self.pulse_timer[channel] < 0:
-                self.pulse_timer[channel] = self.pulse_period[channel]
+            if self.pulse_timer[channel] <= 0:
+                self.pulse_timer[channel] = (self.pulse_period[channel] + 1) * 2
                 self.pulse_step[channel] = (self.pulse_step[channel] + 1) & 0x07
         self.pulse_audio_cycle += cycles
         while self.pulse_audio_cycle >= MMC5_FRAME_CYCLES:
@@ -295,17 +315,16 @@ cdef class MapperMMC5(Mapper):
     cdef bint _in_split_for_col(self, int ht):
         '''True when column `ht` (0-31) lies inside the vertical split region.
 
-        Vertical split ($5200) only engages while rendering is on, the CHR
-        mode is not 1 KB ($5101 bit 1 clear) and bit 7 of $5200 enables it.
-        The split covers columns below $5200[0:5] on the left side (bit 6
-        clear) or at or above it on the right side (bit 6 set). The column is
-        taken from the read's own PPU address so the test is exact for every
-        nametable/pattern fetch. Ref: NESdev wiki "MMC5", Vertical split
+        Vertical split ($5200 bit 7) only engages while rendering is on and
+        ExRAM mode ($5104) is %00 or %01; modes %10/%11 disable it. The split
+        covers columns below $5200[0:5] on the left side (bit 6 clear) or at
+        or above it on the right side (bit 6 set). The column comes from the
+        read's own PPU address. Ref: NESdev wiki "MMC5", Vertical split
         screen.
         '''
         cdef int target, side
         if not ((self.split_mode & 0x80) != 0
-                and (self.chr_mode & 0x02) == 0
+                and self.exram_mode < 2
                 and self.substitutions):
             return False
         target = self.split_mode & 0x1F
@@ -347,6 +366,48 @@ cdef class MapperMMC5(Mapper):
         if prg_bytes == 0:
             return bank * 0x2000 + (addr & 0x1FFF)
         return (bank * 0x2000 + (addr & 0x1FFF)) % prg_bytes
+
+    cdef bint _prg_ram_offset(self, uint16_t addr, uint32_t* offset):
+        '''Resolve a CPU address into PRG RAM when its window selects RAM.
+
+        $5113 always owns the $6000-$7FFF window and ignores its RAM/ROM
+        bit. For $8000+, $5114-$5116 bit 7 clears select RAM instead of ROM;
+        register bits 6..0 are PRG A19..A13, so a 16 KiB window ignores the
+        register's low bit. Ref: NESdev wiki "MMC5", PRG banking.
+        '''
+        cdef uint8_t reg
+        cdef uint32_t size
+        cdef uint32_t low_bits
+        cdef uint32_t bank
+
+        if 0x6000 <= addr <= 0x7FFF:
+            reg = self.prg_bank[0]
+            size = 0x2000
+        elif self.prg_mode == 0 or addr >= 0xE000:
+            return False
+        elif self.prg_mode == 1:
+            if addr >= 0xC000:
+                return False
+            reg = self.prg_bank[2]
+            size = 0x4000
+        elif self.prg_mode == 2:
+            if addr >= 0xC000:
+                reg = self.prg_bank[3]
+                size = 0x2000
+            else:
+                reg = self.prg_bank[2]
+                size = 0x4000
+        else:
+            reg = self.prg_bank[1 + ((addr - 0x8000) >> 13)]
+            size = 0x2000
+
+        if addr >= 0x8000 and (reg & 0x80) != 0:
+            return False
+
+        low_bits = (size >> 13) - 1
+        bank = (reg & (0x7F - low_bits)) | ((addr >> 13) & low_bits)
+        offset[0] = (bank * 0x2000 + (addr & (size - 1))) % 0x8000
+        return True
 
     cdef uint32_t _chr_addr(self, uint16_t addr):
         '''Translate a pattern-table address through the selected CHR mode.
@@ -429,6 +490,7 @@ cdef class MapperMMC5(Mapper):
         cdef CPUReadMapping mapping = CPUReadMapping()
         cdef uint16_t product
         cdef uint8_t status
+        cdef uint32_t ram_offset = 0
 
         if addr == 0xFFFA or addr == 0xFFFB:
             self._leave_frame()
@@ -466,6 +528,11 @@ cdef class MapperMMC5(Mapper):
             mapping.addr = UINT32_MAX
             mapping.data = self.exram[addr - 0x5C00]
             return mapping
+        if 0x6000 <= addr <= 0xFFFF and self._prg_ram_offset(addr, &ram_offset):
+            mapping.success = True
+            mapping.addr = UINT32_MAX
+            mapping.data = self.prg_ram[ram_offset]
+            return mapping
         if 0x8000 <= addr <= 0xFFFF:
             mapping.success = True
             mapping.addr = self._prg_addr(addr)
@@ -476,6 +543,7 @@ cdef class MapperMMC5(Mapper):
         cdef CPUWriteMapping mapping = CPUWriteMapping()
         cdef int channel
         cdef int reg
+        cdef uint32_t ram_offset = 0
 
         if addr == 0x2000:
             # Only the fully decoded register is watched; $2008-$200F
@@ -591,10 +659,15 @@ cdef class MapperMMC5(Mapper):
             mapping.success = True
             mapping.addr = UINT32_MAX
             return mapping
-        if 0x6000 <= addr <= 0x7FFF:
-            if self.protect1 != 0x02 or self.protect2 != 0x01:
-                mapping.success = True
-                mapping.addr = UINT32_MAX
+        if 0x6000 <= addr <= 0xFFFF and self._prg_ram_offset(addr, &ram_offset):
+            # $5102/$5103 gate every PRG RAM write, including windows
+            # remapped above $8000. Claim denied writes so they never fall
+            # through to the console's $6000 WRAM.
+            if self.protect1 == 0x02 and self.protect2 == 0x01:
+                self.prg_ram[ram_offset] = data
+            mapping.success = True
+            mapping.addr = UINT32_MAX
+            return mapping
         return mapping
 
     cdef PPUReadMapping map_ppu_read(self, uint16_t addr):

@@ -32,6 +32,9 @@ cdef class Cartridge:
     cdef CartridgeCPUPort cpu
     cdef CartridgePPUPort ppu
     cdef uint8_t mirror_mode
+    # Discrete-logic boards keep PRG /OE asserted during register writes, so
+    # ROM and CPU both drive the data bus. Ref: NESdev wiki "Bus conflict".
+    cdef bint has_bus_conflict
     # Video standard resolved from the header at load time. RegionSpec in
     # nes.region maps this id to clock/geometry configuration.
     cdef public uint8_t region

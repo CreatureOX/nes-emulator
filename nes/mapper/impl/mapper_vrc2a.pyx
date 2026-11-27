@@ -21,6 +21,11 @@ cdef class MapperVRC2a(Mapper):
         self.mapper_no = "022"
         self.reset()
 
+    def carray_snapshot(self):
+        '''Supply the uint8_t[8] CHR bank array the auto-reducer truncates.'''
+        cdef int i
+        return (bytes([self.chr_select[i] for i in range(8)]),)
+
     cdef CPUReadMapping map_cpu_read(self, uint16_t addr):
         '''Map the two 8 KB switchable PRG banks and the fixed last 16 KB.'''
         cdef uint32_t prg_bytes = self.PRG_banks * 0x4000

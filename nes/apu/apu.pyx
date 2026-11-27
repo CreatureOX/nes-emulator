@@ -124,7 +124,7 @@ cdef class APU2A03:
                          RegionSpec. Defaults to the NTSC table.
             dmc_rates: DMC playback periods from RegionSpec.
         """
-        cdef int i
+        cdef int i, mode, step
         cdef object spec
         if frame_steps is None or dmc_rates is None or noise_periods is None:
             from nes.region import spec_for, NTSC
@@ -136,6 +136,11 @@ cdef class APU2A03:
             if noise_periods is None:
                 noise_periods = spec.noise_periods
         self.frame_steps = frame_steps
+        # Cache the per-region step grid as C ints: the frame counter reads
+        # one of these boundaries on every CPU cycle.
+        for mode in range(2):
+            for step in range(6):
+                self.frame_step_table[mode][step] = frame_steps[mode][step]
         for i in range(16):
             self.dmc_rate_table[i] = dmc_rates[i]
             self.noise_periods[i] = noise_periods[i]
@@ -506,7 +511,7 @@ cdef class APU2A03:
         steps and raises the frame IRQ across the last three; mode 1 runs
         five steps and never raises it. Dendy reuses the NTSC table.
         """
-        cdef tuple steps = self.frame_steps[self.frame_mode]
+        cdef int* steps = &self.frame_step_table[self.frame_mode][0]
 
         if self.frame_reset_delay > 0:
             # A $4017 write restarts the divider 3-4 cycles later.
@@ -810,7 +815,7 @@ cdef class APU2A03:
             self.init_dmc_sample()
             self.dmc_transfer_delay = 2 if self.cycle_parity == 1 else 3
 
-    cpdef bint irq_level(self):
+    cdef bint _irq_level(self) noexcept:
         """
         Current level of the APU's interrupt outputs to the CPU.
 
@@ -823,6 +828,10 @@ cdef class APU2A03:
         occurred", and cpu_interrupts_v2's frame-IRQ subtests failed).
         """
         return self.frame_irq_flag != 0 or self.dmc_irq_flag != 0
+
+    cpdef bint irq_level(self):
+        '''Python-visible alias; the bus uses _irq_level() in its hot loop.'''
+        return self._irq_level()
 
     cdef double _mix_output(self):
         '''Raw DAC level from the four 2A03 channels and expansion audio.

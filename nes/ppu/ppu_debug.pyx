@@ -36,6 +36,7 @@ cdef class PPUDebugger:
         cdef uint8_t row, col
         cdef uint8_t pixel
         cdef uint16_t x, y, offset
+        cdef unsigned int color
 
         for tileY in range(0,16):
             for tileX in range(0,16):
@@ -47,6 +48,12 @@ cdef class PPUDebugger:
                         pixel = (tile_msb & 0x01) << 1 | (tile_lsb & 0x01)
                         tile_lsb, tile_msb = tile_lsb >> 1, tile_msb >> 1
                         y, x = tileY * 8 + row, tileX * 8 + (7 - col)
-                        self._pattern_table[i][y, x] = self.ppu.fetch_color(palette, pixel)
+                        # fetch_color() packs the live (emphasis-aware) RGB
+                        # sample into 0xRRGGBB; unpack it instead of assigning
+                        # the integer to a 3-channel uint8 slice.
+                        color = self.ppu.fetch_color(palette, pixel)
+                        self._pattern_table[i][y, x, 0] = (color >> 16) & 0xFF
+                        self._pattern_table[i][y, x, 1] = (color >> 8) & 0xFF
+                        self._pattern_table[i][y, x, 2] = color & 0xFF
         
         return self._pattern_table[i]

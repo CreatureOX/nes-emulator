@@ -59,12 +59,19 @@ cdef class Nes2Cart(Cartridge):
                 if len(self.CHR_RAM_data) == 0:
                     self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
             self.mapper = MapperFactory.of(self.mapper_no())(self.PRG_ROM_bytes / 16384, self.CHR_ROM_bytes / 8192)
+            self.mapper.set_submapper(self.header.flags_8.submapper_no)
             # Some boards fit more CHR RAM than a NES 2.0 header declares;
             # the mapper owns that hardware fact.
             if self.CHR_ROM_bytes == 0 and self.CHR_RAM_bytes < self.mapper.chr_ram_size():
                 self.CHR_RAM_bytes = self.mapper.chr_ram_size()
                 self.CHR_RAM_data = np.zeros(self.CHR_RAM_bytes, dtype = np.uint8)
-            self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL 
+            self.mirror_mode = VERTICAL if self.header.flags_6.nametable_arrangement == 1 else HORIZONTAL
+            # NES 2.0 encodes board variants in the submapper nibble; until a
+            # board consumes it, use the discrete-board family default.
+            # Ref: NESdev wiki "Bus conflict".
+            self.has_bus_conflict = self.mapper_no() in (
+                2, 3, 7, 11, 13, 30, 34, 66, 78, 152, 180, 185, 188
+            )
 
     cdef uint16_t mapper_no(self):
         """Extract the full 12-bit mapper number from NES 2.0 header."""

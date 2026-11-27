@@ -110,22 +110,25 @@ cdef class MapperMMC1(Mapper):
                 if self.control_register & 0b10000 > 0:
                     if 0x0000 <= addr <= 0x0FFF:
                         mapping.success = True
-                        mapping.addr = self.CHR_bank_select_4_lo * 0x1000 + addr & 0x0FFF
+                        mapping.addr = self.CHR_bank_select_4_lo * 0x1000 + (addr & 0x0FFF)
                     if 0x1000 <= addr <= 0x1FFF:
                         mapping.success = True
-                        mapping.addr = self.CHR_bank_select_4_hi * 0x1000 + addr & 0x0FFF
+                        mapping.addr = self.CHR_bank_select_4_hi * 0x1000 + (addr & 0x0FFF)
                 else:
+                    # The 5-bit register addresses 4 KiB banks; 8 KiB mode
+                    # ignores bit 0, so its even value still counts in 4 KiB
+                    # units. Ref: NESdev wiki "MMC1", CHR bank 0.
                     mapping.success = True
-                    mapping.addr = self.CHR_bank_select_8 * 0x2000 + addr & 0x1FFF
+                    mapping.addr = self.CHR_bank_select_8 * 0x1000 + (addr & 0x1FFF)
         return mapping
         
     cdef PPUWriteMapping map_ppu_write(self, uint16_t addr):
         cdef PPUWriteMapping mapping = PPUWriteMapping()
 
-        if addr < 0x2000:
+        # CHR ROM ignores $2007 writes; only a CHR RAM board accepts them.
+        if addr < 0x2000 and self.CHR_banks == 0:
             mapping.success = True
-            if self.CHR_banks == 0:
-                mapping.addr = addr
+            mapping.addr = addr
         return mapping
         
     cdef void reset(self):

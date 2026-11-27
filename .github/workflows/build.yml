@@ -234,11 +234,6 @@ jobs:
           python setup.py build_ext --inplace
           python -c "from nes.console import Console"
 
-      - name: Download icon
-        run: |
-          New-Item -ItemType Directory -Force -Path images
-          curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
-
       - name: Install PyInstaller
         run: pip install pyinstaller
 
@@ -304,11 +299,6 @@ jobs:
           python setup.py build_ext --inplace
           python -c "from nes.console import Console"
 
-      - name: Download icon
-        run: |
-          mkdir -p images
-          curl -L -o images/icon.png https://i.postimg.cc/g2sjHRZ0/icon.png
-
       - name: Install PyInstaller
         run: pip install pyinstaller
 
@@ -328,16 +318,25 @@ jobs:
           iconutil -c icns FanNes.iconset -o images/FanNes.icns
           rm -rf FanNes.iconset
 
+      - name: Resolve app version
+        shell: bash
+        run: echo "APP_VERSION=$(python -c 'import toml; print(toml.load("pyproject.toml")["project"]["version"])')" >> "$GITHUB_ENV"
+
       - name: Create macOS app bundle
         run: |
           APP_PATH="dist/FanNes.app"
           mkdir -p "$APP_PATH/Contents/MacOS"
           mkdir -p "$APP_PATH/Contents/Resources"
-          mv "dist/FanNes" "$APP_PATH/Contents/MacOS/FanNes"
+          # PyInstaller 6 onedir keeps the executable beside _internal; the
+          # plist's CFBundleExecutable must point at the file, not the folder.
+          mv "dist/FanNes/FanNes" "$APP_PATH/Contents/MacOS/FanNes"
+          mv "dist/FanNes/_internal" "$APP_PATH/Contents/MacOS/_internal"
+          rm -rf "dist/FanNes"
+          chmod +x "$APP_PATH/Contents/MacOS/FanNes"
           cp images/FanNes.icns "$APP_PATH/Contents/Resources/"
           cat > "$APP_PATH/Contents/Info.plist" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
@@ -349,9 +348,9 @@ jobs:
               <key>CFBundlePackageType</key>
               <string>APPL</string>
               <key>CFBundleShortVersionString</key>
-              <string>1.0.0</string>
+              <string>${{ env.APP_VERSION }}</string>
               <key>CFBundleVersion</key>
-              <string>1</string>
+              <string>${{ env.APP_VERSION }}</string>
               <key>CFBundleIconFile</key>
               <string>FanNes.icns</string>
               <key>LSMinimumSystemVersion</key>
@@ -362,18 +361,47 @@ jobs:
           </plist>
           EOF
 
+      - name: Verify macOS app bundle
+        shell: bash
+        run: |
+          APP="dist/FanNes.app/Contents"
+          plutil -lint "$APP/Info.plist"
+          test -f "$APP/MacOS/FanNes"
+          test -d "$APP/MacOS/_internal"
+          test -f "$APP/Resources/FanNes.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")" = "FanNes"
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
           name: fannes-macos
-          path: dist/FanNes.app
+          # Uploading the parent keeps the FanNes.app wrapper in the archive.
+          path: dist
           retention-days: 5
 
   release:
-    needs: [build-windows, build-macos]
+    needs: [test-windows, test-macos, build-windows, build-macos]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
+    permissions:
+      contents: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: false
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "Release tag $TAG_VERSION does not match pyproject.toml $PROJECT_VERSION" >&2
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+
       - name: Download Windows artifact
         uses: actions/download-artifact@v7
         with:
@@ -389,19 +417,20 @@ jobs:
       - name: Create Windows ZIP archive
         run: |
           cd release/Windows
-          powershell -Command "Compress-Archive -Path '*' -DestinationPath '../FanNes-Windows.zip'"
+          zip -r "../FanNes-${RELEASE_VERSION}-Windows.zip" .
 
       - name: Create macOS ZIP archive
         run: |
           cd release/macOS
-          zip -r ../FanNes-macOS.zip .
+          zip -r -y "../FanNes-${RELEASE_VERSION}-macOS.zip" .
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/FanNes-Windows.zip
-            release/FanNes-macOS.zip
+            release/FanNes-${{ env.RELEASE_VERSION }}-Windows.zip
+            release/FanNes-${{ env.RELEASE_VERSION }}-macOS.zip
+          fail_on_unmatched_files: true
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

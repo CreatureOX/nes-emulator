@@ -12,6 +12,8 @@ import sys
 import subprocess
 import shutil
 import argparse
+import glob
+import toml
 
 PLATFORM = sys.platform
 IS_WINDOWS = PLATFORM.startswith('win')
@@ -42,12 +44,26 @@ def build_exe():
     hidden_imports = [
         "nes.cart.impl.cart_ines",
         "nes.cart.impl.cart_nes2",
-        "nes.cart.impl.cart_nrom",
-        "nes.cart.impl.cart_uxrom",
-        "nes.cart.impl.cart_mmc1",
-        "nes.cart.impl.cart_mmc3",
-        "nes.cart.impl.cart_gxrom",
-        "nes.cart.impl.cart_ines003",
+        "nes.mapper.impl.mapper_nrom",
+        "nes.mapper.impl.mapper_mmc1",
+        "nes.mapper.impl.mapper_uxrom",
+        "nes.mapper.impl.mapper_ines003",
+        "nes.mapper.impl.mapper_mmc3",
+        "nes.mapper.impl.mapper_mmc5",
+        "nes.mapper.impl.mapper_gxrom",
+        "nes.mapper.impl.mapper_axrom",
+        "nes.mapper.impl.mapper_colordreams",
+        "nes.mapper.impl.mapper_bnrom",
+        "nes.mapper.impl.mapper_vrc2a",
+        "nes.mapper.impl.mapper_action53",
+        "nes.mapper.impl.mapper_cprom",
+        "nes.mapper.impl.mapper_mmc2",
+        "nes.mapper.impl.mapper_mmc4",
+        "nes.mapper.impl.mapper_rambo1",
+        "nes.mapper.impl.mapper_fme7",
+        "nes.mapper.impl.mapper_078",
+        "nes.mapper.impl.mapper_118",
+        "nes.mapper.impl.mapper_180",
         "gui.freesimplegui.emulator_view",
         "gui.freesimplegui.base_view",
         "gui.freesimplegui.nes_file_view",
@@ -93,11 +109,28 @@ def create_macos_app_bundle():
     os.makedirs(f"{app_path}/Contents/MacOS")
     os.makedirs(f"{app_path}/Contents/Resources")
     
-    # Move executable
-    shutil.move("dist/FanNes", f"{app_path}/Contents/MacOS/FanNes")
-    
+    # PyInstaller 6 onedir puts the executable next to _internal; both belong
+    # in Contents/MacOS so CFBundleExecutable resolves to a regular file.
+    exe_path = "dist/FanNes/FanNes"
+    internal_path = "dist/FanNes/_internal"
+    for path in (exe_path, internal_path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Expected PyInstaller output: {path}")
+    shutil.move(exe_path, f"{app_path}/Contents/MacOS/FanNes")
+    shutil.move(internal_path, f"{app_path}/Contents/MacOS/_internal")
+    shutil.rmtree("dist/FanNes")
+
+    # Keep the bundle version in sync with the project metadata.
+    version = toml.load("pyproject.toml")["project"]["version"]
+
+    icon_entry = ""
+    icon_file = "images/FanNes.icns"
+    if os.path.exists(icon_file):
+        shutil.copy2(icon_file, f"{app_path}/Contents/Resources/")
+        icon_entry = "    <key>CFBundleIconFile</key>\n    <string>FanNes.icns</string>\n"
+
     # Create Info.plist
-    info_plist = '''<?xml version="1.0" encoding="UTF-8"?>
+    info_plist = f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -110,16 +143,16 @@ def create_macos_app_bundle():
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>{version}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
+    <string>{version}</string>
+{icon_entry}    <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
 </plist>'''
-    
+
     with open(f"{app_path}/Contents/Info.plist", "w") as f:
         f.write(info_plist)
     
@@ -129,7 +162,8 @@ def clean():
     """Clean build artifacts"""
     print("Cleaning build artifacts...")
     
-    patterns = ["dist", "build", "*.spec", "*.egg-info"]
+    # The spec and status_register.h are tracked sources, not build products.
+    patterns = ["dist", "build", "*.egg-info"]
     
     for pattern in patterns:
         if "*" in pattern:
@@ -148,7 +182,7 @@ def clean():
     # Clean Cython artifacts
     for root, dirs, files in os.walk("nes"):
         for f in files:
-            if f.endswith((".pyd", ".so", ".c", ".h", ".html")):
+            if f.endswith((".pyd", ".so", ".c", ".html")):
                 try:
                     os.remove(os.path.join(root, f))
                 except:
@@ -179,5 +213,4 @@ def main():
     print("Output directory: dist/")
 
 if __name__ == "__main__":
-    import glob
     main()

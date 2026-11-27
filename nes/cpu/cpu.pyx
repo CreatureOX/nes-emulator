@@ -104,12 +104,12 @@ cdef class CPU6502:
             # back-to-back flag changes (CLI followed by SEI) the latch would
             # still hold the value from before the FIRST one. The SEI has to
             # freeze on the intermediate I that CLI produced.
-            self.irq_i_latched = self.registers.status.bits.I
+            self.irq_i_latched = self.registers.status.flag_I
             self.irq_defer_i = True
         else:
             self.irq_i_latched = value
             self.irq_defer_i = False
-        self.registers.status.bits.I = value
+        self.registers.status.flag_I = value
 
     cpdef uint8_t IMP(self):
         '''
@@ -396,12 +396,12 @@ cdef class CPU6502:
         Return:      Require additional 1 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t> self.registers.A + <uint16_t> self.fetched + <uint16_t> self.registers.status.bits.C)
+        self.set_temp(<uint16_t> self.registers.A + <uint16_t> self.fetched + <uint16_t> self.registers.status.flag_C)
 
-        self.registers.status.bits.C = self.temp > 255
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0
-        self.registers.status.bits.V = (~(self.registers.A ^ self.fetched) & (self.registers.A ^ self.temp)) & 0x0080 > 0
-        self.registers.status.bits.N = self.temp & 0x80 > 0
+        self.registers.status.flag_C = self.temp > 255
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0
+        self.registers.status.flag_V = (~(self.registers.A ^ self.fetched) & (self.registers.A ^ self.temp)) & 0x0080 > 0
+        self.registers.status.flag_N = self.temp & 0x80 > 0
         
         self.registers.A = self.temp & 0x00FF
         return 1
@@ -415,12 +415,12 @@ cdef class CPU6502:
         '''
         self.fetch()
         cdef uint16_t value = self.fetched ^ 0x00FF
-        self.set_temp(<uint16_t> self.registers.A + value + <uint16_t> self.registers.status.bits.C)
+        self.set_temp(<uint16_t> self.registers.A + value + <uint16_t> self.registers.status.flag_C)
 
-        self.registers.status.bits.C = self.temp & 0xFF00 > 0
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0
-        self.registers.status.bits.V = (self.temp ^ <uint16_t> self.registers.A) & (self.temp ^ value) & 0x0080 > 0
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_C = self.temp & 0xFF00 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0
+        self.registers.status.flag_V = (self.temp ^ <uint16_t> self.registers.A) & (self.temp ^ value) & 0x0080 > 0
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
 
         self.registers.A = self.temp & 0x00FF
         return 1
@@ -435,8 +435,8 @@ cdef class CPU6502:
         self.fetch()
         self.registers.A &= self.fetched
         
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         
         return 1
 
@@ -450,9 +450,9 @@ cdef class CPU6502:
         self.fetch()
         self.set_temp(<uint16_t> self.fetched << 1)
 
-        self.registers.status.bits.C = self.temp & 0xFF00 > 0
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x80 > 0
+        self.registers.status.flag_C = self.temp & 0xFF00 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x80 > 0
 
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
@@ -472,7 +472,7 @@ cdef class CPU6502:
         Function:    if(C == 0) pc = address 
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.C == 0):
+        if (self.registers.status.flag_C == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
             
@@ -497,7 +497,7 @@ cdef class CPU6502:
         Function:    if(C == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.C == 1):
+        if (self.registers.status.flag_C == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
             
@@ -522,7 +522,7 @@ cdef class CPU6502:
         Function:    if(Z == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.Z == 1):
+        if (self.registers.status.flag_Z == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
             
@@ -548,9 +548,9 @@ cdef class CPU6502:
         self.fetch()
         self.set_temp(self.registers.A & self.fetched)
 
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x00
-        self.registers.status.bits.N = self.fetched & (1 << 7) > 0
-        self.registers.status.bits.V = self.fetched & (1 << 6) > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x00
+        self.registers.status.flag_N = self.fetched & (1 << 7) > 0
+        self.registers.status.flag_V = self.fetched & (1 << 6) > 0
 
         return 0
 
@@ -560,7 +560,7 @@ cdef class CPU6502:
         Function:    if(N == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.N == 1):
+        if (self.registers.status.flag_N == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
             
@@ -582,7 +582,7 @@ cdef class CPU6502:
         Function:    if(Z == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.Z == 0):
+        if (self.registers.status.flag_Z == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
 
@@ -605,7 +605,7 @@ cdef class CPU6502:
         Function:    if(N == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.N == 0):
+        if (self.registers.status.flag_N == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
 
@@ -692,7 +692,7 @@ cdef class CPU6502:
         Function:    if(V == 0) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.V == 0):
+        if (self.registers.status.flag_V == 0):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
 
@@ -715,7 +715,7 @@ cdef class CPU6502:
         Function:    if(V == 1) pc = address
         Return:      Require additional 0 clock cycle
         '''
-        if (self.registers.status.bits.V == 1):
+        if (self.registers.status.flag_V == 1):
             self.remaining_cycles += 1
             self.set_addr_abs(self.registers.PC + self.addr_rel)
 
@@ -738,7 +738,7 @@ cdef class CPU6502:
         Function:    C = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.C = False
+        self.registers.status.flag_C = False
         return 0
 
     cpdef uint8_t CLD(self):
@@ -747,7 +747,7 @@ cdef class CPU6502:
         Function:    D = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.D = False
+        self.registers.status.flag_D = False
         return 0
 
     cpdef uint8_t CLI(self):
@@ -768,7 +768,7 @@ cdef class CPU6502:
         Function:    V = 0
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.V = False
+        self.registers.status.flag_V = False
         return 0
 
     cpdef uint8_t CMP(self):
@@ -780,9 +780,9 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(<uint16_t> self.registers.A - <uint16_t> self.fetched)
-        self.registers.status.bits.C = self.registers.A >= self.fetched
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_C = self.registers.A >= self.fetched
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         return 1
 
     cpdef uint8_t CPX(self):
@@ -794,9 +794,9 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(<uint16_t> self.registers.X - <uint16_t> self.fetched)
-        self.registers.status.bits.C = self.registers.X >= self.fetched
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_C = self.registers.X >= self.fetched
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         return 0
 
     cpdef uint8_t CPY(self):
@@ -808,9 +808,9 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.set_temp(<uint16_t> self.registers.Y - <uint16_t> self.fetched)
-        self.registers.status.bits.C = self.registers.Y >= self.fetched
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_C = self.registers.Y >= self.fetched
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         return 0
 
     cpdef uint8_t DEC(self):
@@ -825,8 +825,8 @@ cdef class CPU6502:
         # RMW dummy write-back (T5); see ASL for rationale.
         self.write(self.addr_abs, self.fetched)
         self.write(self.addr_abs, self.temp & 0x00FF)
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         return 0
 
     cpdef uint8_t DEX(self):
@@ -837,8 +837,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.X -= 1
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 0
 
     cpdef uint8_t DEY(self):
@@ -849,8 +849,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.Y -= 1
-        self.registers.status.bits.Z = self.registers.Y == 0x00
-        self.registers.status.bits.N = self.registers.Y & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.Y == 0x00
+        self.registers.status.flag_N = self.registers.Y & 0x80 > 0
         return 0
 
     cpdef uint8_t EOR(self):
@@ -862,8 +862,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A ^= self.fetched
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 1
 
     cpdef uint8_t INC(self):
@@ -878,8 +878,8 @@ cdef class CPU6502:
         # RMW dummy write-back (T5); see ASL for rationale.
         self.write(self.addr_abs, self.fetched)
         self.write(self.addr_abs, self.temp & 0x00FF)
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         return 0
 
     cpdef uint8_t INX(self):
@@ -890,8 +890,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.X += 1
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 0
 
     cpdef uint8_t INY(self):
@@ -902,8 +902,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.Y += 1
-        self.registers.status.bits.Z = self.registers.Y == 0x00
-        self.registers.status.bits.N = self.registers.Y & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.Y == 0x00
+        self.registers.status.flag_N = self.registers.Y & 0x80 > 0
         return 0
 
     cpdef uint8_t JMP(self):
@@ -935,8 +935,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A = self.fetched
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 1
 
     cpdef uint8_t LDX(self):
@@ -948,8 +948,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.X = self.fetched
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 1
 
     cpdef uint8_t LDY(self):
@@ -961,8 +961,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.Y = self.fetched
-        self.registers.status.bits.Z = self.registers.Y == 0x00
-        self.registers.status.bits.N = self.registers.Y & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.Y == 0x00
+        self.registers.status.flag_N = self.registers.Y & 0x80 > 0
         return 1
 
     cpdef uint8_t LSR(self):
@@ -970,10 +970,10 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.registers.status.bits.C = self.fetched & 0x0001 > 0
+        self.registers.status.flag_C = self.fetched & 0x0001 > 0
         self.set_temp(self.fetched >> 1)
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
@@ -1004,8 +1004,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A |= self.fetched
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 1
 
     cpdef uint8_t PHA(self):
@@ -1035,8 +1035,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.A = self.pull()
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t PLP(self):
@@ -1047,7 +1047,7 @@ cdef class CPU6502:
         '''
         # Real 6502 PLP loads the 6 real flags but IGNORES the B flag
         # (bit 4 is not affected) and forces U (bit 5) to 1.
-        cdef uint8_t prev_b = self.registers.status.bits.B
+        cdef uint8_t prev_b = self.registers.status.flag_B
         cdef uint8_t pulled_p = self.pull()
         # PLP can change the I flag; like CLI/SEI it freezes the mask's copy
         # for one instruction (see set_i_flag). set_i_flag captures the I that
@@ -1056,8 +1056,8 @@ cdef class CPU6502:
         # the pre-PLP one.
         self.set_i_flag(<bint>((pulled_p >> 2) & 1), True)
         self.registers.status.value = pulled_p
-        self.registers.status.bits.B = prev_b
-        self.registers.status.bits.U = True
+        self.registers.status.flag_B = prev_b
+        self.registers.status.flag_U = True
         return 0
 
     cpdef uint8_t ROL(self):
@@ -1065,10 +1065,10 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t> (self.fetched << 1) | self.registers.status.bits.C)
-        self.registers.status.bits.C = self.temp & 0xFF00 > 0
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x0000
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.set_temp(<uint16_t> (self.fetched << 1) | self.registers.status.flag_C)
+        self.registers.status.flag_C = self.temp & 0xFF00 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x0000
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
@@ -1085,10 +1085,10 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.fetch()
-        self.set_temp(<uint16_t> (self.registers.status.bits.C << 7) | (self.fetched >> 1))
-        self.registers.status.bits.C = self.fetched & 0x01 > 0
-        self.registers.status.bits.Z = self.temp & 0x00FF == 0x00
-        self.registers.status.bits.N = self.temp & 0x0080 > 0
+        self.set_temp(<uint16_t> (self.registers.status.flag_C << 7) | (self.fetched >> 1))
+        self.registers.status.flag_C = self.fetched & 0x01 > 0
+        self.registers.status.flag_Z = self.temp & 0x00FF == 0x00
+        self.registers.status.flag_N = self.temp & 0x0080 > 0
         if (self.lookup[self.opcode].addrmode == self.IMP):
             self.registers.A = self.temp & 0x00FF
         else:
@@ -1110,14 +1110,14 @@ cdef class CPU6502:
         self.read(self.last_opcode_addr + 1)
         # Real 6502 RTI loads the 6 real flags, ignores B (bit 4), and
         # forces U (bit 5) to 1.
-        cdef uint8_t prev_b = self.registers.status.bits.B
+        cdef uint8_t prev_b = self.registers.status.flag_B
         cdef uint8_t pulled_p = self.pull()
         self.registers.status.value = pulled_p
-        self.registers.status.bits.B = prev_b
-        self.registers.status.bits.U = True
+        self.registers.status.flag_B = prev_b
+        self.registers.status.flag_U = True
         # RTI restores I immediately: unlike CLI/SEI/PLP there is no
         # one-instruction latency, so the mask adopts the restored value now.
-        self.set_i_flag(self.registers.status.bits.I, False)
+        self.set_i_flag(self.registers.status.flag_I, False)
         self.registers.PC = self.pull_2_bytes()
         return 0
 
@@ -1145,7 +1145,7 @@ cdef class CPU6502:
         Function:    C = 1 
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.C = True
+        self.registers.status.flag_C = True
         return 0
 
     cpdef uint8_t SED(self):
@@ -1154,7 +1154,7 @@ cdef class CPU6502:
         Function:    D = 1
         Return:      Require additional 0 clock cycle
         '''
-        self.registers.status.bits.D = True
+        self.registers.status.flag_D = True
         return 0
 
     cpdef uint8_t SEI(self):
@@ -1204,8 +1204,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.X = self.registers.A
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 0
 
     cpdef uint8_t TAY(self):
@@ -1216,8 +1216,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.Y = self.registers.A
-        self.registers.status.bits.Z = self.registers.Y == 0x00
-        self.registers.status.bits.N = self.registers.Y & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.Y == 0x00
+        self.registers.status.flag_N = self.registers.Y & 0x80 > 0
         return 0
 
     cpdef uint8_t TSX(self):
@@ -1228,8 +1228,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.X = self.registers.SP
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 0
 
     cpdef uint8_t TXA(self):
@@ -1240,8 +1240,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.A = self.registers.X
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t TXS(self):
@@ -1261,8 +1261,8 @@ cdef class CPU6502:
         Return:      Require additional 0 clock cycle
         '''
         self.registers.A = self.registers.Y
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t XXX(self):
@@ -1309,12 +1309,12 @@ cdef class CPU6502:
             # RMW dummy write-back (T5); see ASL for rationale.
             self.write(self.addr_abs, self.fetched)
         cdef uint16_t shifted = <uint16_t> self.fetched << 1
-        self.registers.status.bits.C = shifted & 0xFF00 > 0
+        self.registers.status.flag_C = shifted & 0xFF00 > 0
         cdef uint8_t value = <uint8_t> (shifted & 0x00FF)
         self.write(self.addr_abs, value)
         self.registers.A |= value
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t RLA(self):
@@ -1327,13 +1327,13 @@ cdef class CPU6502:
         if (self.lookup[self.opcode].addrmode != self.IMP):
             # RMW dummy write-back (T5); see ASL for rationale.
             self.write(self.addr_abs, self.fetched)
-        cdef uint16_t rotated = <uint16_t> ((self.fetched << 1) | <uint16_t> self.registers.status.bits.C)
-        self.registers.status.bits.C = rotated & 0xFF00 > 0
+        cdef uint16_t rotated = <uint16_t> ((self.fetched << 1) | <uint16_t> self.registers.status.flag_C)
+        self.registers.status.flag_C = rotated & 0xFF00 > 0
         cdef uint8_t value = <uint8_t> (rotated & 0x00FF)
         self.write(self.addr_abs, value)
         self.registers.A &= value
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t SRE(self):
@@ -1346,12 +1346,12 @@ cdef class CPU6502:
         if (self.lookup[self.opcode].addrmode != self.IMP):
             # RMW dummy write-back (T5); see ASL for rationale.
             self.write(self.addr_abs, self.fetched)
-        self.registers.status.bits.C = self.fetched & 0x01
+        self.registers.status.flag_C = self.fetched & 0x01
         cdef uint8_t value = <uint8_t> (self.fetched >> 1)
         self.write(self.addr_abs, value)
         self.registers.A ^= value
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t RRA(self):
@@ -1364,15 +1364,15 @@ cdef class CPU6502:
         if (self.lookup[self.opcode].addrmode != self.IMP):
             # RMW dummy write-back (T5); see ASL for rationale.
             self.write(self.addr_abs, self.fetched)
-        cdef uint8_t carry_in = self.registers.status.bits.C
-        self.registers.status.bits.C = self.fetched & 0x01
+        cdef uint8_t carry_in = self.registers.status.flag_C
+        self.registers.status.flag_C = self.fetched & 0x01
         cdef uint8_t value = <uint8_t> ((self.fetched >> 1) | (carry_in << 7))
         self.write(self.addr_abs, value)
-        cdef uint16_t t = <uint16_t> self.registers.A + <uint16_t> value + <uint16_t> self.registers.status.bits.C
-        self.registers.status.bits.C = t > 255
-        self.registers.status.bits.Z = (t & 0x00FF) == 0
-        self.registers.status.bits.V = (~(self.registers.A ^ value) & (self.registers.A ^ t)) & 0x0080 > 0
-        self.registers.status.bits.N = t & 0x80 > 0
+        cdef uint16_t t = <uint16_t> self.registers.A + <uint16_t> value + <uint16_t> self.registers.status.flag_C
+        self.registers.status.flag_C = t > 255
+        self.registers.status.flag_Z = (t & 0x00FF) == 0
+        self.registers.status.flag_V = (~(self.registers.A ^ value) & (self.registers.A ^ t)) & 0x0080 > 0
+        self.registers.status.flag_N = t & 0x80 > 0
         self.registers.A = <uint8_t> (t & 0x00FF)
         return 0
 
@@ -1389,9 +1389,9 @@ cdef class CPU6502:
         cdef uint8_t value = <uint8_t> ((self.fetched - 1) & 0xFF)
         self.write(self.addr_abs, value)
         cdef uint16_t diff = <uint16_t> self.registers.A - <uint16_t> value
-        self.registers.status.bits.C = self.registers.A >= value
-        self.registers.status.bits.Z = self.registers.A == value
-        self.registers.status.bits.N = diff & 0x80 > 0
+        self.registers.status.flag_C = self.registers.A >= value
+        self.registers.status.flag_Z = self.registers.A == value
+        self.registers.status.flag_N = diff & 0x80 > 0
         return 0
 
     cpdef uint8_t ISC(self):
@@ -1407,11 +1407,11 @@ cdef class CPU6502:
         cdef uint8_t value = <uint8_t> ((self.fetched + 1) & 0xFF)
         self.write(self.addr_abs, value)
         cdef uint16_t inv = <uint16_t> (value ^ 0x00FF)
-        cdef uint16_t t = <uint16_t> self.registers.A + inv + <uint16_t> self.registers.status.bits.C
-        self.registers.status.bits.C = t & 0xFF00 > 0
-        self.registers.status.bits.Z = (t & 0x00FF) == 0
-        self.registers.status.bits.V = (t ^ <uint16_t> self.registers.A) & (t ^ inv) & 0x0080 > 0
-        self.registers.status.bits.N = t & 0x0080 > 0
+        cdef uint16_t t = <uint16_t> self.registers.A + inv + <uint16_t> self.registers.status.flag_C
+        self.registers.status.flag_C = t & 0xFF00 > 0
+        self.registers.status.flag_Z = (t & 0x00FF) == 0
+        self.registers.status.flag_V = (t ^ <uint16_t> self.registers.A) & (t ^ inv) & 0x0080 > 0
+        self.registers.status.flag_N = t & 0x0080 > 0
         self.registers.A = <uint8_t> (t & 0x00FF)
         return 0
 
@@ -1432,8 +1432,8 @@ cdef class CPU6502:
         self.fetch()
         self.registers.A = self.fetched
         self.registers.X = self.fetched
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         # Page-cross reads (ABS,Y / (IND),Y) cost +1 cycle; the cycle engine
         # only adds that penalty when operate() returns 1 AND addrmode()
         # reports a cross (see clock(): remaining_cycles += addrmode & operate).
@@ -1447,9 +1447,9 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A &= self.fetched
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
-        self.registers.status.bits.C = self.registers.status.bits.N
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_C = self.registers.status.flag_N
         return 0
 
     cpdef uint8_t ALR(self):
@@ -1460,10 +1460,10 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A &= self.fetched
-        self.registers.status.bits.C = self.registers.A & 0x01
+        self.registers.status.flag_C = self.registers.A & 0x01
         self.registers.A >>= 1
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t ARR(self):
@@ -1475,14 +1475,14 @@ cdef class CPU6502:
         NES) decimal-mode adjust logic leaking through.
         '''
         self.fetch()
-        cdef uint8_t carry_in = self.registers.status.bits.C
+        cdef uint8_t carry_in = self.registers.status.flag_C
         cdef uint8_t value = <uint8_t> (self.registers.A & self.fetched)
         cdef uint8_t result = <uint8_t> ((value >> 1) | (carry_in << 7))
         self.registers.A = result
-        self.registers.status.bits.Z = result == 0x00
-        self.registers.status.bits.N = result & 0x80 > 0
-        self.registers.status.bits.C = result & 0x40 > 0
-        self.registers.status.bits.V = ((result >> 6) ^ (result >> 5)) & 0x01 > 0
+        self.registers.status.flag_Z = result == 0x00
+        self.registers.status.flag_N = result & 0x80 > 0
+        self.registers.status.flag_C = result & 0x40 > 0
+        self.registers.status.flag_V = ((result >> 6) ^ (result >> 5)) & 0x01 > 0
         return 0
 
     cpdef uint8_t SBX(self):
@@ -1492,10 +1492,10 @@ cdef class CPU6502:
         '''
         self.fetch()
         cdef uint8_t t = <uint8_t> (self.registers.A & self.registers.X)
-        self.registers.status.bits.C = t >= self.fetched
+        self.registers.status.flag_C = t >= self.fetched
         self.registers.X = <uint8_t> ((t - self.fetched) & 0xFF)
-        self.registers.status.bits.Z = self.registers.X == 0x00
-        self.registers.status.bits.N = self.registers.X & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.X == 0x00
+        self.registers.status.flag_N = self.registers.X & 0x80 > 0
         return 0
 
     cpdef uint8_t LXA(self):
@@ -1509,8 +1509,8 @@ cdef class CPU6502:
         self.fetch()
         self.registers.A = <uint8_t> ((self.registers.A | 0xFF) & self.fetched)
         self.registers.X = self.registers.A
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t ANE(self):
@@ -1523,8 +1523,8 @@ cdef class CPU6502:
         '''
         self.fetch()
         self.registers.A = <uint8_t> ((self.registers.A | 0xFF) & self.registers.X & self.fetched)
-        self.registers.status.bits.Z = self.registers.A == 0x00
-        self.registers.status.bits.N = self.registers.A & 0x80 > 0
+        self.registers.status.flag_Z = self.registers.A == 0x00
+        self.registers.status.flag_N = self.registers.A & 0x80 > 0
         return 0
 
     cpdef uint8_t LAS(self):
@@ -1537,8 +1537,8 @@ cdef class CPU6502:
         self.registers.A = value
         self.registers.X = value
         self.registers.SP = value
-        self.registers.status.bits.Z = value == 0x00
-        self.registers.status.bits.N = value & 0x80 > 0
+        self.registers.status.flag_Z = value == 0x00
+        self.registers.status.flag_N = value & 0x80 > 0
         # LAS only exists as (IND),Y, which costs +1 on a page cross; return 1
         # so clock() applies that penalty (addrmode & operate).
         return 1
@@ -1605,7 +1605,7 @@ cdef class CPU6502:
         self.registers.status.value = 0x34
         # Keep the interrupt mask's latched copy in step with the live flag
         # from power-up (see set_i_flag).
-        self.set_i_flag(self.registers.status.bits.I, False)
+        self.set_i_flag(self.registers.status.flag_I, False)
         self.registers.SP = 0xFD
         
         self.ram = np.array([0x00] * 2 * 1024, dtype = np.uint8)
@@ -1946,7 +1946,7 @@ cdef class CPU6502:
             if self.irq_defer_i:
                 self.irq_defer_i = False
             else:
-                self.irq_i_latched = self.registers.status.bits.I
+                self.irq_i_latched = self.registers.status.flag_I
 
             now = tick
             # Poll reference dot. In normal flow the previous clock was
@@ -2051,7 +2051,7 @@ cdef class CPU6502:
             # Save the address the opcode was fetched from: a one-byte-opcode
             # dummy read (RTS/RTI/BRK) targets the byte that follows it.
             self.last_opcode_addr = self.registers.PC
-            self.registers.status.bits.U = True
+            self.registers.status.flag_U = True
             self.registers.PC = self.registers.PC + 1
             # Look up instruction details
             op = self.lookup[self.opcode]
@@ -2075,7 +2075,7 @@ cdef class CPU6502:
             additional_cycle2 = op.operate()
             # Add any conditional cycles based on branch/page-crossing
             self.remaining_cycles += (additional_cycle1 & additional_cycle2)
-            self.registers.status.bits.U = True
+            self.registers.status.flag_U = True
 
         self.clock_count += 1
         self.remaining_cycles -= 1

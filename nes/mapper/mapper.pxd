@@ -23,6 +23,10 @@ cdef class Mapper:
 
     cdef void reset(self)
 
+    # NES 2.0 submapper (or an iNES header hint) is delivered after the
+    # mapper is constructed; boards with variants override this hook.
+    cdef void set_submapper(self, uint8_t submapper)
+
     cdef uint8_t mirror(self)
 
     cdef int8_t nametable_source(self, uint16_t addr)

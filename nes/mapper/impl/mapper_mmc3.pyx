@@ -80,14 +80,14 @@ cdef class MapperMMC3(Mapper):
                     self.CHR_bank[2] = self.register[4] * 0x0400
                     self.CHR_bank[3] = self.register[5] * 0x0400
                     self.CHR_bank[4] = (self.register[0] & 0xFE) * 0x0400
-                    self.CHR_bank[5] = self.register[0] * 0x0400 + 0x0400
+                    self.CHR_bank[5] = (self.register[0] & 0xFE) * 0x0400 + 0x0400
                     self.CHR_bank[6] = (self.register[1] & 0xFE) * 0x0400
-                    self.CHR_bank[7] = self.register[1] * 0x0400 + 0x0400
+                    self.CHR_bank[7] = (self.register[1] & 0xFE) * 0x0400 + 0x0400
                 else:
                     self.CHR_bank[0] = (self.register[0] & 0xFE) * 0x0400
-                    self.CHR_bank[1] = self.register[0] * 0x0400 + 0x0400
+                    self.CHR_bank[1] = (self.register[0] & 0xFE) * 0x0400 + 0x0400
                     self.CHR_bank[2] = (self.register[1] & 0xFE) * 0x0400
-                    self.CHR_bank[3] = self.register[1] * 0x0400 + 0x0400
+                    self.CHR_bank[3] = (self.register[1] & 0xFE) * 0x0400 + 0x0400
                     self.CHR_bank[4] = self.register[2] * 0x0400
                     self.CHR_bank[5] = self.register[3] * 0x0400
                     self.CHR_bank[6] = self.register[4] * 0x0400

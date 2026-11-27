@@ -197,7 +197,6 @@ cdef class PPU2C02:
         ], dtype = np.uint8)
         
         self.palette_panel = [None] * 4 * 16
-        self.emphasis_panels = [None] * 8
         self.screen_width, self.screen_height = 256, 240
         self._screen = np.zeros((self.screen_height,self.screen_width,3)).astype(np.uint8)
 
@@ -465,7 +464,10 @@ cdef class PPU2C02:
             # MMC3-class mappers clock their IRQ on the resulting edge.
             self.cartridge.mapper.a12_notify(self.VRAM_addr.value)
 
-    cdef void _set_palette_panel(self):    
+    cdef void _set_palette_panel(self):
+        cdef tuple color
+        cdef int emphasis, index
+        cdef double red, green, blue
         self.palette_panel[0x00],self.palette_panel[0x01],self.palette_panel[0x02],self.palette_panel[0x03],self.palette_panel[0x04],self.palette_panel[0x05],self.palette_panel[0x06],self.palette_panel[0x07],self.palette_panel[0x08],self.palette_panel[0x09],self.palette_panel[0x0a],self.palette_panel[0x0b],self.palette_panel[0x0c],self.palette_panel[0x0d],self.palette_panel[0x0e],self.palette_panel[0x0f] = ( 84,  84,  84), (  0,  30, 116), (  8,  16, 144), ( 48,   0, 136), ( 68,   0, 100), ( 92,   0,  48), ( 84,   4,   0), ( 60,  24,   0), ( 32,  42,   0), (  8,  58,   0), (  0,  64,   0), (  0,  60,   0), (  0,  50,  60), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
         self.palette_panel[0x10],self.palette_panel[0x11],self.palette_panel[0x12],self.palette_panel[0x13],self.palette_panel[0x14],self.palette_panel[0x15],self.palette_panel[0x16],self.palette_panel[0x17],self.palette_panel[0x18],self.palette_panel[0x19],self.palette_panel[0x1a],self.palette_panel[0x1b],self.palette_panel[0x1c],self.palette_panel[0x1d],self.palette_panel[0x1e],self.palette_panel[0x1f] = (152, 150, 152), (  8,  76, 196), ( 48,  50, 236), ( 92,  30, 228), (136,  20, 176), (160,  20, 100), (152,  34,  32), (120,  60,   0), ( 84,  90,   0), ( 40, 114,   0), (  8, 124,   0), (  0, 118,  40), (  0, 102, 120), (  0,   0,   0), (  0,   0,   0), (  0,   0,   0)
         self.palette_panel[0x20],self.palette_panel[0x21],self.palette_panel[0x22],self.palette_panel[0x23],self.palette_panel[0x24],self.palette_panel[0x25],self.palette_panel[0x26],self.palette_panel[0x27],self.palette_panel[0x28],self.palette_panel[0x29],self.palette_panel[0x2a],self.palette_panel[0x2b],self.palette_panel[0x2c],self.palette_panel[0x2d],self.palette_panel[0x2e],self.palette_panel[0x2f] = (236, 238, 236), ( 76, 154, 236), (120, 124, 236), (176,  98, 236), (228,  84, 236), (236,  88, 180), (236, 106, 100), (212, 136,  32), (160, 170,   0), (116, 196,   0), ( 76, 208,  32), ( 56, 204, 108), ( 56, 180, 204), ( 60,  60,  60), (  0,   0,   0), (  0,   0,   0)
@@ -490,15 +492,18 @@ cdef class PPU2C02:
             if emphasis & 0x04:
                 red *= 0.75
                 green *= 0.75
-            self.emphasis_panels[emphasis] = [
-                color if (index & 0x0F) >= 0x0E else
-                (int(color[0] * red + 0.5),
-                 int(color[1] * green + 0.5),
-                 int(color[2] * blue + 0.5))
-                for index, color in enumerate(self.palette_panel)
-            ]
+            for index in range(64):
+                color = self.palette_panel[index]
+                if (index & 0x0F) >= 0x0E:
+                    self.emphasis_panels[emphasis][index][0] = color[0]
+                    self.emphasis_panels[emphasis][index][1] = color[1]
+                    self.emphasis_panels[emphasis][index][2] = color[2]
+                else:
+                    self.emphasis_panels[emphasis][index][0] = <uint8_t>(color[0] * red + 0.5)
+                    self.emphasis_panels[emphasis][index][1] = <uint8_t>(color[1] * green + 0.5)
+                    self.emphasis_panels[emphasis][index][2] = <uint8_t>(color[2] * blue + 0.5)
 
-    cdef tuple fetch_color(self, uint8_t palette, uint8_t pixel):
+    cdef unsigned int fetch_color(self, uint8_t palette, uint8_t pixel):
         # PPUMASK is sampled per dot: raster effects rewrite $2001 mid-frame
         # to draw coloured scanlines (exram/mmc5exram.nes copper bars).
         cdef uint8_t color = self.vram.read(0x3F00 + (palette << 2) + pixel,
@@ -506,7 +511,9 @@ cdef class PPU2C02:
         cdef uint8_t emphasis = (self.PPUMASK.enhance_red |
                                  (self.PPUMASK.enhance_green << 1) |
                                  (self.PPUMASK.enhance_blue << 2))
-        return self.emphasis_panels[emphasis][color]
+        return ((<unsigned int>self.emphasis_panels[emphasis][color][0] << 16) |
+                (<unsigned int>self.emphasis_panels[emphasis][color][1] << 8) |
+                <unsigned int>self.emphasis_panels[emphasis][color][2])
 
     cdef void reset(self):
         self.fine_x = 0x00
@@ -885,7 +892,7 @@ cdef class PPU2C02:
         self.sprite_pattern_shift_registers[i][LOW_NIBBLE] = sprite_pattern_low_bits
         self.sprite_pattern_shift_registers[i][HIGH_NIBBLE] = sprite_pattern_high_bits 
 
-    cdef tuple _draw_background(self):
+    cdef uint16_t _draw_background(self):
         """
         Get background pixel color for current cycle.
         
@@ -896,7 +903,7 @@ cdef class PPU2C02:
         # Skip leftmost 8 pixels if rendering is disabled for that column
         cdef int16_t start_render_position = 8 if self.PPUMASK.render_background_left == 0 else 0
         if (self.cycle - 1) < start_render_position:
-            return (0x00, 0x00)
+            return 0
 
         # Calculate which bit to extract based on fine_x scroll offset
         cdef uint16_t bit_mux = 0x8000 >> self.fine_x
@@ -917,9 +924,9 @@ cdef class PPU2C02:
             background_palette_high_bit = 1
         background_palette = (background_palette_high_bit << 1) | background_palette_low_bit
 
-        return (background_palette, background_pixel)
+        return <uint16_t>((background_palette << 8) | background_pixel)
 
-    cdef tuple _draw_sprites(self):
+    cdef uint16_t _draw_sprites(self):
         """
         Get sprite (foreground) pixel color for current cycle.
         
@@ -953,10 +960,10 @@ cdef class PPU2C02:
         # Skip leftmost 8 pixels if sprite rendering disabled for that column
         cdef int16_t start_render_position = 8 if self.PPUMASK.render_sprites_left == 0 else 0
         if foreground_pixel == 0 or (self.cycle - 1) < start_render_position:
-            return (0x00, 0x00)
-        return (foreground_palette, foreground_pixel)
+            return 0
+        return <uint16_t>((foreground_palette << 8) | foreground_pixel)
 
-    cdef tuple _draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
+    cdef uint16_t _draw_by_rule(self, uint8_t background_palette, uint8_t background_pixel, uint8_t foreground_palette, uint8_t foreground_pixel):
         """
         Combine background and sprite pixels based on NES priority rules.
         
@@ -991,7 +998,7 @@ cdef class PPU2C02:
                     if  self.cycle - 1 < 255:
                         self.PPUSTATUS.sprite_zero_hit = 1
 
-        return (palette, pixel)
+        return <uint16_t>((palette << 8) | pixel)
 
     cdef void clock(self) except *:
         # Determine which phase of rendering we're in
@@ -1100,23 +1107,30 @@ cdef class PPU2C02:
                     self._update_nmi_line()
                 self.vbl_suppress = False
 
-        # Draw pixels for visible scanlines
-        cdef uint8_t background_palette = 0x00, background_pixel = 0x00
-        if self.PPUMASK.render_background == 1:
-            background_palette, background_pixel = self._draw_background()
+        # Draw pixels for visible scanlines only. Post-render and VBL rows
+        # never address the screen buffer, and their shift registers are idle,
+        # so compositing them wastes the per-dot fetch without any visible
+        # effect. Ref: NESdev wiki "PPU rendering" (visible dots 1-256).
+        cdef uint16_t background = 0, foreground = 0, combined = 0
+        cdef unsigned int color = 0
+        if visible_scanlines or pre_render_scanline:
+            if self.PPUMASK.render_background == 1:
+                background = self._draw_background()
 
-        cdef uint8_t foreground_palette = 0x00, foreground_pixel = 0x00
-        self.foreground_priority = False
-        if self.PPUMASK.render_sprites == 1:
-            foreground_palette, foreground_pixel = self._draw_sprites()
+            self.foreground_priority = False
+            if self.PPUMASK.render_sprites == 1:
+                foreground = self._draw_sprites()
 
-        # Combine background and sprite pixels based on priority rules
-        cdef uint8_t pixel = 0x00, palette = 0x00
-        palette, pixel = self._draw_by_rule(background_palette, background_pixel, foreground_palette, foreground_pixel)
+            combined = self._draw_by_rule(
+                <uint8_t>(background >> 8), <uint8_t>background,
+                <uint8_t>(foreground >> 8), <uint8_t>foreground)
 
-        # Write pixel to screen buffer
-        if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height: 
-            self._screen[self.scanline][<int>(self.cycle - 1)] = self.fetch_color(palette, pixel)
+            # Write pixel to screen buffer
+            if 0 <= self.cycle - 1 < self.screen_width and 0 <= self.scanline < self.screen_height:
+                color = self.fetch_color(<uint8_t>(combined >> 8), <uint8_t>combined)
+                self._screen[self.scanline][<int>(self.cycle - 1)][0] = <uint8_t>(color >> 16)
+                self._screen[self.scanline][<int>(self.cycle - 1)][1] = <uint8_t>(color >> 8)
+                self._screen[self.scanline][<int>(self.cycle - 1)][2] = <uint8_t>color
 
         self.cycle += 1
 
